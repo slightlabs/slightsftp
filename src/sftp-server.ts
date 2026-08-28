@@ -34,7 +34,6 @@ export class SFTPServer extends EventEmitter {
   private listener: Listener;
   private db: DatabaseManager;
   private hostKeys: Buffer[] = [];
-  private dirHandles: Map<string, { path: string; files: string[]; sentAll: boolean }> | null = null;
   private idleTimeoutMs: number = 300000; // 5 minutes default
   private clientTimeouts: Map<any, NodeJS.Timeout> = new Map();
   private activeSessions: Map<string, ClientSession> = new Map();
@@ -71,6 +70,10 @@ export class SFTPServer extends EventEmitter {
         const sessionId = `sftp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const ipAddress = (client as any)._sock?.remoteAddress || 'unknown';
         const remotePort = (client as any)._sock?.remotePort || 0;
+
+        // Per-connection directory handles — isolated so one client's disconnect
+        // never clears another client's active directory listings
+        const dirHandles = new Map<string, { path: string; files: string[]; sentAll: boolean }>();
 
         let username: string | undefined;
         let authenticatedUser: User | undefined;
@@ -418,7 +421,7 @@ export class SFTPServer extends EventEmitter {
                 
                 // We don't have the filename in WRITE, so we skip path-level check here
                 // Permissions were already checked in OPEN
-                if (!userPermissions || (!userPermissions.canEdit && !userPermissions.canAppend)) {
+                if (!userPermissions || (!userPermissions.canCreate && !userPermissions.canEdit && !userPermissions.canAppend)) {
                   return sftp.status(reqId, SFTP_STATUS_CODE.PERMISSION_DENIED);
                 }
 
@@ -435,9 +438,9 @@ export class SFTPServer extends EventEmitter {
               sftp.on('CLOSE', (reqId, handle) => {
                 // Try to parse as a directory handle first
                 const handleStr = handle.toString();
-                if (this.dirHandles && this.dirHandles.has(handleStr)) {
+                if (dirHandles.has(handleStr)) {
                   logger.debug(`[CLOSE] Closing directory handle: ${handleStr}`);
-                  this.dirHandles.delete(handleStr);
+                  dirHandles.delete(handleStr);
                   return sftp.status(reqId, SFTP_STATUS_CODE.OK);
                 }
                 
@@ -480,10 +483,7 @@ export class SFTPServer extends EventEmitter {
                   const handleBuffer = Buffer.from(handleId);
                   
                   // Store the directory listing state
-                  if (!this.dirHandles) {
-                    this.dirHandles = new Map();
-                  }
-                  this.dirHandles.set(handleId, { path: realPath, files, sentAll: false });
+                  dirHandles.set(handleId, { path: realPath, files, sentAll: false });
                   
                   logger.debug(`[OPENDIR] Created handle ${handleId} for ${files.length} files`);
                   
@@ -503,12 +503,12 @@ export class SFTPServer extends EventEmitter {
                   const handleId = handle.toString();
                   logger.debug(`[READDIR] Handle ID: ${handleId}`);
                   
-                  if (!this.dirHandles || !this.dirHandles.has(handleId)) {
+                  if (!dirHandles.has(handleId)) {
                     logger.debug(`[READDIR] Invalid or expired handle`);
                     return sftp.status(reqId, SFTP_STATUS_CODE.FAILURE);
                   }
                   
-                  const handleData = this.dirHandles.get(handleId)!;
+                  const handleData = dirHandles.get(handleId)!;
                   const { path: dirPath, files, sentAll } = handleData;
                   logger.debug(`[READDIR] Path: ${dirPath}, Files: ${files.length}, SentAll: ${sentAll}`);
 
@@ -570,7 +570,7 @@ export class SFTPServer extends EventEmitter {
                     mtime: Math.floor(stats.mtimeMs / 1000)
                   });
                 } catch (err) {
-                  logActivity('STAT_FAILED', filePath, true);
+                  logActivity('STAT_FAILED', filePath, false);
                   sftp.status(reqId, SFTP_STATUS_CODE.NO_SUCH_FILE);
                 }
               });
@@ -592,12 +592,13 @@ export class SFTPServer extends EventEmitter {
                     mtime: Math.floor(stats.mtimeMs / 1000)
                   });
                 } catch (err) {
-                  logActivity('LSTAT_FAILED', filePath, true);
+                  logActivity('LSTAT_FAILED', filePath, false);
                   sftp.status(reqId, SFTP_STATUS_CODE.NO_SUCH_FILE);
                 }
               });
 
               sftp.on('REMOVE', (reqId, filePath) => {
+                this.resetIdleTimeout(client, username!);
                 if (!checkPermission('canDelete', filePath)) {
                   logActivity('REMOVE_DENIED', filePath, false);
                   return sftp.status(reqId, SFTP_STATUS_CODE.PERMISSION_DENIED);
@@ -615,6 +616,7 @@ export class SFTPServer extends EventEmitter {
               });
 
               sftp.on('RMDIR', (reqId, dirPath) => {
+                this.resetIdleTimeout(client, username!);
                 if (!checkPermission('canDelete', dirPath)) {
                   logActivity('RMDIR_DENIED', dirPath, false);
                   return sftp.status(reqId, SFTP_STATUS_CODE.PERMISSION_DENIED);
@@ -632,6 +634,7 @@ export class SFTPServer extends EventEmitter {
               });
 
               sftp.on('MKDIR', (reqId, dirPath, attrs) => {
+                this.resetIdleTimeout(client, username!);
                 if (!checkPermission('canCreateDir', dirPath)) {
                   logActivity('MKDIR_DENIED', dirPath, false);
                   return sftp.status(reqId, SFTP_STATUS_CODE.PERMISSION_DENIED);
@@ -649,6 +652,7 @@ export class SFTPServer extends EventEmitter {
               });
 
               sftp.on('RENAME', (reqId, oldPath, newPath) => {
+                this.resetIdleTimeout(client, username!);
                 if (!checkPermission('canRename', oldPath) || !checkPermission('canRename', newPath)) {
                   logActivity('RENAME_DENIED', `${oldPath} -> ${newPath}`, false);
                   return sftp.status(reqId, SFTP_STATUS_CODE.PERMISSION_DENIED);
@@ -667,6 +671,7 @@ export class SFTPServer extends EventEmitter {
               });
 
               sftp.on('REALPATH', (reqId, filePath) => {
+                this.resetIdleTimeout(client, username!);
                 // REALPATH should return the normalized VIRTUAL path, not the local filesystem path
                 // The client will use this path in subsequent operations, so it must remain virtual
                 
@@ -725,12 +730,10 @@ export class SFTPServer extends EventEmitter {
           this.clearIdleTimeout(client);
           
           // Clean up all directory handles for this client
-          if (this.dirHandles) {
-            const handleCount = this.dirHandles.size;
-            if (handleCount > 0) {
+          const handleCount = dirHandles.size;
+          if (handleCount > 0) {
               logger.debug(`[DISCONNECT] Cleaning up ${handleCount} directory handles`);
-              this.dirHandles.clear();
-            }
+              dirHandles.clear();
           }
           
           if (username) {

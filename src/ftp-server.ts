@@ -319,11 +319,12 @@ class CustomFileSystem extends FileSystem {
     
     // Map Permission keys to VirtualPath permission keys
     const vpPermMap: Record<string, string> = {
+      'canRead': 'canRead',
       'canCreate': 'canWrite',
       'canEdit': 'canWrite',
       'canAppend': 'canAppend',
       'canDelete': 'canDelete',
-      'canList': 'canRead',  // For FTP, list needs read permission
+      'canList': 'canList',
       'canCreateDir': 'canCreateDir',
       'canRename': 'canRename'
     };
@@ -335,7 +336,7 @@ class CustomFileSystem extends FileSystem {
   }
 
   get(fileName: string): Promise<any> {
-    if (!this.checkVpPermission('canList', fileName)) {
+    if (!this.checkVpPermission('canRead', fileName)) {
       this.logCallback('GET_DENIED', fileName, false);
       return Promise.reject(new Error('Permission denied'));
     }
@@ -383,7 +384,7 @@ class CustomFileSystem extends FileSystem {
   }
 
   read(fileName: string, options?: any): Promise<any> {
-    if (!this.checkVpPermission('canList', fileName)) {
+    if (!this.checkVpPermission('canRead', fileName)) {
       this.logCallback('READ_DENIED', fileName, false);
       return Promise.reject(new Error('Permission denied'));
     }
