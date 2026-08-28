@@ -113,8 +113,8 @@ export class SFTPServer extends EventEmitter {
                 ipAddress,
                 connectedAt: new Date()
               });
-              console.log(`[SESSION] Added active session: ${sessionId} for user ${username} from ${ipAddress}`);
-              console.log(`[SESSION] Total active sessions: ${this.activeSessions.size}`);
+              logger.debug(`[SESSION] Added active session: ${sessionId} for user ${username} from ${ipAddress}`);
+              logger.debug(`[SESSION] Total active sessions: ${this.activeSessions.size}`);
               
               authenticatedUser = user;
               userPermissions = this.db.getPermission(user.id!, this.listener.id!);
@@ -151,8 +151,8 @@ export class SFTPServer extends EventEmitter {
                     ipAddress,
                     connectedAt: new Date()
                   });
-                  console.log(`[SESSION] Added active session: ${sessionId} for user ${username} from ${ipAddress}`);
-                  console.log(`[SESSION] Total active sessions: ${this.activeSessions.size}`);
+                  logger.debug(`[SESSION] Added active session: ${sessionId} for user ${username} from ${ipAddress}`);
+                  logger.debug(`[SESSION] Total active sessions: ${this.activeSessions.size}`);
                   
                   authenticatedUser = user;
                   userPermissions = this.db.getPermission(user.id!, this.listener.id!);
@@ -236,7 +236,7 @@ export class SFTPServer extends EventEmitter {
                     
                     const realPath = path.join(vp.localPath, relativePath);
                     
-                    console.log(`Path mapping: ${virtualPath} -> ${normalizedVPath} -> ${realPath}`);
+                    logger.debug(`Path mapping: ${virtualPath} -> ${normalizedVPath} -> ${realPath}`);
                     
                     // Ensure the directory exists
                     const dirPath = fs.existsSync(realPath) && fs.statSync(realPath).isDirectory() 
@@ -246,9 +246,9 @@ export class SFTPServer extends EventEmitter {
                     if (!fs.existsSync(dirPath)) {
                       try {
                         fs.mkdirSync(dirPath, { recursive: true });
-                        console.log(`Created directory: ${dirPath}`);
+                        logger.debug(`Created directory: ${dirPath}`);
                       } catch (err) {
-                        console.error('Error creating directory:', err);
+                        logger.error('Error creating directory:', err);
                       }
                     }
                     
@@ -264,9 +264,9 @@ export class SFTPServer extends EventEmitter {
                   if (!fs.existsSync(virtualPaths[0].localPath)) {
                     try {
                       fs.mkdirSync(virtualPaths[0].localPath, { recursive: true });
-                      console.log(`Created base directory: ${virtualPaths[0].localPath}`);
+                      logger.debug(`Created base directory: ${virtualPaths[0].localPath}`);
                     } catch (err) {
-                      console.error('Error creating base directory:', err);
+                      logger.error('Error creating base directory:', err);
                     }
                   }
                   
@@ -294,15 +294,15 @@ export class SFTPServer extends EventEmitter {
 
               // Check both listener-level and virtual path-level permissions
               const checkPermission = (action: keyof Permission, virtualPath: string = '/'): boolean => {
-                console.log(`[PERMISSION CHECK] Action: ${action}, Path: ${virtualPath}`);
+                logger.debug(`[PERMISSION CHECK] Action: ${action}, Path: ${virtualPath}`);
                 
                 // Find the matching virtual path
                 const vp = findVirtualPath(virtualPath);
                 if (!vp) {
-                  console.log(`[PERMISSION CHECK] No virtual path found for: ${virtualPath}`);
+                  logger.debug(`[PERMISSION CHECK] No virtual path found for: ${virtualPath}`);
                   return false;
                 }
-                console.log(`[PERMISSION CHECK] Found virtual path: ${vp.virtualPath} -> ${vp.localPath}`);
+                logger.debug(`[PERMISSION CHECK] Found virtual path: ${vp.virtualPath} -> ${vp.localPath}`);
                 
                 // Map Permission keys to VirtualPath permission keys
                 const vpPermMap: Record<string, keyof typeof vp> = {
@@ -318,26 +318,26 @@ export class SFTPServer extends EventEmitter {
                 
                 const vpPermKey = vpPermMap[action];
                 if (!vpPermKey) {
-                  console.log(`[PERMISSION CHECK] No permission mapping for action: ${action}`);
+                  logger.debug(`[PERMISSION CHECK] No permission mapping for action: ${action}`);
                   return false;
                 }
                 
                 // Check virtual path permissions first
                 const hasVPathPerm = vp[vpPermKey] !== false;
-                console.log(`[PERMISSION CHECK] VPath permission ${vpPermKey}: ${hasVPathPerm}`);
+                logger.debug(`[PERMISSION CHECK] VPath permission ${vpPermKey}: ${hasVPathPerm}`);
                 
                 // If user has listener-level permissions, check those too (AND condition)
                 // If no listener permissions, virtual path permissions alone are sufficient
                 if (userPermissions) {
                   const listenerPerm = Boolean(userPermissions[action]);
-                  console.log(`[PERMISSION CHECK] Listener permission ${action}: ${listenerPerm}`);
+                  logger.debug(`[PERMISSION CHECK] Listener permission ${action}: ${listenerPerm}`);
                   const result = listenerPerm && hasVPathPerm;
-                  console.log(`[PERMISSION CHECK] Final result (listener AND vpath): ${result}`);
+                  logger.debug(`[PERMISSION CHECK] Final result (listener AND vpath): ${result}`);
                   return result;
                 }
                 
                 // No listener permissions - rely solely on virtual path permissions
-                console.log(`[PERMISSION CHECK] No listener permissions, using vpath only: ${hasVPathPerm}`);
+                logger.debug(`[PERMISSION CHECK] No listener permissions, using vpath only: ${hasVPathPerm}`);
                 return hasVPathPerm;
               };
 
@@ -354,7 +354,7 @@ export class SFTPServer extends EventEmitter {
               // SFTP command handlers
               sftp.on('OPEN', (reqId, filename, flags, attrs) => {
                 const realPath = pathMapper(filename);
-                console.log(`SFTP OPEN: ${filename} -> ${realPath}`);
+                logger.debug(`SFTP OPEN: ${filename} -> ${realPath}`);
 
                 // Check permissions based on flags
                 const writeFlag = flags & (SFTP_OPEN_MODE.WRITE | SFTP_OPEN_MODE.APPEND | SFTP_OPEN_MODE.CREAT);
@@ -379,7 +379,7 @@ export class SFTPServer extends EventEmitter {
                   logActivity('OPEN', filename, true);
                   sftp.handle(reqId, handleBuffer);
                 } catch (err: any) {
-                  console.error('SFTP OPEN error:', err);
+                  logger.error('SFTP OPEN error:', err);
                   logActivity('OPEN_FAILED', filename, false);
                   
                   // Return appropriate error status codes
@@ -407,7 +407,7 @@ export class SFTPServer extends EventEmitter {
                     sftp.data(reqId, buffer.slice(0, bytesRead));
                   }
                 } catch (err) {
-                  console.error('SFTP READ error:', err);
+                  logger.error('SFTP READ error:', err);
                   sftp.status(reqId, SFTP_STATUS_CODE.FAILURE);
                 }
               });
@@ -427,7 +427,7 @@ export class SFTPServer extends EventEmitter {
                   fs.writeSync(handleNum, data, 0, data.length, offset);
                   sftp.status(reqId, SFTP_STATUS_CODE.OK);
                 } catch (err) {
-                  console.error('SFTP WRITE error:', err);
+                  logger.error('SFTP WRITE error:', err);
                   sftp.status(reqId, SFTP_STATUS_CODE.FAILURE);
                 }
               });
@@ -436,7 +436,7 @@ export class SFTPServer extends EventEmitter {
                 // Try to parse as a directory handle first
                 const handleStr = handle.toString();
                 if (this.dirHandles && this.dirHandles.has(handleStr)) {
-                  console.log(`[CLOSE] Closing directory handle: ${handleStr}`);
+                  logger.debug(`[CLOSE] Closing directory handle: ${handleStr}`);
                   this.dirHandles.delete(handleStr);
                   return sftp.status(reqId, SFTP_STATUS_CODE.OK);
                 }
@@ -447,33 +447,33 @@ export class SFTPServer extends EventEmitter {
                   fs.closeSync(handleNum);
                   sftp.status(reqId, SFTP_STATUS_CODE.OK);
                 } catch (err) {
-                  console.error('SFTP CLOSE error:', err);
+                  logger.error('SFTP CLOSE error:', err);
                   sftp.status(reqId, SFTP_STATUS_CODE.FAILURE);
                 }
               });
 
               sftp.on('OPENDIR', (reqId, dirPath) => {
-                console.log(`[OPENDIR] Request ${reqId} for path: ${dirPath}`);
+                logger.debug(`[OPENDIR] Request ${reqId} for path: ${dirPath}`);
                 
                 // Reset idle timeout on activity
                 this.resetIdleTimeout(client, username!);
                 
                 const permResult = checkPermission('canList', dirPath);
-                console.log(`[OPENDIR] Permission check result: ${permResult}`);
+                logger.debug(`[OPENDIR] Permission check result: ${permResult}`);
                 
                 if (!permResult) {
-                  console.log(`[OPENDIR] DENIED - No permission for: ${dirPath}`);
+                  logger.debug(`[OPENDIR] DENIED - No permission for: ${dirPath}`);
                   logActivity('OPENDIR_DENIED', dirPath, false);
                   return sftp.status(reqId, SFTP_STATUS_CODE.PERMISSION_DENIED);
                 }
 
                 const realPath = pathMapper(dirPath);
-                console.log(`[OPENDIR] Mapping: ${dirPath} -> ${realPath}`);
+                logger.debug(`[OPENDIR] Mapping: ${dirPath} -> ${realPath}`);
 
                 try {
-                  console.log(`[OPENDIR] Reading directory: ${realPath}`);
+                  logger.debug(`[OPENDIR] Reading directory: ${realPath}`);
                   const files = fs.readdirSync(realPath);
-                  console.log(`[OPENDIR] Found ${files.length} files`);
+                  logger.debug(`[OPENDIR] Found ${files.length} files`);
                   
                   // Create a unique handle for this directory read operation
                   const handleId = `dir_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -485,40 +485,40 @@ export class SFTPServer extends EventEmitter {
                   }
                   this.dirHandles.set(handleId, { path: realPath, files, sentAll: false });
                   
-                  console.log(`[OPENDIR] Created handle ${handleId} for ${files.length} files`);
+                  logger.debug(`[OPENDIR] Created handle ${handleId} for ${files.length} files`);
                   
                   logActivity('OPENDIR', dirPath, true);
                   sftp.handle(reqId, handleBuffer);
-                  console.log(`[OPENDIR] Handle sent successfully`);
+                  logger.debug(`[OPENDIR] Handle sent successfully`);
                 } catch (err: any) {
-                  console.error('[OPENDIR] Error:', err);
+                  logger.error('[OPENDIR] Error:', err);
                   logActivity('OPENDIR_FAILED', dirPath, false);
                   sftp.status(reqId, SFTP_STATUS_CODE.NO_SUCH_FILE);
                 }
               });
 
               sftp.on('READDIR', (reqId, handle) => {
-                console.log(`[READDIR] Request ${reqId}`);
+                logger.debug(`[READDIR] Request ${reqId}`);
                 try {
                   const handleId = handle.toString();
-                  console.log(`[READDIR] Handle ID: ${handleId}`);
+                  logger.debug(`[READDIR] Handle ID: ${handleId}`);
                   
                   if (!this.dirHandles || !this.dirHandles.has(handleId)) {
-                    console.log(`[READDIR] Invalid or expired handle`);
+                    logger.debug(`[READDIR] Invalid or expired handle`);
                     return sftp.status(reqId, SFTP_STATUS_CODE.FAILURE);
                   }
                   
                   const handleData = this.dirHandles.get(handleId)!;
                   const { path: dirPath, files, sentAll } = handleData;
-                  console.log(`[READDIR] Path: ${dirPath}, Files: ${files.length}, SentAll: ${sentAll}`);
+                  logger.debug(`[READDIR] Path: ${dirPath}, Files: ${files.length}, SentAll: ${sentAll}`);
 
                   if (sentAll) {
-                    console.log(`[READDIR] EOF - all files already sent`);
+                    logger.debug(`[READDIR] EOF - all files already sent`);
                     return sftp.status(reqId, SFTP_STATUS_CODE.EOF);
                   }
 
                   const fileList: any[] = [];
-                  console.log(`[READDIR] Processing ${files.length} files`);
+                  logger.debug(`[READDIR] Processing ${files.length} files`);
 
                   for (const file of files) {
                     try {
@@ -537,18 +537,18 @@ export class SFTPServer extends EventEmitter {
                         }
                       });
                     } catch (err) {
-                      console.error(`[READDIR] Error stating file ${file}:`, err);
+                      logger.error(`[READDIR] Error stating file ${file}:`, err);
                     }
                   }
 
                   // Mark as sent so next READDIR returns EOF
                   handleData.sentAll = true;
 
-                  console.log(`[READDIR] Sending ${fileList.length} file entries`);
+                  logger.debug(`[READDIR] Sending ${fileList.length} file entries`);
                   sftp.name(reqId, fileList);
-                  console.log(`[READDIR] Response sent`);
+                  logger.debug(`[READDIR] Response sent`);
                 } catch (err) {
-                  console.error('[READDIR] Error:', err);
+                  logger.error('[READDIR] Error:', err);
                   sftp.status(reqId, SFTP_STATUS_CODE.FAILURE);
                 }
               });
@@ -709,17 +709,17 @@ export class SFTPServer extends EventEmitter {
         });
 
         client.on('error', (err) => {
-          console.error('SFTP client error:', err);
+          logger.error('SFTP client error:', err);
         });
 
         client.on('end', () => {
-          console.log('[CLIENT] End event - client disconnecting');
-          console.log(`[SESSION] Removing session ${sessionId} for user ${username}`);
-          console.log(`[SESSION] Sessions before delete: ${this.activeSessions.size}`);
+          logger.debug('[CLIENT] End event - client disconnecting');
+          logger.debug(`[SESSION] Removing session ${sessionId} for user ${username}`);
+          logger.debug(`[SESSION] Sessions before delete: ${this.activeSessions.size}`);
           
           // Remove from active sessions
           this.activeSessions.delete(sessionId);
-          console.log(`[SESSION] Sessions after delete: ${this.activeSessions.size}`);
+          logger.debug(`[SESSION] Sessions after delete: ${this.activeSessions.size}`);
           
           // Clear idle timeout for this client
           this.clearIdleTimeout(client);
@@ -728,7 +728,7 @@ export class SFTPServer extends EventEmitter {
           if (this.dirHandles) {
             const handleCount = this.dirHandles.size;
             if (handleCount > 0) {
-              console.log(`[DISCONNECT] Cleaning up ${handleCount} directory handles`);
+              logger.debug(`[DISCONNECT] Cleaning up ${handleCount} directory handles`);
               this.dirHandles.clear();
             }
           }
@@ -750,13 +750,13 @@ export class SFTPServer extends EventEmitter {
       });
 
       this.server.listen(this.listener.port, this.listener.bindingIp, () => {
-        console.log(`SFTP server listening on ${this.listener.bindingIp}:${this.listener.port}`);
+        logger.debug(`SFTP server listening on ${this.listener.bindingIp}:${this.listener.port}`);
         this.emit('started');
         resolve();
       });
 
       this.server.on('error', (err: Error) => {
-        console.error('SFTP server error:', err);
+        logger.error('SFTP server error:', err);
         this.emit('error', err);
         reject(err);
       });
@@ -776,7 +776,7 @@ export class SFTPServer extends EventEmitter {
       
       if (this.server) {
         this.server.close(() => {
-          console.log('SFTP server stopped');
+          logger.debug('SFTP server stopped');
           this.emit('stopped');
           resolve();
         });
@@ -787,14 +787,14 @@ export class SFTPServer extends EventEmitter {
   }
 
   getActiveSessions(): Array<{ sessionId: string; username: string; ipAddress: string; connectedAt: Date }> {
-    console.log(`[SESSION] getActiveSessions called - Total: ${this.activeSessions.size}`);
+    logger.debug(`[SESSION] getActiveSessions called - Total: ${this.activeSessions.size}`);
     const sessions = Array.from(this.activeSessions.entries()).map(([sessionId, session]) => ({
       sessionId,
       username: session.username,
       ipAddress: session.ipAddress,
       connectedAt: session.connectedAt
     }));
-    console.log(`[SESSION] Returning sessions:`, sessions);
+    logger.debug(`[SESSION] Returning sessions:`, sessions);
     return sessions;
   }
 
@@ -816,7 +816,7 @@ export class SFTPServer extends EventEmitter {
     
     // Set new timeout
     const timeout = setTimeout(() => {
-      console.log(`[IDLE TIMEOUT] Force disconnecting idle client: ${username}`);
+      logger.debug(`[IDLE TIMEOUT] Force disconnecting idle client: ${username}`);
       client.end();
       this.clientTimeouts.delete(client);
     }, this.idleTimeoutMs);

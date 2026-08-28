@@ -8,17 +8,13 @@ module.exports = {
     '!src/**/*.d.ts',
     '!src/test-client.ts',
     '!src/renderer.js',
-    '!src/main.ts' // Electron main process is hard to unit test
+    '!src/main.ts'
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   verbose: true,
-  testPathIgnorePatterns: [
-    '/node_modules/',
-    'database.test.ts',
-    'sftp-server.test.ts',
-    'ftp-server.test.ts',
-    'server-manager.test.ts'
-  ]
+  // These two files use an outdated schema superseded by *-enhanced.test.ts variants
+  testPathIgnorePatterns: ['/node_modules/', 'database.test.ts', 'server-manager.test.ts'],
+  testEnvironmentOptions: {}
 };

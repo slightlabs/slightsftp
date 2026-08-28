@@ -1082,6 +1082,11 @@ export class WebServer {
     return html;
   }
 
+  /** Expose the Express app for testing via supertest */
+  getApp(): express.Application {
+    return this.app;
+  }
+
   async start(): Promise<void> {
     return new Promise((resolve) => {
       this.server.listen(this.port, () => {
