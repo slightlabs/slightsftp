@@ -27,7 +27,7 @@
     "gui"
   ],
   "author": "Sujith Gunawardhane",
-  "license": "ISC",
+  "license": "MIT",
   "build": {
     "appId": "com.slightsftp.app",
     "productName": "SLightSFTP",

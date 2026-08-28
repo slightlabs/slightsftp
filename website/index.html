@@ -176,7 +176,7 @@
                 <div class="feature-card">
                     <div class="feature-icon">🔑</div>
                     <h3>Flexible Authentication</h3>
-                    <p>Support for password and SSH public key authentication with per-user configuration.</p>
+                    <p>Password authentication (SHA-256 hashed) and SSH public key authentication (RSA &amp; ED25519). Each method can be enabled or disabled independently per user.</p>
                 </div>
 
                 <div class="feature-card">
@@ -194,13 +194,13 @@
                 <div class="feature-card">
                     <div class="feature-icon">🔍</div>
                     <h3>Comprehensive Logging</h3>
-                    <p>Detailed activity logs with authentication method, remote IP, and operation tracking. Export to CSV or copy to clipboard.</p>
+                    <p>All operations are logged with timestamp, username, action, path, and status. Logs are persisted to SQLite with a configurable 30-day retention policy. Export to CSV or copy to clipboard.</p>
                 </div>
 
                 <div class="feature-card">
                     <div class="feature-icon">🛡️</div>
                     <h3>Granular Permissions</h3>
-                    <p>Control read, write, delete, rename, create, and list permissions per user per listener.</p>
+                    <p>8 per-listener permission flags per user: <strong>read, create, edit, append, delete, list, create-dir, rename</strong>. Virtual paths carry an independent 7-flag permission set with optional recursive application to subdirectories.</p>
                 </div>
 
                 <div class="feature-card">
@@ -230,7 +230,19 @@
                 <div class="feature-card">
                     <div class="feature-icon">✅</div>
                     <h3>Comprehensive Testing</h3>
-                    <p>35+ integration tests with real SFTP/FTP connections ensure reliability and protocol compliance.</p>
+                    <p>400+ test cases across 20 test files covering SFTP/FTP integration, authentication, virtual path resolution, disconnect handling, public key auth, and database operations.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">📡</div>
+                    <h3>Full REST API</h3>
+                    <p>23+ HTTP endpoints covering listeners, users, virtual paths, active sessions, activity logs, and file operations. Combine with WebSocket push for real-time dashboards or headless automation.</p>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">📂</div>
+                    <h3>Web File Browser</h3>
+                    <p>Browse user directory trees, download individual files, and upload files directly through the web interface — no separate FTP client needed for quick file access.</p>
                 </div>
             </div>
         </div>
@@ -249,7 +261,7 @@
                     </p>
                     <ul class="features-list">
                         <li>Real-time activity monitoring with 1-second updates</li>
-                        <li>Login authentication logging with method and remote IP</li>
+                        <li>Login authentication logging with method (password / public key)</li>
                         <li>Activity log export (Copy/Save to CSV)</li>
                         <li>Dashboard auto-refresh every 5 seconds</li>
                         <li>Enhanced error handling for file operations</li>
@@ -261,7 +273,7 @@
                         <li>Session management with idle timeout (5 minutes)</li>
                         <li>Automatic disconnect handling for idle connections</li>
                         <li>Windows MSI installer for easy deployment</li>
-                        <li>Comprehensive test suite with 35+ integration tests</li>
+                        <li>Comprehensive test suite with 400+ test cases across 20 test files</li>
                         <li>Enhanced security with robust disconnect handling</li>
                         <li>Dual deployment modes: Desktop (Electron) or Web Server</li>
                     </ul>
@@ -272,15 +284,9 @@
                         <span>Download for Windows (x64)</span>
                         <span class="file-size">~100 MB</span>
                     </a>
-                    <p class="download-note">MSI Installer - Requires Windows 10 or later</p>
+                    <p class="download-note">MSI Installer — Windows 10/11 x64, administrator rights required</p>
                     
-                    <div class="download-support">
-                        <p class="support-text">Enjoying SLightSFTP? Support the development!</p>
-                        <a href="https://buymeacoffee.com/slighsftp" target="_blank" class="coffee-btn-download">
-                            <span class="coffee-icon">☕</span>
-                            <span>Buy Me a Coffee</span>
-                        </a>
-                    </div>
+
                 </div>
             </div>
         </div>
@@ -304,10 +310,10 @@
                 <div class="architecture-card">
                     <h3>Web Server Stack</h3>
                     <ul>
-                        <li>Node.js + TypeScript back end</li>
-                        <li>REST + WebSocket API for live stats and control</li>
-                        <li>Headless friendly: run as Windows service or scheduled task</li>
-                        <li>Same database schema shared across modes</li>
+                        <li>Node.js + TypeScript back end (Express v5)</li>
+                        <li>23+ REST endpoints + WebSocket for live push events</li>
+                        <li>Cookie-based sessions (24-hour lifetime)</li>
+                        <li>Same SQLite database shared with Desktop mode</li>
                     </ul>
                 </div>
                 <div class="architecture-card">
@@ -326,7 +332,7 @@
 Desktop Mode
 +-------------------+     +------------------+     +--------------------+
 | Electron GUI      | --> | Node Controller  | --> | SFTP/FTP Listeners |
-| (React/HTML)      |     | (IPC + WebSocket)|     | (Ports 22/21/Custom)|
+| (HTML/JS/CSS)     |     | (IPC + WebSocket)|     | (Ports 22/21/Custom)|
 +-------------------+     +------------------+     +--------------------+
          |                       |                          |
          v                       v                          v
@@ -341,12 +347,15 @@ Client Browser --> Web GUI --> REST/WebSocket API --> Core Server --> Listeners 
 
             <div class="architecture-subgrid">
                 <div class="architecture-card">
-                    <h3>Data Model Highlights</h3>
+                    <h3>Data Model — 7 Tables</h3>
                     <ul>
-                        <li>Users: credentials, SSH keys, listener bindings, permissions</li>
-                        <li>Listeners: protocol, port, bind IP, status, statistics</li>
-                        <li>Virtual Paths: virtual to local mapping with scoped permissions</li>
-                        <li>Activity: timestamp, username, path, verb, success/error, remote IP</li>
+                        <li><strong>users</strong> — credentials, SSH keys, GUI access flag</li>
+                        <li><strong>listeners</strong> — protocol, port, bind IP, enabled flag</li>
+                        <li><strong>user_listeners</strong> — user ↔ listener subscriptions</li>
+                        <li><strong>virtual_paths</strong> — virtual-to-local path mappings with 7-flag permissions</li>
+                        <li><strong>permissions</strong> — 8-flag per-user per-listener permission sets</li>
+                        <li><strong>server_activities</strong> — timestamped audit log (action, path, success)</li>
+                        <li><strong>settings</strong> — key/value config (e.g. log retention days)</li>
                     </ul>
                 </div>
                 <div class="architecture-card">
@@ -474,7 +483,7 @@ Client Browser --> Web GUI --> REST/WebSocket API --> Core Server --> Listeners 
                 <div class="protocol-card wide">
                     <h3>Public Key Authentication (SSH)</h3>
                     <ol>
-                        <li>Generate a key pair on the client (<code>ssh-keygen -t ed25519 -C "user@host"</code>)</li>
+                        <li>Generate a key pair on the client — RSA or ED25519 are both supported:<br><code>ssh-keygen -t ed25519 -C "user@host"</code></li>
                         <li>Copy the <strong>public</strong> key contents (e.g., <code>id_ed25519.pub</code>)</li>
                         <li>In SLightSFTP Users panel, enable "Public Key" and paste the key</li>
                         <li>Keep "Password" enabled for fallback or disable for key-only</li>
@@ -489,7 +498,7 @@ Client Browser --> Web GUI --> REST/WebSocket API --> Core Server --> Listeners 
                         <li>SFTP: allow chosen port (default 22); prefer static IP allowlist</li>
                         <li>FTP: allow control port 21 plus passive range (configurable); use narrow ranges</li>
                         <li>Web GUI: default 3000; proxy behind IIS/NGINX for TLS</li>
-                        <li>Audit: activity log captures remote IP and auth method for every attempt</li>
+                        <li>Audit: activity log records every operation with username, action, path, and outcome</li>
                     </ul>
                 </div>
             </div>
@@ -591,14 +600,18 @@ Client Browser --> Web GUI --> REST/WebSocket API --> Core Server --> Listeners 
                 </ol>
 
                 <h4>User Permissions</h4>
+                <p>Each user has 8 permission flags set <strong>per listener</strong>:</p>
                 <ul>
-                    <li><strong>Read:</strong> Download files and view directory contents</li>
-                    <li><strong>Write:</strong> Upload and modify files</li>
+                    <li><strong>Read:</strong> Download files and view file content</li>
+                    <li><strong>Create:</strong> Upload new files</li>
+                    <li><strong>Edit:</strong> Overwrite existing files</li>
+                    <li><strong>Append:</strong> Append data to existing files</li>
                     <li><strong>Delete:</strong> Remove files and directories</li>
-                    <li><strong>Rename:</strong> Rename files and directories</li>
-                    <li><strong>Create:</strong> Create new files and directories</li>
                     <li><strong>List:</strong> View directory listings</li>
+                    <li><strong>Create Dir:</strong> Create new directories</li>
+                    <li><strong>Rename:</strong> Rename files and directories</li>
                 </ul>
+                <p>Virtual paths carry an independent set of the same flags (excluding Edit/Append collapsed to canWrite/canAppend) with an <strong>Apply to Subdirectories</strong> toggle.</p>
             </div>
 
             <div class="guide-section">
@@ -646,7 +659,7 @@ Client Browser --> Web GUI --> REST/WebSocket API --> Core Server --> Listeners 
                 <h4>Activity Log</h4>
                 <ul>
                     <li>Detailed logs of all operations</li>
-                    <li>Shows: timestamp, listener, username, action, path, authentication method, and remote IP:port</li>
+                    <li>Shows: timestamp, listener, username, action, path, and success/failure status</li>
                     <li><strong>Copy:</strong> Copy all logs to clipboard</li>
                     <li><strong>Save:</strong> Export logs to CSV file</li>
                     <li>Filter and clear logs by date range</li>
@@ -740,13 +753,12 @@ Client Browser --> Web GUI --> REST/WebSocket API --> Core Server --> Listeners 
     <section id="manual" class="manual">
         <div class="container">
             <h2>User Manual & Visual Walkthrough</h2>
-            <p class="section-intro">Step-by-step guidance with annotated screenshot placeholders. Swap placeholders with your real captures to boost trust and ad quality.</p>
+            <p class="section-intro">Step-by-step guidance for common tasks in SLightSFTP.</p>
 
             <div class="manual-grid">
                 <div class="manual-card">
                     <h3>Dashboard Overview</h3>
                     <p>Shows live activity, listener health, and recent errors. Use it to confirm connections, throughput, and failures in real time.</p>
-                    <div class="screenshot-placeholder" aria-label="Dashboard screenshot placeholder">Dashboard screenshot (insert image)</div>
                     <ol>
                         <li>Open the app; dashboard loads by default</li>
                         <li>Verify listeners are green; start if stopped</li>
@@ -756,7 +768,6 @@ Client Browser --> Web GUI --> REST/WebSocket API --> Core Server --> Listeners 
                 <div class="manual-card">
                     <h3>User & Key Management</h3>
                     <p>Create accounts, attach SSH keys, and map virtual paths.</p>
-                    <div class="screenshot-placeholder" aria-label="User management screenshot placeholder">Users page screenshot (insert image)</div>
                     <ol>
                         <li>Add user ➜ set password ➜ paste public key (optional)</li>
                         <li>Assign listeners (SFTP/FTP) and permissions (read, write, delete, rename, create, list)</li>
@@ -766,7 +777,6 @@ Client Browser --> Web GUI --> REST/WebSocket API --> Core Server --> Listeners 
                 <div class="manual-card">
                     <h3>Listener Controls</h3>
                     <p>Start, stop, and edit listener settings from GUI or Web.</p>
-                    <div class="screenshot-placeholder" aria-label="Listener configuration screenshot placeholder">Listeners screenshot (insert image)</div>
                     <ol>
                         <li>Open Listeners panel ➜ click Add</li>
                         <li>Select protocol, port, bind IP; save</li>
@@ -776,23 +786,12 @@ Client Browser --> Web GUI --> REST/WebSocket API --> Core Server --> Listeners 
                 <div class="manual-card">
                     <h3>Activity & Audit Exports</h3>
                     <p>Audit-ready logs with CSV export and copy-to-clipboard.</p>
-                    <div class="screenshot-placeholder" aria-label="Activity log screenshot placeholder">Activity log screenshot (insert image)</div>
                     <ol>
                         <li>Open Activity tab to filter by time and listener</li>
                         <li>Click Copy to move logs to clipboard or Save to CSV</li>
                         <li>Archive exports for compliance evidence</li>
                     </ol>
                 </div>
-            </div>
-
-            <div class="manual-notes">
-                <h3>Screenshot Tips</h3>
-                <ul>
-                    <li>Capture at 1440p with neutral theme for clarity</li>
-                    <li>Blur sensitive hostnames or IPs</li>
-                    <li>Highlight buttons and toggles with callouts before export</li>
-                    <li>Keep file names descriptive (e.g., <code>dashboard-live.png</code>)</li>
-                </ul>
             </div>
         </div>
     </section>
@@ -860,7 +859,7 @@ Client Browser --> Web GUI --> REST/WebSocket API --> Core Server --> Listeners 
                         <li>✨ Automatic idle timeout (5 minutes)</li>
                         <li>✨ Disconnect handling for idle connections</li>
                         <li>✨ Windows MSI installer</li>
-                        <li>✨ Comprehensive test suite (35+ integration tests)</li>
+                        <li>✨ Comprehensive test suite (400+ test cases, 20 test files)</li>
                         <li>✨ Real connection testing with SFTP/FTP protocols</li>
                         <li>✨ Activity log export (CSV/Clipboard)</li>
                         <li>✨ System tray integration (Desktop mode)</li>
@@ -868,7 +867,6 @@ Client Browser --> Web GUI --> REST/WebSocket API --> Core Server --> Listeners 
                         <li>✨ Authentication logging with IP tracking</li>
                         <li>✨ Browser-based remote administration</li>
                         <li>✨ WebSocket real-time updates in Web mode</li>
-                    </ul>
                         <li>✨ Password and SSH key authentication</li>
                         <li>✨ Session management</li>
                         <li>✨ Activity log with export functionality</li>
@@ -889,12 +887,13 @@ Client Browser --> Web GUI --> REST/WebSocket API --> Core Server --> Listeners 
             
             <div class="open-source-info">
                 <h3>🌟 Open Source Project</h3>
-                <p>SLightSFTP is a free and open source software project hosted on GitHub. We welcome contributions from the community!</p>
+                <p>SLightSFTP is free and open source software released under the <strong>MIT License</strong>. You are free to use, copy, modify, merge, publish, distribute, and contribute to this project.</p>
                 <div class="github-links">
                     <a href="https://github.com/sujithsuranga/slightsftp" target="_blank" class="btn btn-github">📦 View Source Code</a>
                     <a href="https://github.com/sujithsuranga/slightsftp/issues" target="_blank" class="btn btn-github">🐛 Report Issues</a>
+                    <a href="https://github.com/sujithsuranga/slightsftp/blob/main/LICENSE" target="_blank" class="btn btn-github">📄 MIT License</a>
                 </div>
-                <p class="github-note">All issues should be logged on GitHub. The developer is working to fix them as soon as possible. Anyone can contribute to the project!</p>
+                <p class="github-note">All issues should be logged on GitHub. Contributions and pull requests are welcome!</p>
             </div>
             
             <div class="contact-content">
@@ -943,6 +942,42 @@ Client Browser --> Web GUI --> REST/WebSocket API --> Core Server --> Listeners 
         </div>
     </section>
 
+    <!-- Tech Stack Section -->
+    <section id="tech-stack" class="architecture">
+        <div class="container">
+            <h2>Tech Stack</h2>
+            <p class="section-intro">Built on proven open-source libraries with a TypeScript-first codebase.</p>
+            <div class="architecture-grid">
+                <div class="architecture-card">
+                    <h3>Core Runtime</h3>
+                    <ul>
+                        <li><strong>Electron v28</strong> — Desktop GUI shell (Windows)</li>
+                        <li><strong>Node.js</strong> — SFTP/FTP server engine</li>
+                        <li><strong>TypeScript</strong> — ES2020 target, strict mode</li>
+                        <li><strong>sql.js v1.10</strong> — SQLite embedded in JavaScript</li>
+                    </ul>
+                </div>
+                <div class="architecture-card">
+                    <h3>Protocols &amp; Web</h3>
+                    <ul>
+                        <li><strong>ssh2 v1.15</strong> — SFTP over SSH protocol</li>
+                        <li><strong>ftp-srv v4.6</strong> — FTP server implementation</li>
+                        <li><strong>Express v5.2</strong> — Web GUI and REST API</li>
+                        <li><strong>ws v8.18</strong> — WebSocket real-time push</li>
+                    </ul>
+                </div>
+                <div class="architecture-card">
+                    <h3>Quality &amp; Observability</h3>
+                    <ul>
+                        <li><strong>Jest</strong> — 400+ test cases, ts-jest runner</li>
+                        <li><strong>Winston v3.19</strong> — Structured file logging with rotation (10 MB / 5 backups / 7-day daily files)</li>
+                        <li><strong>electron-builder</strong> — MSI packaging for Windows</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <!-- Footer -->
     <footer class="footer">
         <div class="container">
@@ -973,16 +1008,13 @@ Client Browser --> Web GUI --> REST/WebSocket API --> Core Server --> Listeners 
                     </ul>
                 </div>
                 <div class="footer-section">
-                    <h4>Support the Project</h4>
-                    <p>Help keep SLightSFTP free and open!</p>
-                    <a href="https://buymeacoffee.com/slighsftp" target="_blank" class="coffee-btn">
-                        <span class="coffee-icon">☕</span>
-                        <span>Buy Me a Coffee</span>
-                    </a>
+                    <h4>Open Source</h4>
+                    <p>Licensed under the MIT License. Free to use, modify, and distribute.</p>
+                    <a href="https://github.com/sujithsuranga/slightsftp" target="_blank" class="btn btn-github">⭐ Star on GitHub</a>
                 </div>
             </div>
             <div class="footer-bottom">
-                <p>&copy; 2025 SLightSFTP Server. Free and Open Source Software.</p>
+                <p>&copy; 2026 SLightSFTP. Released under the <a href="https://github.com/sujithsuranga/slightsftp/blob/main/LICENSE" target="_blank">MIT License</a>. Free and Open Source Software.</p>
                 <p>Contact: <a href="mailto:slightsftp@gmail.com">slightsftp@gmail.com</a> | GitHub: <a href="https://github.com/sujithsuranga/slightsftp" target="_blank">sujithsuranga/slightsftp</a></p>
             </div>
         </div>
