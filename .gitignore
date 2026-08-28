@@ -22,3 +22,9 @@ logs/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Release binaries — distributed via GitHub Releases, not committed to git
+website/downloads/*.msi
+website/downloads/*.AppImage
+website/downloads/*.deb
+release/

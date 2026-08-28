@@ -100,9 +100,8 @@ export class WebServer {
       const rendererPath = path.join(__dirname, 'renderer.js');
       let rendererJs = fs.readFileSync(rendererPath, 'utf-8');
       
-      // Remove require('electron') statements for browser compatibility
-      rendererJs = rendererJs.replace(/const\s*{\s*ipcRenderer\s*}\s*=\s*require\('electron'\);?\s*/g, '');
-      rendererJs = rendererJs.replace(/const\s+\w+\s*=\s*require\('electron'\);?\s*/g, '');
+      // Remove Electron IPC bootstrap line (replaced by window.ipcRenderer mock below)
+      rendererJs = rendererJs.replace(/const ipcRenderer = window\.api \|\| window\.ipcRenderer;?\s*/g, '');
       
       res.type('application/javascript');
       res.send(rendererJs);
@@ -112,8 +111,8 @@ export class WebServer {
     this.app.get('/login', (req: Request, res: Response) => {
       let loginHtml = fs.readFileSync(path.join(__dirname, 'login.html'), 'utf-8');
       
-      // Remove the require('electron') line and replace ipcRenderer usage
-      loginHtml = loginHtml.replace(/const\s*{\s*ipcRenderer\s*}\s*=\s*require\('electron'\);?\s*/g, '');
+      // Remove Electron IPC bootstrap line from login.html
+      loginHtml = loginHtml.replace(/const ipcRenderer = window\.api \|\| window\.ipcRenderer;?\s*/g, '');
       
       // Replace window.close() calls
       loginHtml = loginHtml.replace(/window\.close\(\);?/g, 'window.location.href = \'/\';');

@@ -1,4 +1,6 @@
-const { ipcRenderer } = require('electron');
+// In Electron, window.api is exposed by preload.ts via contextBridge.
+// In web mode, web-server.ts injects window.ipcRenderer as a fetch/WebSocket mock.
+const ipcRenderer = window.api || window.ipcRenderer;
 
 let currentEditingUser = null;
 let currentUserVirtualPaths = [];

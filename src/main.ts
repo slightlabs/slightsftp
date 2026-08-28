@@ -61,8 +61,10 @@ function createLoginWindow(): void {
     resizable: false,
     frame: false,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false
     },
     icon: path.join(__dirname, '../assets/icon.png')
   });
@@ -87,8 +89,10 @@ function createWindow(): void {
     width: 1200,
     height: 800,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: false
     },
     icon: path.join(__dirname, '../assets/icon.png')
   });
@@ -410,6 +414,9 @@ function setupIpcHandlers(): void {
         return { success: false, error: 'Invalid username or password' };
       }
 
+      const DEFAULT_PASSWORD_HASH = crypto.createHash('sha256').update('admin123').digest('hex');
+      const mustChangePassword = user.password === DEFAULT_PASSWORD_HASH;
+
       // Authentication successful
       authenticatedUser = user;
       logger.info('Authentication successful! User:', { username: authenticatedUser.username });
@@ -426,6 +433,11 @@ function setupIpcHandlers(): void {
         success: true
       });
       
+      // If default password still in use, keep login window open for the password-change step
+      if (mustChangePassword) {
+        return { success: true, mustChangePassword: true, user: { username: user.username, id: user.id } };
+      }
+
       // Close login window and open main window
       if (loginWindow) {
         loginWindow.close();
@@ -440,6 +452,30 @@ function setupIpcHandlers(): void {
     } catch (error) {
       logger.error('Authentication error:', error);
       return { success: false, error: 'An error occurred during authentication' };
+    }
+  });
+
+  // Forced password change after first login with default credentials
+  ipcMain.handle('set-first-login-password', async (_event, newPassword: string) => {
+    try {
+      if (!authenticatedUser) return { success: false, error: 'Not authenticated' };
+      if (!newPassword || newPassword.length < 8) {
+        return { success: false, error: 'Password must be at least 8 characters' };
+      }
+      const hashedNew = crypto.createHash('sha256').update(newPassword).digest('hex');
+      db.updateUser(authenticatedUser.username, { password: hashedNew });
+      logger.info('Password changed for user:', authenticatedUser.username);
+
+      if (loginWindow) {
+        loginWindow.close();
+        loginWindow = null;
+      }
+      createWindow();
+      createTray();
+      return { success: true };
+    } catch (error) {
+      logger.error('Password change error:', error);
+      return { success: false, error: 'Failed to change password' };
     }
   });
 
