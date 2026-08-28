@@ -298,6 +298,7 @@ multiple lines in storage`;
         db.setPermission({
           userId: user.id,
           listenerId: listenerId,
+      canRead: true,
           canCreate: false,
           canEdit: false,
           canAppend: false,

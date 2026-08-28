@@ -388,6 +388,7 @@ describe('DatabaseManager - Enhanced Tests', () => {
         db.setPermission({
           userId: user.id,
           listenerId: listenerId,
+      canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: true,
@@ -447,6 +448,7 @@ describe('DatabaseManager - Enhanced Tests', () => {
         db.setPermission({
           userId: user.id,
           listenerId: listenerId,
+      canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: true,
@@ -480,6 +482,7 @@ describe('DatabaseManager - Enhanced Tests', () => {
         db.setPermission({
           userId: user.id,
           listenerId: listenerId,
+      canRead: true,
           canCreate: false,
           canEdit: false,
           canAppend: false,
@@ -513,6 +516,7 @@ describe('DatabaseManager - Enhanced Tests', () => {
         db.setPermission({
           userId: user.id,
           listenerId: listenerId,
+      canRead: true,
           canCreate: true,
           canEdit: false,
           canAppend: false,
@@ -526,6 +530,7 @@ describe('DatabaseManager - Enhanced Tests', () => {
         db.setPermission({
           userId: user.id,
           listenerId: listenerId,
+      canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: true,
@@ -568,6 +573,7 @@ describe('DatabaseManager - Enhanced Tests', () => {
         db.setPermission({
           userId: user.id,
           listenerId: listener1,
+      canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: true,
@@ -580,6 +586,7 @@ describe('DatabaseManager - Enhanced Tests', () => {
         db.setPermission({
           userId: user.id,
           listenerId: listener2,
+      canRead: true,
           canCreate: true,
           canEdit: false,
           canAppend: false,

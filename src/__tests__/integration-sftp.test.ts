@@ -75,6 +75,7 @@ describe('SFTP Server Integration Tests', () => {
     db.setPermission({
       userId: user!.id!,
       listenerId: listener!.id!,
+      canRead: true,
       canCreate: true,
       canEdit: true,
       canAppend: true,

@@ -1,15 +1,21 @@
-# Building SLightSFTP MSI Installer
+# Building SLightSFTP
 
 ## Prerequisites
 
-1. **Node.js** (v18 or higher)
+1. **Node.js** v18 or higher
 2. **npm** (comes with Node.js)
-3. **Windows** (for building MSI)
-4. **WiX Toolset** v3.11 or higher (optional, electron-builder will download if needed)
+
+### Windows only
+- **WiX Toolset** v3.11 or higher (optional — electron-builder downloads it automatically)
+
+### Linux only
+- **rpmbuild** (optional, for RPM packages): `sudo apt install rpm` / `sudo dnf install rpm-build`
+- **fakeroot** (for deb packages): `sudo apt install fakeroot`
+- No root required for AppImage builds
 
 ## Directory Structure
 
-The installed application will have the following structure:
+### Windows
 
 ```
 C:\Program Files\SLightSFTP\
@@ -23,41 +29,65 @@ C:\Program Files\SLightSFTP\
 └── resources\              # Application resources
 ```
 
-## Building the MSI Installer
+### Linux (installed via deb/rpm)
+
+```
+/opt/SLightSFTP/
+├── slightsftp              # Main executable
+├── resources/
+│   ├── app/
+│   ├── config/
+│   │   └── config.db      # Database file
+│   ├── logs/              # Log files
+│   └── data/
+│       └── ftp-root/      # Default FTP root directory
+```
+
+The AppImage is self-contained and runs from wherever you place it.
+
+## Building
 
 ### Step 1: Install Dependencies
 
-```powershell
+```bash
 npm install
 ```
 
 ### Step 2: Build TypeScript
 
-```powershell
+```bash
 npm run build
 ```
 
-### Step 3: Create MSI Installer
+### Step 3a: Build for Windows (MSI)
 
 ```powershell
 npm run dist:win
 ```
 
-This will:
-- Compile the TypeScript code
-- Package the Electron application
-- Create an MSI installer in the `release` directory
+Output: `release/SLightSFTP-1.1.0-setup.msi`
 
-### Output
+### Step 3b: Build for Linux (AppImage + deb)
 
-The MSI installer will be created at:
+```bash
+npm run dist:linux
 ```
-release/SLightSFTP-1.0.0-setup.msi
+
+Output:
+- `release/SLightSFTP-1.1.0.AppImage` — universal, no install needed
+- `release/SLightSFTP-1.1.0.deb` — Debian/Ubuntu package
+
+### Running in Web Server Mode (any platform, no Electron needed)
+
+```bash
+npm run start:web
 ```
+
+Opens the management GUI at `http://localhost:3000`. Use `WEB_PORT=8080 npm run start:web` to change the port.
 
 ## Installation Features
 
-The MSI installer includes:
+### Windows MSI installer includes
 
 ✅ **User-selectable installation directory**
   - Default: `C:\Program Files\SLightSFTP`
@@ -76,12 +106,30 @@ The MSI installer includes:
   - Installed for all users
   - Requires administrator privileges
 
-## Icon File
+### Linux deb package includes
 
-Place your application icon at:
-- `build/icon.ico` - Windows icon (256x256 recommended)
+✅ **Standard installation to `/opt/SLightSFTP`**
 
-If no icon is provided, the default Electron icon will be used.
+✅ **Desktop entry** for application launchers
+
+✅ **Uninstall** via `sudo apt remove slightsftp`
+
+### Linux AppImage
+
+✅ **No installation required** — just mark as executable and run:
+
+```bash
+chmod +x SLightSFTP-1.1.0.AppImage
+./SLightSFTP-1.1.0.AppImage
+```
+
+## Icon Files
+
+Place application icons at:
+- `build/icon.ico` — Windows (256×256 recommended)
+- `build/icon.png` — Linux (512×512 recommended)
+
+If no icon is provided, the default Electron icon is used.
 
 ## Configuration
 
@@ -111,11 +159,17 @@ Update version in `package.json`:
 
 ## Running After Installation
 
-After installation, the application can be launched:
+### Windows
 
-1. **Desktop shortcut** - "SLightSFTP Server"
-2. **Start Menu** - Search for "SLightSFTP Server"
-3. **Directly** - `C:\Program Files\SLightSFTP\bin\SLightSFTP.exe`
+1. **Desktop shortcut** — "SLightSFTP Server"
+2. **Start Menu** — search for "SLightSFTP Server"
+3. **Directly** — `C:\Program Files\SLightSFTP\bin\SLightSFTP.exe`
+
+### Linux
+
+1. **AppImage** — `./SLightSFTP-1.1.0.AppImage`
+2. **deb install** — application launcher entry or run `slightsftp` from terminal
+3. **Web server mode (any platform)** — `npm run start:web` then open `http://localhost:3000`
 
 ## Default Credentials
 
@@ -128,43 +182,61 @@ After first launch:
 ### Build Fails
 
 1. Ensure all dependencies are installed:
-   ```powershell
+   ```bash
    npm install
    ```
 
 2. Clean and rebuild:
+
+   **Windows (PowerShell)**
    ```powershell
    Remove-Item -Path dist, release -Recurse -Force
    npm run build
    npm run dist:win
    ```
 
-### MSI Installation Fails
+   **Linux**
+   ```bash
+   rm -rf dist release
+   npm run build
+   npm run dist:linux
+   ```
 
-1. Run as Administrator
-2. Check Windows Event Viewer for detailed error messages
-3. Ensure no other version is currently running
+### Installation Fails
+
+**Windows:** Run the MSI as Administrator. Check Windows Event Viewer for details.
+
+**Linux (deb):** Run `sudo dpkg -i SLightSFTP-*.deb`. If dependencies are missing, run `sudo apt --fix-broken install`.
+
+Ensure no other instance is already running before installing.
 
 ### Database Issues
 
-If the database gets corrupted:
-1. Close the application
-2. Delete `C:\Program Files\SLightSFTP\config\config.db`
-3. Restart the application (it will recreate with defaults)
+If the database gets corrupted, delete it and restart (it will be recreated with defaults):
+
+**Windows:** `C:\Program Files\SLightSFTP\config\config.db`
+
+**Linux:** `~/.config/SLightSFTP/config.db` (AppImage) or `/opt/SLightSFTP/resources/config/config.db` (deb)
 
 ## Ports
 
 The application uses:
-- **Port 22** - SFTP (requires admin privileges)
-- **Port 21** - FTP (requires admin privileges)
+- **Port 22** — SFTP
+- **Port 21** — FTP
+- **Port 3000** — Web GUI (configurable via `WEB_PORT`)
 
-## Security Note
+On both Windows and Linux, binding to ports below 1024 requires elevated privileges (Administrator on Windows, `root` or `CAP_NET_BIND_SERVICE` on Linux).
 
-The application requests administrator privileges during installation because:
-1. Installing to `C:\Program Files` requires admin rights
-2. Binding to ports 21 and 22 (standard ports) requires admin rights
+To allow the app to bind port 22/21 on Linux without running as root:
+
+```bash
+sudo setcap 'cap_net_bind_service=+ep' /path/to/slightsftp
+```
+
+Alternatively, configure listeners to use ports above 1024 (e.g. 2222 for SFTP, 2121 for FTP).
 
 ## Additional Resources
 
 - [electron-builder documentation](https://www.electron.build/)
-- [WiX Toolset](https://wixtoolset.org/)
+- [WiX Toolset](https://wixtoolset.org/) (Windows MSI)
+- [AppImage](https://appimage.org/) (Linux universal package)

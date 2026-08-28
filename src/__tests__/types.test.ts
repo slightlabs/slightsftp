@@ -140,7 +140,8 @@ describe('Type Definitions', () => {
       const permission: Permission = {
         id: 1,
         userId: 1,
-        listenerId: 1,`n      canRead: true,
+        listenerId: 1,
+        canRead: false,
         canCreate: false,
         canEdit: false,
         canAppend: false,
@@ -157,7 +158,8 @@ describe('Type Definitions', () => {
       const permission: Permission = {
         id: 1,
         userId: 1,
-        listenerId: 1,`n      canRead: true,
+        listenerId: 1,
+      canRead: true,
         canCreate: true,
         canEdit: false,
         canAppend: false,
@@ -176,7 +178,8 @@ describe('Type Definitions', () => {
       const permission: Permission = {
         id: 1,
         userId: 1,
-        listenerId: 1,`n      canRead: true,
+        listenerId: 1,
+      canRead: true,
         canCreate: false,
         canEdit: true,
         canAppend: false,
@@ -195,7 +198,8 @@ describe('Type Definitions', () => {
       const permission: Permission = {
         id: 1,
         userId: 1,
-        listenerId: 1,`n      canRead: true,
+        listenerId: 1,
+      canRead: true,
         canCreate: false,
         canEdit: false,
         canAppend: true,
@@ -214,7 +218,8 @@ describe('Type Definitions', () => {
       const permission: Permission = {
         id: 1,
         userId: 1,
-        listenerId: 1,`n      canRead: true,
+        listenerId: 1,
+      canRead: true,
         canCreate: false,
         canEdit: false,
         canAppend: false,
@@ -233,7 +238,8 @@ describe('Type Definitions', () => {
       const permission: Permission = {
         id: 1,
         userId: 1,
-        listenerId: 1,`n      canRead: true,
+        listenerId: 1,
+      canRead: true,
         canCreate: false,
         canEdit: false,
         canAppend: false,
@@ -252,7 +258,8 @@ describe('Type Definitions', () => {
       const permission: Permission = {
         id: 1,
         userId: 1,
-        listenerId: 1,`n      canRead: true,
+        listenerId: 1,
+      canRead: true,
         canCreate: false,
         canEdit: false,
         canAppend: false,
@@ -271,7 +278,8 @@ describe('Type Definitions', () => {
       const permission: Permission = {
         id: 1,
         userId: 1,
-        listenerId: 1,`n      canRead: true,
+        listenerId: 1,
+      canRead: true,
         canCreate: false,
         canEdit: false,
         canAppend: false,
@@ -290,7 +298,8 @@ describe('Type Definitions', () => {
       const permission: Permission = {
         id: 1,
         userId: 1,
-        listenerId: 1,`n      canRead: true,
+        listenerId: 1,
+      canRead: true,
         canCreate: false,
         canEdit: false,
         canAppend: false,
@@ -313,7 +322,8 @@ describe('Type Definitions', () => {
       const permission: Permission = {
         id: 1,
         userId: 1,
-        listenerId: 1,`n      canRead: true,
+        listenerId: 1,
+      canRead: true,
         canCreate: true,
         canEdit: true,
         canAppend: true,
@@ -334,7 +344,8 @@ describe('Type Definitions', () => {
       const permission: Permission = {
         id: 1,
         userId: 1,
-        listenerId: 1,`n      canRead: true,
+        listenerId: 1,
+      canRead: true,
         canCreate: true,
         canEdit: true,
         canAppend: true,
@@ -357,7 +368,8 @@ describe('Type Definitions', () => {
       const permission: Permission = {
         id: 1,
         userId: 1,
-        listenerId: 1,`n      canRead: true,
+        listenerId: 1,
+      canRead: true,
         canCreate: true,
         canEdit: true,
         canAppend: true,
@@ -495,7 +507,8 @@ describe('Type Definitions', () => {
         const permission: Permission = {
           id: 1,
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: false,
           canEdit: true,
           canAppend: true,
@@ -513,7 +526,8 @@ describe('Type Definitions', () => {
         const permission: Permission = {
           id: 1,
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: true,
           canEdit: false,
           canAppend: true,
@@ -531,7 +545,8 @@ describe('Type Definitions', () => {
         const permission: Permission = {
           id: 1,
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: true,
@@ -549,7 +564,8 @@ describe('Type Definitions', () => {
         const permission: Permission = {
           id: 1,
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: true,
@@ -567,7 +583,8 @@ describe('Type Definitions', () => {
         const permission: Permission = {
           id: 1,
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: false,
           canEdit: false,
           canAppend: false,
@@ -585,7 +602,8 @@ describe('Type Definitions', () => {
         const permission: Permission = {
           id: 1,
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: true,
@@ -603,7 +621,8 @@ describe('Type Definitions', () => {
         const permission: Permission = {
           id: 1,
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: false,
@@ -839,7 +858,8 @@ describe('Type Definitions', () => {
         const permission: Permission = {
           id: 1,
           userId: 999,
-          listenerId: 999,`n      canRead: true,
+          listenerId: 999,
+      canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: true,

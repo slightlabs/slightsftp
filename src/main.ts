@@ -22,14 +22,14 @@ function getAppDirectories() {
   const isPackaged = app.isPackaged;
   
   if (isPackaged) {
-    // Production: Use installation directory structure
-    const installPath = path.dirname(app.getPath('exe'));
-    
+    // Production: write to userData (~/.config/SLightSFTP on Linux, %APPDATA% on Windows)
+    const userData = app.getPath('userData');
+
     return {
-      config: path.join(installPath, 'config'),
-      data: path.join(installPath, 'data'),
-      logs: path.join(installPath, 'logs'),
-      ftpRoot: path.join(installPath, 'data', 'ftp-root')
+      config: path.join(userData, 'config'),
+      data: path.join(userData, 'data'),
+      logs: path.join(userData, 'logs'),
+      ftpRoot: path.join(userData, 'data', 'ftp-root')
     };
   } else {
     // Development: Use current working directory

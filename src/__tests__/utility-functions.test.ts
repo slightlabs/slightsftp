@@ -64,7 +64,7 @@ describe('Utility Functions - Enhanced Tests', () => {
   describe('Path Operations', () => {
     test('should normalize paths', () => {
       const testPath = 'C:\\Users\\Test\\..\\Admin\\file.txt';
-      const normalized = path.normalize(testPath);
+      const normalized = path.win32.normalize(testPath);
 
       expect(normalized).toBe('C:\\Users\\Admin\\file.txt');
     });
@@ -72,7 +72,7 @@ describe('Utility Functions - Enhanced Tests', () => {
     test('should join paths correctly', () => {
       const base = 'C:\\Users';
       const sub = 'test\\documents';
-      const joined = path.join(base, sub);
+      const joined = path.win32.join(base, sub);
 
       expect(joined).toBe('C:\\Users\\test\\documents');
     });
@@ -86,28 +86,28 @@ describe('Utility Functions - Enhanced Tests', () => {
 
     test('should get directory name', () => {
       const filePath = 'C:\\Users\\test\\file.txt';
-      const dir = path.dirname(filePath);
+      const dir = path.win32.dirname(filePath);
 
       expect(dir).toBe('C:\\Users\\test');
     });
 
     test('should get base name', () => {
       const filePath = 'C:\\Users\\test\\file.txt';
-      const base = path.basename(filePath);
+      const base = path.win32.basename(filePath);
 
       expect(base).toBe('file.txt');
     });
 
     test('should get extension', () => {
       const filePath = 'C:\\Users\\test\\file.txt';
-      const ext = path.extname(filePath);
+      const ext = path.win32.extname(filePath);
 
       expect(ext).toBe('.txt');
     });
 
     test('should handle paths without extension', () => {
       const filePath = 'C:\\Users\\test\\README';
-      const ext = path.extname(filePath);
+      const ext = path.win32.extname(filePath);
 
       expect(ext).toBe('');
     });

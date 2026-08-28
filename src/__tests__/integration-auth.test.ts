@@ -53,6 +53,7 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
     db.setPermission({
       userId: admin!.id!,
       listenerId: listener!.id!,
+      canRead: true,
       canCreate: true,
       canEdit: true,
       canAppend: true,
@@ -88,6 +89,7 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
     db.setPermission({
       userId: readonly!.id!,
       listenerId: listener!.id!,
+      canRead: true,
       canCreate: false,
       canEdit: false,
       canAppend: false,
@@ -123,6 +125,7 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
     db.setPermission({
       userId: writeonly!.id!,
       listenerId: listener!.id!,
+      canRead: true,
       canCreate: true,
       canEdit: true,
       canAppend: true,

@@ -118,7 +118,8 @@ describe('Authentication and Authorization Tests', () => {
       test('should allow file creation with CREATE permission', () => {
         const permission: Permission = {
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: true,
           canEdit: false,
           canAppend: false,
@@ -136,7 +137,8 @@ describe('Authentication and Authorization Tests', () => {
       test('should allow file editing with EDIT permission', () => {
         const permission: Permission = {
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: false,
           canEdit: true,
           canAppend: false,
@@ -155,7 +157,8 @@ describe('Authentication and Authorization Tests', () => {
       test('should allow read-only access with LIST permission only', () => {
         const permission: Permission = {
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: false,
           canEdit: false,
           canAppend: false,
@@ -178,7 +181,8 @@ describe('Authentication and Authorization Tests', () => {
       test('should deny file creation without CREATE permission', () => {
         const permission: Permission = {
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: false,
           canEdit: true,
           canAppend: true,
@@ -196,7 +200,8 @@ describe('Authentication and Authorization Tests', () => {
       test('should deny file editing without EDIT permission', () => {
         const permission: Permission = {
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: true,
           canEdit: false,
           canAppend: true,
@@ -213,7 +218,8 @@ describe('Authentication and Authorization Tests', () => {
       test('should deny file deletion without DELETE permission', () => {
         const permission: Permission = {
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: true,
@@ -230,7 +236,8 @@ describe('Authentication and Authorization Tests', () => {
       test('should deny file renaming without RENAME permission', () => {
         const permission: Permission = {
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: true,
@@ -247,7 +254,8 @@ describe('Authentication and Authorization Tests', () => {
       test('should deny directory creation without CREATE_DIR permission', () => {
         const permission: Permission = {
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: true,
@@ -265,7 +273,8 @@ describe('Authentication and Authorization Tests', () => {
       test('should deny directory listing without LIST permission', () => {
         const permission: Permission = {
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: true,
@@ -283,7 +292,8 @@ describe('Authentication and Authorization Tests', () => {
       test('should deny all operations without any permissions', () => {
         const permission: Permission = {
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+          canRead: false,
           canCreate: false,
           canEdit: false,
           canAppend: false,
@@ -306,7 +316,8 @@ describe('Authentication and Authorization Tests', () => {
       test('should handle APPEND without EDIT correctly', () => {
         const permission: Permission = {
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: false,
           canEdit: false,
           canAppend: true, // Can append but not edit
@@ -325,7 +336,8 @@ describe('Authentication and Authorization Tests', () => {
       test('should handle CREATE_DIR without CREATE correctly', () => {
         const permission: Permission = {
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: false, // Can't create files
           canEdit: false,
           canAppend: false,
@@ -344,7 +356,8 @@ describe('Authentication and Authorization Tests', () => {
       test('should handle RENAME without DELETE correctly', () => {
         const permission: Permission = {
           userId: 1,
-          listenerId: 1,`n      canRead: true,
+          listenerId: 1,
+      canRead: true,
           canCreate: false,
           canEdit: false,
           canAppend: false,
@@ -387,6 +400,7 @@ describe('Authentication and Authorization Tests', () => {
         const permission: Permission = {
           userId: user.id!,
           listenerId: listener.id!,
+          canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: true,
@@ -413,7 +427,8 @@ describe('Authentication and Authorization Tests', () => {
 
         const ftpPermission: Permission = {
           userId: user.id!,
-          listenerId: 1, // FTP listener
+          listenerId: 1,
+          canRead: true, // FTP listener
           canCreate: true,
           canEdit: true,
           canAppend: true,
@@ -425,7 +440,8 @@ describe('Authentication and Authorization Tests', () => {
 
         const sftpPermission: Permission = {
           userId: user.id!,
-          listenerId: 2, // SFTP listener
+          listenerId: 2,
+          canRead: true, // SFTP listener
           canCreate: true,
           canEdit: false,
           canAppend: false,
@@ -478,6 +494,7 @@ describe('Authentication and Authorization Tests', () => {
         const permission: Permission = {
           userId: 999, // Non-existent user
           listenerId: 1,
+          canRead: true,
           canCreate: true,
           canEdit: true,
           canAppend: true,
@@ -494,7 +511,8 @@ describe('Authentication and Authorization Tests', () => {
       test('should identify permission without valid listener ID', () => {
         const permission: Permission = {
           userId: 1,
-          listenerId: 999,`n      canRead: true, // Non-existent listener
+          listenerId: 999,
+      canRead: true, // Non-existent listener
           canCreate: true,
           canEdit: true,
           canAppend: true,

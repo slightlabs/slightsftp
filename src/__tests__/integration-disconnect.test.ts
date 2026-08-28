@@ -44,6 +44,7 @@ describe('SFTP Disconnect Scenarios - Comprehensive Tests', () => {
     db.setPermission({
       userId: user!.id!,
       listenerId: listener!.id!,
+      canRead: true,
       canCreate: true,
       canEdit: true,
       canAppend: true,

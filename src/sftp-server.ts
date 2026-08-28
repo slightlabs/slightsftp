@@ -745,7 +745,6 @@ export class SFTPServer extends EventEmitter {
         });
 
         client.on('close', () => {
-          console.log('[CLIENT] Close event - connection closed');
           this.clearIdleTimeout(client);
         });
       });

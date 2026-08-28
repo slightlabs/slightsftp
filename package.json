@@ -17,7 +17,8 @@
     "test:comprehensive": "npm run setup:testusers && npm run test:client",
     "test:auto": "npm run build && powershell -ExecutionPolicy Bypass -File run-tests-with-server.ps1",
     "dist": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win --x64"
+    "dist:win": "npm run build && electron-builder --win --x64",
+    "dist:linux": "npm run build && electron-builder --linux --x64"
   },
   "keywords": [
     "ftp",
@@ -26,7 +27,10 @@
     "electron",
     "gui"
   ],
-  "author": "Sujith Gunawardhane",
+  "author": {
+    "name": "Sujith Gunawardhane",
+    "email": "slightsftp@gmail.com"
+  },
   "license": "MIT",
   "build": {
     "appId": "com.slightsftp.app",
@@ -75,6 +79,20 @@
       ],
       "requestedExecutionLevel": "requireAdministrator"
     },
+    "linux": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": ["x64"]
+        },
+        {
+          "target": "deb",
+          "arch": ["x64"]
+        }
+      ],
+      "category": "Network"
+    },
     "msi": {
       "oneClick": false,
       "perMachine": true,
@@ -88,34 +106,34 @@
     }
   },
   "dependencies": {
-    "basic-ftp": "^5.0.4",
+    "basic-ftp": "^6.2.1",
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
     "ftp-srv": "^4.6.3",
-    "sql.js": "^1.10.3",
+    "sql.js": "^1.14.2",
     "ssh2": "^1.15.0",
     "winston": "^3.19.0",
-    "ws": "^8.18.3"
+    "ws": "^8.21.3"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/ftp": "^0.3.36",
     "@types/jest": "^29.5.11",
-    "@types/node": "^20.19.27",
-    "@types/sql.js": "^1.4.9",
+    "@types/node": "^22.0.0",
+    "@types/sql.js": "^1.4.11",
     "@types/ssh2": "^1.11.17",
     "@types/ssh2-sftp-client": "^9.0.6",
     "@types/ws": "^8.18.1",
-    "electron": "^28.1.0",
-    "electron-builder": "^26.0.12",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
     "ftp": "^0.3.10",
     "icon-gen": "^5.0.0",
     "jest": "^29.7.0",
-    "png-to-ico": "^3.0.1",
-    "ssh2-sftp-client": "^12.0.1",
+    "png-to-ico": "^3.0.2",
+    "ssh2-sftp-client": "^12.1.1",
     "to-ico": "^1.1.5",
-    "ts-jest": "^29.1.1",
+    "ts-jest": "^29.4.12",
     "typescript": "^5.3.3"
   }
 }
