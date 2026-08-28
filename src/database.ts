@@ -2,6 +2,7 @@ import initSqlJs, { Database } from 'sql.js';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
+import logger from './logger';
 import { User, VirtualPath, Permission, Listener, UserListener, ServerActivity } from './types';
 
 export class DatabaseManager {
@@ -679,9 +680,9 @@ export class DatabaseManager {
         this.db.close();
         this.db = null;
         this.initialized = false;
-        console.log('Database closed successfully');
+        logger.info('Database closed successfully');
       } catch (err) {
-        console.error('Error closing database:', err);
+        logger.error('Error closing database:', err);
         // Even if there's an error, mark as not initialized to prevent further operations
         this.db = null;
         this.initialized = false;

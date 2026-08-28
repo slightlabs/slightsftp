@@ -490,3 +490,5 @@ class CustomFileSystem extends FileSystem {
     });
   }
 }
+
+export { CustomFileSystem };
