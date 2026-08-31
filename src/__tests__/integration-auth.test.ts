@@ -173,7 +173,8 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
           console.log('Force closing SFTP server');
         });
       }
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Wait for all connections to close
+      await new Promise(resolve => setTimeout(resolve, 2000));
       if (db) db.close();
       if (fs.existsSync(testDir)) {
         fs.rmSync(testDir, { recursive: true, force: true });
@@ -184,6 +185,10 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
   }, 60000);
 
   describe('Authentication Tests', () => {
+    afterEach(async () => {
+      // Small delay between tests to allow connections to close
+      await new Promise(resolve => setTimeout(resolve, 100));
+    });
     test('should authenticate admin with correct password', async () => {
       const client = new SftpClient();
       
