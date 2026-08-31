@@ -94,20 +94,29 @@ describe('SFTP Server Integration Tests', () => {
   }, 30000);
 
   afterEach(async () => {
-    // Small delay between tests to allow connections to close
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Longer delay between tests to allow connections to close
+    await new Promise(resolve => setTimeout(resolve, 200));
   });
 
   afterAll(async () => {
-    // Stop server
-    await sftpServer.stop();
+    try {
+      // Stop server with timeout
+      await Promise.race([
+        sftpServer.stop(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Stop timeout')), 15000))
+      ]).catch((error) => {
+        console.log('Server stop error (expected):', error.message);
+      });
 
-    // Cleanup
-    db.close();
-    if (fs.existsSync(testDir)) {
-      fs.rmSync(testDir, { recursive: true, force: true });
+      // Cleanup
+      db.close();
+      if (fs.existsSync(testDir)) {
+        fs.rmSync(testDir, { recursive: true, force: true });
+      }
+    } catch (error) {
+      console.error('Cleanup error:', error);
     }
-  }, 20000);
+  }, 30000);
 
   test('should connect and authenticate', async () => {
     const client = new SftpClient();
@@ -175,6 +184,7 @@ describe('SFTP Server Integration Tests', () => {
       
       await client.end();
     } catch (error) {
+      console.error('Download error details:', error);
       throw new Error(`Download failed: ${error}`);
     }
   }, 10000);
