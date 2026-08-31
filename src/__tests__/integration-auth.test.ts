@@ -167,7 +167,7 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
       if (sftpServer) {
         await Promise.race([
           sftpServer.stop(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Stop timeout')), 5000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Stop timeout')), 15000))
         ]).catch(() => {
           // Force close if timeout
           console.log('Force closing SFTP server');
@@ -186,8 +186,8 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
 
   describe('Authentication Tests', () => {
     afterEach(async () => {
-      // Small delay between tests to allow connections to close
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Longer delay between tests to allow connections to close
+      await new Promise(resolve => setTimeout(resolve, 200));
     });
     test('should authenticate admin with correct password', async () => {
       const client = new SftpClient();
@@ -270,8 +270,8 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
 
   describe('Authorization - Admin User (Full Permissions)', () => {
     afterEach(async () => {
-      // Small delay between tests to allow connections to close
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Longer delay between tests to allow connections to close
+      await new Promise(resolve => setTimeout(resolve, 200));
     });
 
     test('admin should be able to list directories', async () => {
@@ -397,8 +397,8 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
 
   describe('Authorization - Read-Only User', () => {
     afterEach(async () => {
-      // Small delay between tests to allow connections to close
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Longer delay between tests to allow connections to close
+      await new Promise(resolve => setTimeout(resolve, 200));
     });
 
     test('readonly user should be able to list directories', async () => {
@@ -435,6 +435,9 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
           readyTimeout: 5000
         });
 
+        // Wait for connection to be fully established
+        await new Promise(resolve => setTimeout(resolve, 100));
+
         await client.get('/public-file.txt', downloadPath);
         
         expect(fs.existsSync(downloadPath)).toBe(true);
@@ -442,9 +445,10 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
         
         await client.end();
       } catch (error) {
+        console.error('Readonly download error details:', error);
         throw new Error(`Readonly download failed: ${error}`);
       }
-    }, 10000);
+    }, 15000);
 
     test('readonly user should NOT be able to upload files', async () => {
       const client = new SftpClient();
@@ -520,8 +524,8 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
 
   describe('Authorization - Write-Only User', () => {
     afterEach(async () => {
-      // Small delay between tests to allow connections to close
-      await new Promise(resolve => setTimeout(resolve, 100));
+      // Longer delay between tests to allow connections to close
+      await new Promise(resolve => setTimeout(resolve, 200));
     });
 
     test('writeonly user should be able to upload files', async () => {

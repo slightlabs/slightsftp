@@ -76,7 +76,7 @@ describe('SFTP Disconnect Scenarios - Comprehensive Tests', () => {
       if (sftpServer) {
         await Promise.race([
           sftpServer.stop(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Stop timeout')), 5000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Stop timeout')), 15000))
         ]).catch(() => {});
       }
       // Wait for all connections to close
@@ -91,8 +91,8 @@ describe('SFTP Disconnect Scenarios - Comprehensive Tests', () => {
   }, 60000);
 
   afterEach(async () => {
-    // Small delay between tests to allow connections to close
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Longer delay between tests to allow connections to close
+    await new Promise(resolve => setTimeout(resolve, 200));
   });
 
   test('should handle immediate disconnect after connect', async () => {
