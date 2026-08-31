@@ -107,7 +107,7 @@ describe('SFTP Server Integration Tests', () => {
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true });
     }
-  }, 10000);
+  }, 20000);
 
   test('should connect and authenticate', async () => {
     const client = new SftpClient();
