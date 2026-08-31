@@ -14,7 +14,7 @@ module.exports = {
   coverageReporters: ['text', 'lcov', 'html'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   verbose: true,
-  // These two files use an outdated schema superseded by *-enhanced.test.ts variants
-  testPathIgnorePatterns: ['/node_modules/', 'database.test.ts', 'server-manager.test.ts'],
+  // This file uses an outdated schema superseded by *-enhanced.test.ts variant
+  testPathIgnorePatterns: ['/node_modules/', 'database.test.ts'],
   testEnvironmentOptions: {}
 };
