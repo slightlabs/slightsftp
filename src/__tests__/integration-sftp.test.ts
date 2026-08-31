@@ -91,6 +91,11 @@ describe('SFTP Server Integration Tests', () => {
 
     // Wait a bit for server to be ready
     await new Promise(resolve => setTimeout(resolve, 500));
+  }, 30000);
+
+  afterEach(async () => {
+    // Small delay between tests to allow connections to close
+    await new Promise(resolve => setTimeout(resolve, 100));
   });
 
   afterAll(async () => {
@@ -102,7 +107,7 @@ describe('SFTP Server Integration Tests', () => {
     if (fs.existsSync(testDir)) {
       fs.rmSync(testDir, { recursive: true, force: true });
     }
-  });
+  }, 10000);
 
   test('should connect and authenticate', async () => {
     const client = new SftpClient();
@@ -120,7 +125,7 @@ describe('SFTP Server Integration Tests', () => {
       
       await client.end();
     } catch (error) {
-      fail(`Connection failed: ${error}`);
+      throw new Error(`Connection failed: ${error}`);
     }
   }, 10000);
 
@@ -145,7 +150,7 @@ describe('SFTP Server Integration Tests', () => {
       
       await client.end();
     } catch (error) {
-      fail(`List operation failed: ${error}`);
+      throw new Error(`List operation failed: ${error}`);
     }
   }, 10000);
 
@@ -170,7 +175,7 @@ describe('SFTP Server Integration Tests', () => {
       
       await client.end();
     } catch (error) {
-      fail(`Download failed: ${error}`);
+      throw new Error(`Download failed: ${error}`);
     }
   }, 10000);
 
@@ -197,7 +202,7 @@ describe('SFTP Server Integration Tests', () => {
       
       await client.end();
     } catch (error) {
-      fail(`Upload failed: ${error}`);
+      throw new Error(`Upload failed: ${error}`);
     }
   }, 10000);
 
@@ -247,7 +252,7 @@ describe('SFTP Server Integration Tests', () => {
         
         await client.end();
       } catch (error) {
-        fail(`Connection ${i + 1} failed: ${error}`);
+        throw new Error(`Connection ${i + 1} failed: ${error}`);
       }
     }
   }, 30000);
@@ -277,7 +282,7 @@ describe('SFTP Server Integration Tests', () => {
       
       await client.end();
     } catch (error) {
-      fail(`Directory operations failed: ${error}`);
+      throw new Error(`Directory operations failed: ${error}`);
     }
   }, 10000);
 
@@ -301,7 +306,7 @@ describe('SFTP Server Integration Tests', () => {
       
       await client.end();
     } catch (error) {
-      fail(`Delete failed: ${error}`);
+      throw new Error(`Delete failed: ${error}`);
     }
   }, 10000);
 
@@ -327,7 +332,7 @@ describe('SFTP Server Integration Tests', () => {
       
       await client.end();
     } catch (error) {
-      fail(`Rename failed: ${error}`);
+      throw new Error(`Rename failed: ${error}`);
     }
   }, 10000);
 });

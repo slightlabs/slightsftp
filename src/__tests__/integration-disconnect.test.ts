@@ -79,7 +79,8 @@ describe('SFTP Disconnect Scenarios - Comprehensive Tests', () => {
           new Promise((_, reject) => setTimeout(() => reject(new Error('Stop timeout')), 5000))
         ]).catch(() => {});
       }
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Wait for all connections to close
+      await new Promise(resolve => setTimeout(resolve, 2000));
       if (db) db.close();
       if (fs.existsSync(testDir)) {
         fs.rmSync(testDir, { recursive: true, force: true });
@@ -88,6 +89,11 @@ describe('SFTP Disconnect Scenarios - Comprehensive Tests', () => {
       console.error('Cleanup error:', error);
     }
   }, 60000);
+
+  afterEach(async () => {
+    // Small delay between tests to allow connections to close
+    await new Promise(resolve => setTimeout(resolve, 100));
+  });
 
   test('should handle immediate disconnect after connect', async () => {
     const client = new SftpClient();

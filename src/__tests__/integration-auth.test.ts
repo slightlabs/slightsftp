@@ -269,6 +269,11 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
   });
 
   describe('Authorization - Admin User (Full Permissions)', () => {
+    afterEach(async () => {
+      // Small delay between tests to allow connections to close
+      await new Promise(resolve => setTimeout(resolve, 100));
+    });
+
     test('admin should be able to list directories', async () => {
       const client = new SftpClient();
       
@@ -391,6 +396,11 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
   });
 
   describe('Authorization - Read-Only User', () => {
+    afterEach(async () => {
+      // Small delay between tests to allow connections to close
+      await new Promise(resolve => setTimeout(resolve, 100));
+    });
+
     test('readonly user should be able to list directories', async () => {
       const client = new SftpClient();
       
@@ -509,6 +519,11 @@ describe('SFTP Authentication & Authorization Integration Tests', () => {
   });
 
   describe('Authorization - Write-Only User', () => {
+    afterEach(async () => {
+      // Small delay between tests to allow connections to close
+      await new Promise(resolve => setTimeout(resolve, 100));
+    });
+
     test('writeonly user should be able to upload files', async () => {
       const client = new SftpClient();
       const uploadContent = 'Writeonly upload';

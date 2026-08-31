@@ -103,7 +103,8 @@ describe('FTP Server Integration Tests', () => {
           console.log('Force closing FTP server');
         });
       }
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Wait for all connections to close
+      await new Promise(resolve => setTimeout(resolve, 2000));
       if (db) db.close();
       if (fs.existsSync(testDir)) {
         fs.rmSync(testDir, { recursive: true, force: true });
@@ -112,6 +113,11 @@ describe('FTP Server Integration Tests', () => {
       console.error('FTP cleanup error:', error);
     }
   }, 60000);
+
+  afterEach(async () => {
+    // Small delay between tests to allow connections to close
+    await new Promise(resolve => setTimeout(resolve, 100));
+  });
 
   test('should connect and authenticate with FTP', (done) => {
     const client = new FtpClient();
