@@ -16,6 +16,9 @@ jest.mock('fs', () => {
   return {
     ...real,
     readFileSync: jest.fn((p: string, enc?: string) => {
+      if (typeof p === 'string' && p.endsWith('index.html')) {
+        return '<!DOCTYPE html><html lang="en"><head><title>SLightSFTP - Lightweight FTP/SFTP Server</title></head><body><h1>Download</h1></body></html>';
+      }
       if (typeof p === 'string' && (p.endsWith('.html') || p.endsWith('.js'))) {
         return '<html><body><script src="renderer.js"></script></body></html>';
       }
@@ -106,12 +109,29 @@ describe('WebServer REST API', () => {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  describe('Page Routes', () => {
+    test('GET / — returns landing page (no auth required)', async () => {
+      const res = await request(app).get('/');
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('Lightweight FTP/SFTP Server');
+      expect(res.text).toContain('Download');
+    });
+
+    test('GET /admin — redirects to login without auth', async () => {
+      const res = await request(app).get('/admin');
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe('/login');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
   describe('Authentication', () => {
     test('POST /api/login — success sets sessionId cookie', async () => {
       const res = await request(app).post('/api/login')
         .send({ username: 'admin', password: PASSWORD });
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
+      expect(res.body.redirect).toBe('/admin');
       expect(res.headers['set-cookie']).toBeDefined();
     });
 
@@ -148,6 +168,7 @@ describe('WebServer REST API', () => {
       const res = await request(app).post('/api/logout').set('Cookie', cookie);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
+      expect(res.headers['set-cookie']).toBeDefined();
     });
 
     test('GET /api/user — returns username when authenticated', async () => {

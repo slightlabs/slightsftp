@@ -46,7 +46,7 @@ export class WebServer {
     this.app.use(cookieParser());
 
     // Serve static files from src directory (HTML, CSS, JS)
-    this.app.use('/assets', express.static(path.join(__dirname, '../assets')));
+    // this.app.use('/assets', express.static(path.join(__dirname, '../assets')));
   }
 
   private generateSessionId(): string {
@@ -95,7 +95,14 @@ export class WebServer {
   }
 
   private setupRoutes(): void {
-    // Serve renderer.js
+    // Main landing page (download/marketing page) - NO AUTH REQUIRED
+    this.app.get('/', (req: Request, res: Response) => {
+      const indexHtml = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf-8');
+      res.type('text/html');
+      res.send(indexHtml);
+    });
+
+    // Serve renderer.js for admin interface
     this.app.get('/renderer.js', (req: Request, res: Response) => {
       const rendererPath = path.join(__dirname, 'renderer.js');
       let rendererJs = fs.readFileSync(rendererPath, 'utf-8');
@@ -120,16 +127,16 @@ export class WebServer {
       res.send(this.injectWebAPI(loginHtml, false));
     });
 
-    // Main GUI page
-    this.app.get('/', (req: Request, res: Response) => {
+    // Admin GUI page (requires authentication)
+    this.app.get('/admin', (req: Request, res: Response) => {
       const session = this.authenticateSession(req);
       if (!session) {
         res.redirect('/login');
         return;
       }
       
-      const indexHtml = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf-8');
-      res.send(this.injectWebAPI(indexHtml, true));
+      const adminHtml = fs.readFileSync(path.join(__dirname, 'admin.html'), 'utf-8');
+      res.send(this.injectWebAPI(adminHtml, true));
     });
 
     // Authentication endpoints
@@ -191,7 +198,7 @@ export class WebServer {
 
         this.logActivity(username, 'WEB_LOGIN_SUCCESS', 'User logged in via web interface', true);
         logger.info('Login successful for user:', username);
-        res.json({ success: true, username: user.username });
+        res.json({ success: true, username: user.username, redirect: '/admin' });
       } catch (error: any) {
         logger.error('Login error:', error);
         this.logActivity(username || 'unknown', 'WEB_LOGIN_ERROR', error.message, false);

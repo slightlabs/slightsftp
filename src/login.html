@@ -248,6 +248,8 @@
 
         const loginForm = document.getElementById('loginForm');
         const changePasswordForm = document.getElementById('changePasswordForm');
+        // Remove change password functionality for now
+        changePasswordForm.style.display = 'none';
         const usernameInput = document.getElementById('username');
         const passwordInput = document.getElementById('password');
         const loginBtn = document.getElementById('loginBtn');
@@ -271,13 +273,16 @@
             passwordInput.disabled = true;
 
             try {
-                const result = await ipcRenderer.invoke('authenticate-user', username, password);
-                if (result.success && result.mustChangePassword) {
-                    loginForm.style.display = 'none';
-                    changePasswordForm.style.display = 'block';
-                    document.getElementById('newPassword').focus();
-                } else if (result.success) {
-                    window.close();
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const result = await response.json();
+                
+                if (result.success) {
+                    // Redirect to admin interface
+                    window.location.href = result.redirect || '/admin';
                 } else {
                     showError(result.error || 'Invalid username or password');
                     loginBtn.disabled = false;

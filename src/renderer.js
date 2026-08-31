@@ -1,5 +1,4 @@
-// In Electron, window.api is exposed by preload.ts via contextBridge.
-// In web mode, web-server.ts injects window.ipcRenderer as a fetch/WebSocket mock.
+// Admin interface functionality
 const ipcRenderer = window.api || window.ipcRenderer;
 
 let currentEditingUser = null;
