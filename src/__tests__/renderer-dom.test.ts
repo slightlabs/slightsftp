@@ -22,10 +22,7 @@ const mockOn = jest.fn();
 (globalThis as any).window.api = { invoke: mockInvoke, on: mockOn, removeAllListeners: jest.fn() };
 (globalThis as any).window.ipcRenderer = (globalThis as any).window.api;
 
-// Prevent Chart.js and other DOM-heavy code from crashing
-(globalThis as any).Chart = jest.fn().mockReturnValue({
-  update: jest.fn(), data: { labels: [], datasets: [{ data: [] }, { data: [] }] }
-});
+
 
 // ── standalone helpers extracted from renderer.js logic ────────────────────
 // These are pure functions we can test without loading the full 1390-line file.
