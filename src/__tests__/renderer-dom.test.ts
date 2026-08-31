@@ -23,7 +23,6 @@ const mockOn = jest.fn();
 (globalThis as any).window.ipcRenderer = (globalThis as any).window.api;
 
 
-
 // ── standalone helpers extracted from renderer.js logic ────────────────────
 // These are pure functions we can test without loading the full 1390-line file.
 
