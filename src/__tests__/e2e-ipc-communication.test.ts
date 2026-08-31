@@ -142,7 +142,7 @@ describe('IPC Communication Integration Tests', () => {
 
       try {
         await mockIpcRenderer.invoke('unknown-channel');
-        fail('Should have thrown error');
+        throw new Error('Should have thrown error');
       } catch (error: any) {
         expect(error.message).toContain('Unknown channel');
       }
@@ -522,7 +522,7 @@ describe('IPC Communication Integration Tests', () => {
 
       try {
         await mockIpcRenderer.invoke('authenticate-user', 'admin', 'wrongpass');
-        fail('Should have thrown error');
+        throw new Error('Should have thrown error');
       } catch (error: any) {
         expect(error.message).toContain('Invalid credentials');
       }
@@ -533,7 +533,7 @@ describe('IPC Communication Integration Tests', () => {
 
       try {
         await mockIpcRenderer.invoke('get-all-users');
-        fail('Should have thrown error');
+        throw new Error('Should have thrown error');
       } catch (error: any) {
         expect(error.message).toContain('Database error');
       }
@@ -544,7 +544,7 @@ describe('IPC Communication Integration Tests', () => {
 
       try {
         await mockIpcRenderer.invoke('start-listener', 1);
-        fail('Should have thrown error');
+        throw new Error('Should have thrown error');
       } catch (error: any) {
         expect(error.message).toContain('Network error');
       }
@@ -555,7 +555,7 @@ describe('IPC Communication Integration Tests', () => {
 
       try {
         await mockIpcRenderer.invoke('get-activity', 1000);
-        fail('Should have thrown error');
+        throw new Error('Should have thrown error');
       } catch (error: any) {
         expect(error.message).toContain('Timeout');
       }

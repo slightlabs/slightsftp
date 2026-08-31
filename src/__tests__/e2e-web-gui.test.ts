@@ -45,13 +45,19 @@ describe('Web GUI End-to-End Workflows', () => {
 
   afterAll(async () => {
     try {
-      if (webServer) await webServer.stop();
+      if (webServer) {
+        try {
+          await webServer.stop();
+        } catch (e) {
+          // Ignore if server not running
+        }
+      }
       if (db) db.close();
       if (fs.existsSync(testDir)) {
         fs.rmSync(testDir, { recursive: true, force: true });
       }
     } catch (error) {
-      console.error('Cleanup error:', error);
+      // Silent cleanup
     }
   }, 30000);
 
