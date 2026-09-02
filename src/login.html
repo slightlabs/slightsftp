@@ -239,7 +239,6 @@
     </div>
 
     <script>
-        const ipcRenderer = window.api || window.ipcRenderer;
 
         // Close button handler
         document.getElementById('closeButton').addEventListener('click', () => {
@@ -248,12 +247,11 @@
 
         const loginForm = document.getElementById('loginForm');
         const changePasswordForm = document.getElementById('changePasswordForm');
-        // Remove change password functionality for now
-        changePasswordForm.style.display = 'none';
         const usernameInput = document.getElementById('username');
         const passwordInput = document.getElementById('password');
         const loginBtn = document.getElementById('loginBtn');
         const errorMessage = document.getElementById('errorMessage');
+        const isElectron = !!(window.api && typeof window.api.invoke === 'function');
 
         function showError(message) {
             errorMessage.textContent = message;
@@ -273,25 +271,43 @@
             passwordInput.disabled = true;
 
             try {
-                const response = await fetch('/api/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
-                });
-                const result = await response.json();
-                
-                if (result.success) {
-                    // Redirect to admin interface
-                    window.location.href = result.redirect || '/admin';
-                } else {
+                if (isElectron) {
+                    const result = await window.api.invoke('authenticate-user', username, password);
+
+                    if (result.success && result.mustChangePassword) {
+                        loginForm.style.display = 'none';
+                        changePasswordForm.style.display = 'block';
+                        return;
+                    }
+
+                    if (result.success) {
+                        window.close();
+                        return;
+                    }
+
                     showError(result.error || 'Invalid username or password');
-                    loginBtn.disabled = false;
-                    loginBtn.textContent = 'Sign In';
-                    usernameInput.disabled = false;
-                    passwordInput.disabled = false;
-                    passwordInput.value = '';
-                    passwordInput.focus();
+                } else {
+                    const response = await fetch('/api/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+                    const result = await response.json();
+
+                    if (result.success) {
+                        window.location.href = result.redirect || '/admin';
+                        return;
+                    }
+
+                    showError(result.error || 'Invalid username or password');
                 }
+
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Sign In';
+                usernameInput.disabled = false;
+                passwordInput.disabled = false;
+                passwordInput.value = '';
+                passwordInput.focus();
             } catch (error) {
                 showError('An error occurred. Please try again.');
                 loginBtn.disabled = false;
@@ -313,7 +329,7 @@
             changeBtn.textContent = 'Saving...';
 
             try {
-                const result = await ipcRenderer.invoke('set-first-login-password', newPwd);
+                const result = await window.api.invoke('set-first-login-password', newPwd);
                 if (result.success) {
                     window.close();
                 } else {

@@ -462,8 +462,7 @@ function setupIpcHandlers(): void {
       if (!newPassword || newPassword.length < 8) {
         return { success: false, error: 'Password must be at least 8 characters' };
       }
-      const hashedNew = crypto.createHash('sha256').update(newPassword).digest('hex');
-      db.updateUser(authenticatedUser.username, { password: hashedNew });
+      db.updateUser(authenticatedUser.username, { password: newPassword });
       logger.info('Password changed for user:', authenticatedUser.username);
 
       if (loginWindow) {
