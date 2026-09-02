@@ -365,6 +365,36 @@ async function initializeDatabase(): Promise<void> {
 
     logger.info('Default configuration created');
   }
+
+  // Development convenience: migrate legacy default ports to non-privileged values
+  // so local runs don't require sudo/root.
+  if (!app.isPackaged) {
+    const listeners = db.getAllListeners();
+
+    for (const listener of listeners) {
+      if (!listener.id) continue;
+
+      if (listener.name === 'Default SFTP' && listener.protocol === 'SFTP' && listener.port === 22) {
+        db.updateListener(listener.id, {
+          name: listener.name,
+          bindingIp: listener.bindingIp,
+          port: 2222,
+          enabled: listener.enabled
+        });
+        logger.info('Migrated Default SFTP port from 22 to 2222 for development');
+      }
+
+      if (listener.name === 'Default FTP' && listener.protocol === 'FTP' && listener.port === 21) {
+        db.updateListener(listener.id, {
+          name: listener.name,
+          bindingIp: listener.bindingIp,
+          port: 2121,
+          enabled: listener.enabled
+        });
+        logger.info('Migrated Default FTP port from 21 to 2121 for development');
+      }
+    }
+  }
 }
 
 function setupServerManager(): void {
