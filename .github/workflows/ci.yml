@@ -15,10 +15,10 @@ jobs:
         node-version: [18, 22]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
@@ -30,7 +30,7 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Run tests
-        run: npm test
+        run: npm test -- --runInBand --forceExit
 
   build-linux:
     name: Build Linux packages
@@ -39,9 +39,9 @@ jobs:
     if: github.ref == 'refs/heads/master'
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -53,14 +53,14 @@ jobs:
         run: npm run dist:linux -- --publish never
 
       - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: linux-appimage
           path: release/*.AppImage
           retention-days: 30
 
       - name: Upload deb
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: linux-deb
           path: release/*.deb

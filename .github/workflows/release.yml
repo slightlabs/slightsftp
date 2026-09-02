@@ -19,10 +19,10 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '22'
           cache: npm
@@ -43,7 +43,7 @@ jobs:
 
       - name: Upload Windows artifacts
         if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: windows-installer
           path: release/*.msi
@@ -51,7 +51,7 @@ jobs:
 
       - name: Upload Linux artifacts
         if: matrix.os == 'ubuntu-latest'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: linux-installers
           path: |
@@ -66,21 +66,52 @@ jobs:
 
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
 
       - name: List downloaded artifacts
         run: ls -R
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
+      - name: Create or Update Release (retry)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          TAG="${GITHUB_REF#refs/tags/}"
+          FILES=(
             windows-installer/*.msi
             linux-installers/*.AppImage
             linux-installers/*.deb
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          )
+
+          for f in "${FILES[@]}"; do
+            if [[ ! -f "$f" ]]; then
+              echo "Missing expected artifact: $f"
+              exit 1
+            fi
+          done
+
+          run_with_retry() {
+            local max_attempts="$1"
+            shift
+            local attempt=1
+            local delay=5
+
+            until "$@"; do
+              if [[ "$attempt" -ge "$max_attempts" ]]; then
+                echo "Command failed after ${max_attempts} attempts: $*"
+                return 1
+              fi
+              echo "Attempt ${attempt}/${max_attempts} failed; retrying in ${delay}s..."
+              sleep "$delay"
+              attempt=$((attempt + 1))
+              delay=$((delay * 2))
+            done
+          }
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            run_with_retry 5 gh release upload "$TAG" "${FILES[@]}" --clobber
+          else
+            run_with_retry 5 gh release create "$TAG" "${FILES[@]}" --title "$TAG" --generate-notes
+          fi
