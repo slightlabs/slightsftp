@@ -174,6 +174,103 @@ body {
     border: 1px solid #c3e6cb;
 }
 
+.download-section {
+    background-color: white;
+    padding: 2rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.download-section h3 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+    text-align: center;
+}
+
+.download-section > p {
+    text-align: center;
+    color: #666;
+    margin-bottom: 1.5rem;
+}
+
+.download-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+}
+
+.download-btn {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.5rem 2rem;
+    border-radius: 8px;
+    text-decoration: none;
+    transition: transform 0.3s, box-shadow 0.3s;
+    min-width: 200px;
+    border: 2px solid transparent;
+}
+
+.download-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.download-icon {
+    font-size: 2rem;
+}
+
+.download-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.download-info strong {
+    font-size: 1.1rem;
+    margin-bottom: 0.25rem;
+}
+
+.download-info span {
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+
+.download-windows {
+    background: linear-gradient(135deg, #0078d7 0%, #00bcf2 100%);
+    color: white;
+    border-color: #0078d7;
+}
+
+.download-linux {
+    background: linear-gradient(135deg, #e95420 0%, #f99b11 100%);
+    color: white;
+    border-color: #e95420;
+}
+
+.download-source {
+    background: linear-gradient(135deg, #333 0%, #555 100%);
+    color: white;
+    border-color: #333;
+}
+
+.download-note {
+    text-align: center;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.download-note a {
+    color: #3498db;
+    text-decoration: none;
+}
+
+.download-note a:hover {
+    text-decoration: underline;
+}
+
 .install-steps {
     max-width: 800px;
     margin: 0 auto;
@@ -636,5 +733,14 @@ footer {
     .api-item,
     .issue-card {
         padding: 1.5rem;
+    }
+
+    .download-buttons {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .download-btn {
+        min-width: auto;
     }
 }

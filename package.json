@@ -5,9 +5,9 @@
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc && node -e \"const fs=require('fs');const path=require('path');if(!fs.existsSync('dist/assets'))fs.mkdirSync('dist/assets',{recursive:true});fs.copyFileSync('assets/icon.png','dist/assets/icon.png');fs.copyFileSync('src/index.html','dist/index.html');fs.copyFileSync('src/login.html','dist/login.html');fs.copyFileSync('src/renderer.js','dist/renderer.js');\"",
-    "start": "npm run build && electron dist/main.js",
+    "start": "npm run build && electron dist/main.js --no-sandbox",
     "start:web": "npm run build && node dist/web-only.js",
-    "dev": "tsc && electron dist/main.js",
+    "dev": "tsc && electron dist/main.js --no-sandbox",
     "dev:web": "tsc && node dist/web-only.js",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -18,7 +18,8 @@
     "test:auto": "npm run build && powershell -ExecutionPolicy Bypass -File run-tests-with-server.ps1",
     "dist": "npm run build && electron-builder",
     "dist:win": "npm run build && electron-builder --win --x64",
-    "dist:linux": "npm run build && electron-builder --linux --x64"
+    "dist:linux": "npm run build && electron-builder --linux --x64",
+    "release": "npm run build && electron-builder --publish always"
   },
   "keywords": [
     "ftp",
@@ -38,6 +39,11 @@
     "directories": {
       "output": "release",
       "buildResources": "build"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "sujithsuranga",
+      "repo": "slightsftp"
     },
     "files": [
       "dist/**/*",
