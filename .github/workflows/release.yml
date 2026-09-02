@@ -54,7 +54,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: linux-installers
-          path: release/*.{AppImage,deb}
+          path: |
+            release/*.AppImage
+            release/*.deb
           if-no-files-found: error
 
   release:
