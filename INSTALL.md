@@ -11,7 +11,7 @@
 ### 1. Install Dependencies
 
 ```bash
-cd "c:\Users\Sujith Gunawardhane\src\SLightSFTP"
+cd "c:\Users\<YourUsername>\src\SLightSFTP"
 npm install
 ```
 

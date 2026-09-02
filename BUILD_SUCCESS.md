@@ -67,7 +67,7 @@ SLightSFTP/
 ### 1. Start the Application
 
 ```powershell
-cd "c:\Users\Sujith Gunawardhane\src\SLightSFTP"
+cd "c:\Users\<YourUsername>\src\SLightSFTP"
 npm start
 ```
 
