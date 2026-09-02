@@ -17,6 +17,7 @@
     "test:comprehensive": "npm run setup:testusers && npm run test:client",
     "test:auto": "npm run build && powershell -ExecutionPolicy Bypass -File run-tests-with-server.ps1",
     "dist": "npm run build && electron-builder",
+    "dist:linux": "npm run build && electron-builder --linux AppImage deb",
     "dist:win": "npm run build && electron-builder --win --x64"
   },
   "keywords": [
@@ -26,7 +27,10 @@
     "electron",
     "gui"
   ],
-  "author": "Sujith Gunawardhane",
+  "author": {
+    "name": "Sujith Gunawardhane",
+    "email": "sujithsg@gmail.com"
+  },
   "license": "ISC",
   "build": {
     "appId": "com.slightsftp.app",
@@ -64,6 +68,10 @@
     "nodeGypRebuild": false,
     "npmRebuild": false,
     "buildDependenciesFromSource": false,
+    "linux": {
+      "category": "Utility",
+      "maintainer": "Sujith Gunawardhane <sujithsg@gmail.com>"
+    },
     "win": {
       "icon": "build/icon.ico",
       "target": [
