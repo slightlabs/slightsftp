@@ -78,6 +78,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
           shopt -s nullglob
@@ -132,10 +133,9 @@ jobs:
           }
 
           gh --version
-          gh auth status || true
 
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            run_with_retry 5 gh release upload "$TAG" "${FILES[@]}" --clobber
+          if gh release view "$TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            run_with_retry 5 gh release upload "$TAG" "${FILES[@]}" --repo "$GH_REPO" --clobber
           else
-            run_with_retry 5 gh release create "$TAG" "${FILES[@]}" --title "$TAG" --generate-notes
+            run_with_retry 5 gh release create "$TAG" "${FILES[@]}" --repo "$GH_REPO" --title "$TAG" --generate-notes
           fi
