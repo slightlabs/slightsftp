@@ -6,6 +6,9 @@ on:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -77,6 +80,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
 
           TAG="${GITHUB_REF#refs/tags/}"
           FILES=(
@@ -85,12 +89,29 @@ jobs:
             linux-installers/*.deb
           )
 
+          echo "Resolved artifacts:"
+          if [[ ${#FILES[@]} -eq 0 ]]; then
+            echo "No release artifacts found after download."
+            ls -R
+            exit 1
+          fi
+          printf ' - %s\n' "${FILES[@]}"
+
+          MSI_COUNT=0
+          APPIMAGE_COUNT=0
+          DEB_COUNT=0
           for f in "${FILES[@]}"; do
-            if [[ ! -f "$f" ]]; then
-              echo "Missing expected artifact: $f"
-              exit 1
-            fi
+            if [[ "$f" == *.msi ]]; then MSI_COUNT=$((MSI_COUNT + 1)); fi
+            if [[ "$f" == *.AppImage ]]; then APPIMAGE_COUNT=$((APPIMAGE_COUNT + 1)); fi
+            if [[ "$f" == *.deb ]]; then DEB_COUNT=$((DEB_COUNT + 1)); fi
           done
+
+          if [[ "$MSI_COUNT" -eq 0 || "$APPIMAGE_COUNT" -eq 0 || "$DEB_COUNT" -eq 0 ]]; then
+            echo "Expected at least one .msi, .AppImage, and .deb artifact."
+            echo "Found: msi=$MSI_COUNT appimage=$APPIMAGE_COUNT deb=$DEB_COUNT"
+            ls -R
+            exit 1
+          fi
 
           run_with_retry() {
             local max_attempts="$1"
@@ -109,6 +130,9 @@ jobs:
               delay=$((delay * 2))
             done
           }
+
+          gh --version
+          gh auth status || true
 
           if gh release view "$TAG" >/dev/null 2>&1; then
             run_with_retry 5 gh release upload "$TAG" "${FILES[@]}" --clobber
