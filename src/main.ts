@@ -161,7 +161,7 @@ function createWindow(): void {
   ]);
   Menu.setApplicationMenu(menu);
 
-  mainWindow.loadFile(path.join(__dirname, 'index.html'));
+  mainWindow.loadFile(path.join(__dirname, 'admin.html'));
 
   mainWindow.on('close', async (event) => {
     // If logging out, allow the window to close without hiding
