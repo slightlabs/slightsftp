@@ -304,7 +304,7 @@ async function initializeDatabase(): Promise<void> {
       name: 'Default SFTP',
       protocol: 'SFTP',
       bindingIp: '0.0.0.0',
-      port: 22,
+      port: 2222,
       enabled: true
     });
     
@@ -313,7 +313,7 @@ async function initializeDatabase(): Promise<void> {
       name: 'Default FTP',
       protocol: 'FTP',
       bindingIp: '0.0.0.0',
-      port: 21,
+      port: 2121,
       enabled: true
     });
     
