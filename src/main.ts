@@ -556,7 +556,14 @@ function setupIpcHandlers(): void {
 
   // User operations
   ipcMain.handle('create-user', async (event, user) => {
-    const userId = db.createUser(user);
+    const normalizedUser = {
+      ...user,
+      passwordEnabled: user.passwordEnabled !== undefined ? user.passwordEnabled : !!user.password,
+      guiEnabled: user.guiEnabled !== undefined ? user.guiEnabled : false,
+      publicKey: user.publicKey || ''
+    };
+
+    const userId = db.createUser(normalizedUser);
     
     // Log user creation
     db.logActivity({
@@ -579,6 +586,34 @@ function setupIpcHandlers(): void {
   });
   
   ipcMain.handle('update-user', async (event, username, updates, listeners, virtualPaths, permissions) => {
+    // Compatibility path for older renderer payload: update-user({ ...userFields })
+    if (typeof username === 'object' && username !== null && updates === undefined) {
+      const legacyUser = username;
+      const lookupUsername = legacyUser.originalUsername || legacyUser.username;
+      const existingUser = db.getUser(lookupUsername);
+      if (!existingUser) throw new Error('User not found');
+
+      const legacyUpdates: any = {
+        publicKey: legacyUser.publicKey,
+        guiEnabled: legacyUser.guiEnabled,
+      };
+      if (legacyUser.password) {
+        legacyUpdates.password = legacyUser.password;
+        legacyUpdates.passwordEnabled = true;
+      }
+
+      db.updateUser(lookupUsername, legacyUpdates);
+
+      db.logActivity({
+        listenerId: null,
+        username: authenticatedUser?.username || 'system',
+        action: 'USER_UPDATED',
+        path: `/users/${lookupUsername}`,
+        success: true
+      });
+      return;
+    }
+
     const user = db.getUser(username);
     if (!user) throw new Error('User not found');
     
@@ -697,6 +732,19 @@ function setupIpcHandlers(): void {
   });
   
   ipcMain.handle('update-listener', async (event, id, updates) => {
+    // Compatibility path for older renderer payload: update-listener({ id, ...fields })
+    if (typeof id === 'object' && id !== null && updates === undefined) {
+      const legacyListener = id;
+      id = legacyListener.id;
+      updates = {
+        name: legacyListener.name,
+        protocol: legacyListener.protocol,
+        bindingIp: legacyListener.bindingIp,
+        port: legacyListener.port,
+        enabled: legacyListener.enabled
+      };
+    }
+
     db.updateListener(id, updates);
     
     const listener = db.getListener(id);
@@ -787,6 +835,74 @@ function setupIpcHandlers(): void {
   // Active sessions
   ipcMain.handle('get-active-sessions', async () => {
     return serverManager.getActiveSessions();
+  });
+
+  // Compatibility wrappers for older renderer channel names
+  ipcMain.handle('get-activity', async (_event, limit = 100) => {
+    return db.getRecentActivities(undefined, limit);
+  });
+
+  ipcMain.handle('clear-activity', async () => {
+    return db.clearAllActivities();
+  });
+
+  ipcMain.handle('get-user-subscriptions', async (_event, username: string) => {
+    const user = db.getUser(username);
+    if (!user || !user.id) return [];
+    return db.getUserListeners(user.id);
+  });
+
+  ipcMain.handle('add-user-subscription', async (_event, username: string, listenerId: number) => {
+    const user = db.getUser(username);
+    if (!user || !user.id) throw new Error('User not found');
+    db.subscribeUserToListener(user.id, listenerId);
+    return { success: true };
+  });
+
+  ipcMain.handle('remove-user-subscription', async (_event, username: string, listenerId: number) => {
+    const user = db.getUser(username);
+    if (!user || !user.id) throw new Error('User not found');
+    db.unsubscribeUserFromListener(user.id, listenerId);
+    return { success: true };
+  });
+
+  ipcMain.handle('get-user-virtual-paths', async (_event, username: string) => {
+    const user = db.getUser(username);
+    if (!user || !user.id) return [];
+    return db.getVirtualPaths(user.id);
+  });
+
+  ipcMain.handle('add-user-virtual-path', async (_event, username: string, virtualPath: string, localPath: string) => {
+    const user = db.getUser(username);
+    if (!user || !user.id) throw new Error('User not found');
+
+    const id = db.addVirtualPath({
+      userId: user.id,
+      virtualPath,
+      localPath,
+      canRead: true,
+      canWrite: true,
+      canAppend: true,
+      canDelete: true,
+      canList: true,
+      canCreateDir: true,
+      canRename: true,
+      applyToSubdirs: true
+    });
+    return { id };
+  });
+
+  ipcMain.handle('remove-user-virtual-path', async (_event, username: string, id: number) => {
+    const user = db.getUser(username);
+    if (!user || !user.id) throw new Error('User not found');
+
+    const userPaths = db.getVirtualPaths(user.id);
+    if (!userPaths.some(vp => vp.id === id)) {
+      throw new Error('Virtual path not found for user');
+    }
+
+    db.deleteVirtualPath(id);
+    return { success: true };
   });
 
   ipcMain.handle('disconnect-session', async (event, sessionId) => {
