@@ -52,4 +52,4 @@ Then visit `http://localhost:8000` in your browser.
 - Update colors and styling in `css/styles.css`
 - Add screenshots to the `images/` folder
 - Modify content in the HTML files
-- GitHub links are configured for: https://github.com/sujithsuranga/slightsftp
+- GitHub links are configured for: https://github.com/slightlabs/slightsftp

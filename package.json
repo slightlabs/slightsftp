@@ -42,7 +42,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "sujithsuranga",
+      "owner": "slightlabs",
       "repo": "slightsftp"
     },
     "files": [

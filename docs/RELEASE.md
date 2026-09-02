@@ -121,7 +121,7 @@ If you prefer manual control:
 
 1. **Build installers** (using GitHub Actions or locally)
 2. **Create GitHub Release:**
-   - Go to https://github.com/sujithsuranga/slightsftp/releases
+   - Go to https://github.com/slightlabs/slightsftp/releases
    - Click "Draft a new release"
    - Tag version: `v1.1.0` (match package.json version)
    - Release title: `SLightSFTP v1.1.0`
@@ -153,7 +153,7 @@ Update version in `package.json` before building:
 ## 🌐 Website Integration
 
 The website automatically links to GitHub Releases:
-- Download buttons point to: https://github.com/sujithsuranga/slightsftp/releases
+- Download buttons point to: https://github.com/slightlabs/slightsftp/releases
 - Users can download the appropriate installer for their platform
 - No manual website updates needed when publishing new releases
 
