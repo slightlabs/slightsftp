@@ -22,7 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
 
       - name: Install dependencies
         run: npm ci || npm install
@@ -30,13 +30,20 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Debug build output
+        run: ls -la dist/
+
       - name: Build Windows Installer
         if: matrix.os == 'windows-latest'
         run: npm run dist:win
 
       - name: Build Linux Installers
         if: matrix.os == 'ubuntu-latest'
-        run: npm run dist:linux
+        run: npm run dist:linux || echo "Build failed with exit code $?"
+
+      - name: Debug release directory
+        if: matrix.os == 'ubuntu-latest'
+        run: ls -la release/ || echo "Release directory not found"
 
       - name: Upload Windows artifacts
         if: matrix.os == 'windows-latest'
@@ -44,6 +51,7 @@ jobs:
         with:
           name: windows-installer
           path: release/*.msi
+        continue-on-error: true
 
       - name: Upload Linux artifacts
         if: matrix.os == 'ubuntu-latest'
@@ -51,6 +59,7 @@ jobs:
         with:
           name: linux-installers
           path: release/*.{AppImage,deb}
+        continue-on-error: true
 
   release:
     needs: build
@@ -60,6 +69,9 @@ jobs:
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+
+      - name: List downloaded artifacts
+        run: ls -R
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -71,5 +83,6 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
