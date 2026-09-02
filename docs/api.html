@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Reference - SLightSFTP</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <div class="container">
+                <div class="logo">SLightSFTP</div>
+                <ul class="nav-links">
+                    <li><a href="index.html#features">Features</a></li>
+                    <li><a href="index.html#installation">Installation</a></li>
+                    <li><a href="index.html#documentation">Documentation</a></li>
+                    <li><a href="https://github.com/sujith/slightsftp" target="_blank">GitHub</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <section class="page-header">
+        <div class="container">
+            <h1>API Reference</h1>
+            <p>Developer documentation for extending SLightSFTP - 100% Free & Open Source</p>
+        </div>
+    </section>
+
+    <section class="api-content">
+        <div class="container">
+            <div class="api-section">
+                <h2>Core Modules</h2>
+                
+                <div class="api-item">
+                    <h3>Server Module</h3>
+                    <p>Main server implementation for FTP/SFTP protocols</p>
+                    <pre><code>// Example: Creating a new server
+const { createServer } = require('./src/server');
+
+const server = createServer({
+    protocol: 'sftp',
+    port: 22,
+    host: '0.0.0.0'
+});
+
+server.start();</code></pre>
+                </div>
+
+                <div class="api-item">
+                    <h3>Database Module</h3>
+                    <p>SQLite database operations for configuration management</p>
+                    <pre><code>// Example: Database operations
+const { Database } = require('./src/database');
+
+const db = new Database('config.db');
+
+// Create user
+await db.createUser({
+    username: 'newuser',
+    password: 'securepassword',
+    permissions: ['read', 'write']
+});
+
+// Get user
+const user = await db.getUser('newuser');</code></pre>
+                </div>
+
+                <div class="api-item">
+                    <h3>Authentication Module</h3>
+                    <p>User authentication handling for both password and public key</p>
+                    <pre><code>// Example: Authentication
+const { authenticate } = require('./src/auth');
+
+// Password authentication
+const result = await authenticate.password('username', 'password');
+
+// Public key authentication
+const result = await authenticate.publicKey('username', publicKey);</code></pre>
+                </div>
+            </div>
+
+            <div class="api-section">
+                <h2>Configuration API</h2>
+                
+                <div class="api-item">
+                    <h3>User Management</h3>
+                    <pre><code>// User CRUD operations
+const { UserManager } = require('./src/managers/user');
+
+const userManager = new UserManager(db);
+
+// Create user
+await userManager.create({
+    username: 'user1',
+    password: 'pass123',
+    guiAccess: true
+});
+
+// Update user
+await userManager.update('user1', {
+    password: 'newpass456'
+});
+
+// Delete user
+await userManager.delete('user1');
+
+// List users
+const users = await userManager.list();</code></pre>
+                </div>
+
+                <div class="api-item">
+                    <h3>Server Management</h3>
+                    <pre><code>// Server configuration operations
+const { ServerManager } = require('./src/managers/server');
+
+const serverManager = new ServerManager(db);
+
+// Create listener
+await serverManager.createListener({
+    protocol: 'ftp',
+    port: 2121,
+    host: '127.0.0.1',
+    enabled: true
+});
+
+// Update listener
+await serverManager.updateListener(1, {
+    port: 2122
+});
+
+// Delete listener
+await serverManager.deleteListener(1);</code></pre>
+                </div>
+            </div>
+
+            <div class="api-section">
+                <h2>Events API</h2>
+                
+                <div class="api-item">
+                    <h3>Server Events</h3>
+                    <pre><code>// Server event handling
+const { EventEmitter } = require('events');
+
+class Server extends EventEmitter {
+    // Connection events
+    on('connection', (client) => {
+        console.log('New client connected:', client.address);
+    });
+
+    on('disconnect', (client) => {
+        console.log('Client disconnected:', client.address);
+    });
+
+    on('error', (error) => {
+        console.error('Server error:', error);
+    });
+}</code></pre>
+                </div>
+
+                <div class="api-item">
+                    <h3>File Operation Events</h3>
+                    <pre><code>// File operation monitoring
+server.on('upload', (data) => {
+    console.log('File uploaded:', data.filename);
+});
+
+server.on('download', (data) => {
+    console.log('File downloaded:', data.filename);
+});
+
+server.on('delete', (data) => {
+    console.log('File deleted:', data.filename);
+});</code></pre>
+                </div>
+            </div>
+
+            <div class="api-section">
+                <h2>Plugin System</h2>
+                
+                <div class="api-item">
+                    <h3>Custom Plugins</h3>
+                    <pre><code>// Creating custom plugins
+const { Plugin } = require('./src/plugin');
+
+class CustomPlugin extends Plugin {
+    constructor() {
+        super('custom-plugin');
+    }
+
+    async onLoad() {
+        console.log('Plugin loaded');
+    }
+
+    async onUnload() {
+        console.log('Plugin unloaded');
+    }
+
+    async onFileUpload(data) {
+        // Custom file upload handling
+    }
+}
+
+// Register plugin
+server.registerPlugin(new CustomPlugin());</code></pre>
+                </div>
+            </div>
+
+            <div class="api-section">
+                <h2>CLI API</h2>
+                
+                <div class="api-item">
+                    <h3>Command Line Interface</h3>
+                    <pre><code>// Available CLI commands
+npm start              # Start the application
+npm test               # Run test client
+npm run dev            # Development mode
+npm run build          # Build for production
+npm run package        # Package as executable</code></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="back-link">
+        <div class="container">
+            <a href="index.html" class="btn btn-secondary">← Back to Home</a>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 SLightSFTP. Free & Open Source MIT License.</p>
+            <div class="footer-links">
+                <a href="https://github.com/sujith/slightsftp" target="_blank">GitHub</a>
+                <a href="https://github.com/sujith/slightsftp/issues" target="_blank">Issues</a>
+                <a href="https://github.com/sujith/slightsftp/blob/main/LICENSE" target="_blank">MIT License</a>
+                <a href="https://github.com/sujith/slightsftp" target="_blank">⭐ Star on GitHub</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

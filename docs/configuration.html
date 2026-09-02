@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuration - SLightSFTP</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <div class="container">
+                <div class="logo">SLightSFTP</div>
+                <ul class="nav-links">
+                    <li><a href="index.html#features">Features</a></li>
+                    <li><a href="index.html#installation">Installation</a></li>
+                    <li><a href="index.html#documentation">Documentation</a></li>
+                    <li><a href="https://github.com/sujith/slightsftp" target="_blank">GitHub</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <section class="page-header">
+        <div class="container">
+            <h1>Configuration Guide</h1>
+            <p>How to configure users, servers, and permissions - 100% Free & Open Source</p>
+        </div>
+    </section>
+
+    <section class="configuration-content">
+        <div class="container">
+            <div class="config-section">
+                <h2>User Configuration</h2>
+                <p>Users can be configured through the GUI interface with the following options:</p>
+                
+                <div class="config-item">
+                    <h3>Basic Settings</h3>
+                    <ul>
+                        <li><strong>Username:</strong> Unique identifier for the user</li>
+                        <li><strong>Password:</strong> Optional password for authentication</li>
+                        <li><strong>Public Key:</strong> Optional SSH public key for SFTP authentication</li>
+                    </ul>
+                </div>
+
+                <div class="config-item">
+                    <h3>Access Control</h3>
+                    <ul>
+                        <li><strong>Subscribed Listeners:</strong> Choose which FTP/SFTP listeners the user can access</li>
+                        <li><strong>GUI Access:</strong> Grant or deny access to the management GUI</li>
+                    </ul>
+                </div>
+
+                <div class="config-item">
+                    <h3>Virtual Path Mappings</h3>
+                    <ul>
+                        <li><strong>Virtual Path:</strong> The path as seen by the user (e.g., /uploads)</li>
+                        <li><strong>Real Path:</strong> The actual filesystem path (e.g., /home/user/uploads)</li>
+                        <li><strong>Permissions:</strong> Read, write, delete, and list permissions per path</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h2>Server Configuration</h2>
+                <p>Configure FTP/SFTP listeners through the GUI:</p>
+                
+                <div class="config-item">
+                    <h3>Listener Settings</h3>
+                    <ul>
+                        <li><strong>Protocol:</strong> Choose between FTP or SFTP</li>
+                        <li><strong>Binding IP:</strong> IP address to bind to (0.0.0.0 for all interfaces)</li>
+                        <li><strong>Port:</strong> Port number for the listener (default: 21 for FTP, 22 for SFTP)</li>
+                        <li><strong>Enable/Disable:</strong> Toggle listener on/off</li>
+                    </ul>
+                </div>
+
+                <div class="config-item">
+                    <h3>Security Settings</h3>
+                    <ul>
+                        <li><strong>SSL/TLS:</strong> Enable secure connections for FTP</li>
+                        <li><strong>Host Key:</strong> SSH host key for SFTP</li>
+                        <li><strong>Authentication Methods:</strong> Configure allowed auth methods</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h2>Permission System</h2>
+                <p>Granular permissions can be set per user and per virtual path:</p>
+                
+                <div class="config-item">
+                    <h3>Permission Types</h3>
+                    <ul>
+                        <li><strong>Read:</strong> Allow downloading files</li>
+                        <li><strong>Write:</strong> Allow uploading files</li>
+                        <li><strong>Delete:</strong> Allow deleting files and directories</li>
+                        <li><strong>List:</strong> Allow directory listing</li>
+                    </ul>
+                </div>
+
+                <div class="config-item">
+                    <h3>Permission Inheritance</h3>
+                    <ul>
+                        <li>Permissions are set per virtual path mapping</li>
+                        <li>Different paths can have different permissions for the same user</li>
+                        <li>Default permissions can be set at user level</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h2>Database Configuration</h2>
+                <p>All configuration is stored in SQLite database (config.db):</p>
+                
+                <div class="config-item">
+                    <h3>Database Location</h3>
+                    <ul>
+                        <li>Default location: Application directory/config.db</li>
+                        <li>Single file for easy backup</li>
+                        <li>Supports standard SQLite tools for management</li>
+                    </ul>
+                </div>
+
+                <div class="config-item">
+                    <h3>Backup and Migration</h3>
+                    <ul>
+                        <li>Simply copy config.db for backup</li>
+                        <li>Restore by replacing the database file</li>
+                        <li>Use SQLite tools for data migration</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h2>Default Configuration</h2>
+                <div class="warning-box">
+                    <h3>Default Credentials</h3>
+                    <p><strong>Username:</strong> admin</p>
+                    <p><strong>Password:</strong> admin123</p>
+                    <p class="warning">⚠️ Please change these credentials immediately after first login!</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="back-link">
+        <div class="container">
+            <a href="index.html" class="btn btn-secondary">← Back to Home</a>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 SLightSFTP. Free & Open Source MIT License.</p>
+            <div class="footer-links">
+                <a href="https://github.com/sujith/slightsftp" target="_blank">GitHub</a>
+                <a href="https://github.com/sujith/slightsftp/issues" target="_blank">Issues</a>
+                <a href="https://github.com/sujith/slightsftp/blob/main/LICENSE" target="_blank">MIT License</a>
+                <a href="https://github.com/sujith/slightsftp" target="_blank">⭐ Star on GitHub</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

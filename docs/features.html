@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Features - SLightSFTP</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <div class="container">
+                <div class="logo">SLightSFTP</div>
+                <ul class="nav-links">
+                    <li><a href="index.html#features">Features</a></li>
+                    <li><a href="index.html#installation">Installation</a></li>
+                    <li><a href="index.html#documentation">Documentation</a></li>
+                    <li><a href="https://github.com/sujith/slightsftp" target="_blank">GitHub</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <section class="page-header">
+        <div class="container">
+            <h1>Features Guide</h1>
+            <p>Comprehensive overview of SLightSFTP capabilities - 100% Free & Open Source</p>
+        </div>
+    </section>
+
+    <section class="features-detail">
+        <div class="container">
+            <div class="feature-detail-card">
+                <h2>Multi-Protocol Support</h2>
+                <p>SLightSFTP supports both FTP and SFTP protocols, allowing you to serve clients using either protocol. You can configure multiple listeners with different protocols, ports, and binding addresses.</p>
+                <ul>
+                    <li>FTP (File Transfer Protocol) for legacy clients</li>
+                    <li>SFTP (SSH File Transfer Protocol) for secure transfers</li>
+                    <li>Multiple listeners on different ports simultaneously</li>
+                    <li>Custom binding addresses for network isolation</li>
+                    <li>Individual enable/disable control per listener</li>
+                </ul>
+            </div>
+
+            <div class="feature-detail-card">
+                <h2>Multi-User Management</h2>
+                <p>Comprehensive user management system with flexible authentication options:</p>
+                <ul>
+                    <li>Password-based authentication with SHA-256 hashing</li>
+                    <li>SSH public key authentication for enhanced security</li>
+                    <li>Per-user GUI access control</li>
+                    <li>User-specific virtual path mappings</li>
+                    <li>Forced password change on first login with default credentials</li>
+                    <li>User subscription to specific listeners</li>
+                </ul>
+            </div>
+
+            <div class="feature-detail-card">
+                <h2>Virtual Path Mapping</h2>
+                <p>Map virtual paths to real filesystem locations with granular control:</p>
+                <ul>
+                    <li>Create custom virtual paths for each user</li>
+                    <li>Map to any directory on the filesystem</li>
+                    <li>Isolate users to specific directories</li>
+                    <li>Support for complex directory structures</li>
+                    <li>Automatic directory creation for mapped paths</li>
+                    <li>Permission inheritance options for subdirectories</li>
+                </ul>
+            </div>
+
+            <div class="feature-detail-card">
+                <h2>Granular Permissions</h2>
+                <p>Fine-grained permission system for each user and virtual path:</p>
+                <ul>
+                    <li>Read permissions for file downloads</li>
+                    <li>Write permissions for file uploads</li>
+                    <li>Append permissions for file modification</li>
+                    <li>Delete permissions for file/directory removal</li>
+                    <li>List permissions for directory browsing</li>
+                    <li>Create directory permissions</li>
+                    <li>Rename permissions for files and directories</li>
+                    <li>Per-listener and per-path permission control</li>
+                </ul>
+            </div>
+
+            <div class="feature-detail-card">
+                <h2>Dual GUI Interface</h2>
+                <p>Two interface options for flexible server management:</p>
+                <ul>
+                    <li><strong>Electron Desktop GUI:</strong> Native cross-platform application</li>
+                    <li><strong>Web-Based GUI:</strong> Browser-accessible interface for remote management</li>
+                    <li>User management interface</li>
+                    <li>Server configuration panels</li>
+                    <li>Real-time connection monitoring</li>
+                    <li>Activity log viewer with export functionality</li>
+                    <li>Session management with disconnect capabilities</li>
+                </ul>
+            </div>
+
+            <div class="feature-detail-card">
+                <h2>SQLite Database</h2>
+                <p>All configuration stored in SQLite database for easy management:</p>
+                <ul>
+                    <li>Single file database (config.db)</li>
+                    <li>Easy backup and migration</li>
+                    <li>Automatic schema initialization</li>
+                    <li>Atomic transactions for data integrity</li>
+                    <li>Activity logging with automatic cleanup</li>
+                    <li>Settings storage for application preferences</li>
+                </ul>
+            </div>
+
+            <div class="feature-detail-card">
+                <h2>System Tray Support</h2>
+                <p>Run in system tray for convenient access:</p>
+                <ul>
+                    <li>Minimize to system tray instead of closing</li>
+                    <li>Quick access to login/dashboard</li>
+                    <li>Context menu for common actions</li>
+                    <li>Background operation with resource efficiency</li>
+                    <li>Dynamic menu updates based on authentication state</li>
+                </ul>
+            </div>
+
+            <div class="feature-detail-card">
+                <h2>Activity Logging & Monitoring</h2>
+                <p>Comprehensive logging and monitoring capabilities:</p>
+                <ul>
+                    <li>Detailed activity logging for all user actions</li>
+                    <li>Real-time activity updates via WebSocket</li>
+                    <li>Export activity logs to CSV</li>
+                    <li>Automatic cleanup of old logs based on retention settings</li>
+                    <li>Session monitoring with active connection tracking</li>
+                    <li>Ability to disconnect active sessions remotely</li>
+                    <li>Listener status monitoring (running/stopped)</li>
+                </ul>
+            </div>
+
+            <div class="feature-detail-card">
+                <h2>Security Features</h2>
+                <p>Enterprise-grade security capabilities:</p>
+                <ul>
+                    <li>SHA-256 password hashing</li>
+                    <li>SSH public key authentication support</li>
+                    <li>Forced password change on first login</li>
+                    <li>GUI access control per user</li>
+                    <li>Generic error messages for authentication failures</li>
+                    <li>Secure session management</li>
+                    <li>Listener-level access control</li>
+                </ul>
+            </div>
+
+            <div class="feature-detail-card">
+                <h2>Cross-Platform Support</h2>
+                <p>Available on multiple platforms with installer packages:</p>
+                <ul>
+                    <li>Windows support with MSI installer</li>
+                    <li>Linux support with AppImage and DEB packages</li>
+                    <li>macOS support (via Electron)</li>
+                    <li>Consistent experience across platforms</li>
+                    <li>Platform-specific optimizations</li>
+                </ul>
+            </div>
+
+            <div class="feature-detail-card">
+                <h2>Developer & Testing Features</h2>
+                <p>Comprehensive testing and development tools:</p>
+                <ul>
+                    <li>Extensive test suite with Jest</li>
+                    <li>Integration tests for FTP/SFTP functionality</li>
+                    <li>End-to-end Electron testing</li>
+                    <li>Test client for connection verification</li>
+                    <li>Database coverage testing</li>
+                    <li>Virtual path permission testing</li>
+                    <li>WebSocket communication testing</li>
+                </ul>
+            </div>
+        </div>
+    </section>
+
+    <section class="back-link">
+        <div class="container">
+            <a href="index.html" class="btn btn-secondary">← Back to Home</a>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 SLightSFTP. Free & Open Source MIT License.</p>
+            <div class="footer-links">
+                <a href="https://github.com/sujith/slightsftp" target="_blank">GitHub</a>
+                <a href="https://github.com/sujith/slightsftp/issues" target="_blank">Issues</a>
+                <a href="https://github.com/sujith/slightsftp/blob/main/LICENSE" target="_blank">MIT License</a>
+                <a href="https://github.com/sujith/slightsftp" target="_blank">⭐ Star on GitHub</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

@@ -1,0 +1,640 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    line-height: 1.6;
+    color: #333;
+    background-color: #f8f9fa;
+}
+
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 20px;
+}
+
+/* Navigation */
+.navbar {
+    background-color: #2c3e50;
+    color: white;
+    padding: 1rem 0;
+    position: sticky;
+    top: 0;
+    z-index: 1000;
+}
+
+.navbar .container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.logo {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #3498db;
+}
+
+.nav-links {
+    display: flex;
+    list-style: none;
+    gap: 2rem;
+}
+
+.nav-links a {
+    color: white;
+    text-decoration: none;
+    transition: color 0.3s;
+}
+
+.nav-links a:hover {
+    color: #3498db;
+}
+
+/* Hero Section */
+.hero {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 4rem 0;
+    text-align: center;
+}
+
+.hero h1 {
+    font-size: 2.5rem;
+    margin-bottom: 1rem;
+}
+
+.hero-subtitle {
+    font-size: 1.2rem;
+    margin-bottom: 1rem;
+    opacity: 0.9;
+}
+
+.open-source-badge {
+    font-size: 1rem;
+    margin-bottom: 2rem;
+    padding: 0.5rem 1rem;
+    background-color: rgba(255, 255, 255, 0.2);
+    border-radius: 20px;
+    display: inline-block;
+    font-weight: bold;
+}
+
+.cta-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+
+.btn {
+    padding: 0.8rem 2rem;
+    border-radius: 5px;
+    text-decoration: none;
+    font-weight: bold;
+    transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+}
+
+.btn-primary {
+    background-color: #3498db;
+    color: white;
+}
+
+.btn-secondary {
+    background-color: white;
+    color: #667eea;
+}
+
+/* Features Section */
+.features {
+    padding: 4rem 0;
+    background-color: white;
+}
+
+.features h2 {
+    text-align: center;
+    margin-bottom: 3rem;
+    color: #2c3e50;
+}
+
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+.feature-card {
+    background-color: #f8f9fa;
+    padding: 2rem;
+    border-radius: 8px;
+    border-left: 4px solid #3498db;
+    transition: transform 0.3s;
+}
+
+.feature-card:hover {
+    transform: translateY(-5px);
+}
+
+.feature-card h3 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+}
+
+.feature-card p {
+    color: #666;
+}
+
+/* Installation Section */
+.installation {
+    padding: 4rem 0;
+    background-color: #f8f9fa;
+}
+
+.installation h2 {
+    text-align: center;
+    margin-bottom: 1rem;
+    color: #2c3e50;
+}
+
+.open-source-note {
+    text-align: center;
+    background-color: #d4edda;
+    color: #155724;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    border: 1px solid #c3e6cb;
+}
+
+.install-steps {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.step {
+    background-color: white;
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.step h3 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+}
+
+.step pre {
+    background-color: #2c3e50;
+    color: #ecf0f1;
+    padding: 1rem;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+.step code {
+    font-family: 'Courier New', monospace;
+}
+
+.default-credentials {
+    background-color: #fff3cd;
+    border: 1px solid #ffc107;
+    padding: 2rem;
+    border-radius: 8px;
+    margin-top: 2rem;
+}
+
+.default-credentials h3 {
+    color: #856404;
+    margin-bottom: 1rem;
+}
+
+.default-credentials p {
+    color: #856404;
+    margin-bottom: 0.5rem;
+}
+
+.warning {
+    color: #dc3545;
+    font-weight: bold;
+    margin-top: 1rem;
+}
+
+/* Documentation Section */
+.documentation {
+    padding: 4rem 0;
+    background-color: white;
+}
+
+.documentation h2 {
+    text-align: center;
+    margin-bottom: 3rem;
+    color: #2c3e50;
+}
+
+.docs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 2rem;
+}
+
+.doc-card {
+    background-color: #f8f9fa;
+    padding: 2rem;
+    border-radius: 8px;
+    text-decoration: none;
+    color: #333;
+    transition: transform 0.3s, box-shadow 0.3s;
+    border: 2px solid #e9ecef;
+}
+
+.doc-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    border-color: #3498db;
+}
+
+.doc-card h3 {
+    color: #2c3e50;
+    margin-bottom: 0.5rem;
+}
+
+.doc-card p {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+/* Usage Section */
+.usage {
+    padding: 4rem 0;
+    background-color: #f8f9fa;
+}
+
+.usage h2 {
+    text-align: center;
+    margin-bottom: 3rem;
+    color: #2c3e50;
+}
+
+.usage-commands {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.usage-commands pre {
+    background-color: #2c3e50;
+    color: #ecf0f1;
+    padding: 2rem;
+    border-radius: 8px;
+    overflow-x: auto;
+}
+
+.usage-commands code {
+    font-family: 'Courier New', monospace;
+}
+
+/* Footer */
+footer {
+    background-color: #2c3e50;
+    color: white;
+    padding: 2rem 0;
+    text-align: center;
+}
+
+.footer-links {
+    margin-top: 1rem;
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.footer-links a {
+    color: #3498db;
+    text-decoration: none;
+    transition: color 0.3s;
+}
+
+.footer-links a:hover {
+    color: white;
+}
+
+/* Page Header */
+.page-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 3rem 0;
+    text-align: center;
+}
+
+.page-header h1 {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.page-header p {
+    opacity: 0.9;
+}
+
+/* Features Detail */
+.features-detail {
+    padding: 4rem 0;
+    background-color: white;
+}
+
+.feature-detail-card {
+    background-color: #f8f9fa;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    border-radius: 8px;
+    border-left: 4px solid #3498db;
+}
+
+.feature-detail-card h2 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+}
+
+.feature-detail-card ul {
+    list-style-position: inside;
+    color: #666;
+}
+
+.feature-detail-card li {
+    margin-bottom: 0.5rem;
+}
+
+/* Configuration Content */
+.configuration-content {
+    padding: 4rem 0;
+    background-color: #f8f9fa;
+}
+
+.config-section {
+    background-color: white;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.config-section h2 {
+    color: #2c3e50;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 0.5rem;
+}
+
+.config-item {
+    margin-bottom: 2rem;
+}
+
+.config-item h3 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+}
+
+.config-item ul {
+    list-style-position: inside;
+    color: #666;
+}
+
+.config-item li {
+    margin-bottom: 0.5rem;
+}
+
+.warning-box {
+    background-color: #fff3cd;
+    border: 1px solid #ffc107;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-top: 1rem;
+}
+
+.warning-box h3 {
+    color: #856404;
+    margin-bottom: 1rem;
+}
+
+.warning-box p {
+    color: #856404;
+    margin-bottom: 0.5rem;
+}
+
+/* API Content */
+.api-content {
+    padding: 4rem 0;
+    background-color: white;
+}
+
+.api-section {
+    margin-bottom: 3rem;
+}
+
+.api-section h2 {
+    color: #2c3e50;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 0.5rem;
+}
+
+.api-item {
+    background-color: #f8f9fa;
+    padding: 2rem;
+    margin-bottom: 1.5rem;
+    border-radius: 8px;
+    border-left: 4px solid #3498db;
+}
+
+.api-item h3 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+}
+
+.api-item p {
+    color: #666;
+    margin-bottom: 1rem;
+}
+
+.api-item pre {
+    background-color: #2c3e50;
+    color: #ecf0f1;
+    padding: 1rem;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+.api-item code {
+    font-family: 'Courier New', monospace;
+}
+
+/* Troubleshooting Content */
+.troubleshooting-content {
+    padding: 4rem 0;
+    background-color: #f8f9fa;
+}
+
+.troubleshoot-section {
+    background-color: white;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.troubleshoot-section h2 {
+    color: #2c3e50;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 0.5rem;
+}
+
+.issue-card {
+    background-color: #f8f9fa;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border-radius: 8px;
+    border-left: 4px solid #e74c3c;
+}
+
+.issue-card h3 {
+    color: #2c3e50;
+    margin-bottom: 1rem;
+}
+
+.issue-card p {
+    color: #666;
+    margin-bottom: 1rem;
+}
+
+.issue-card strong {
+    color: #2c3e50;
+}
+
+.issue-card pre {
+    background-color: #2c3e50;
+    color: #ecf0f1;
+    padding: 1rem;
+    border-radius: 4px;
+    overflow-x: auto;
+    margin-top: 1rem;
+}
+
+.issue-card code {
+    font-family: 'Courier New', monospace;
+}
+
+.issue-card ul {
+    list-style-position: inside;
+    color: #666;
+    margin-top: 1rem;
+}
+
+.issue-card li {
+    margin-bottom: 0.5rem;
+}
+
+.help-card {
+    background-color: #d1ecf1;
+    border: 1px solid #bee5eb;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+}
+
+.help-card h3 {
+    color: #0c5460;
+    margin-bottom: 1rem;
+}
+
+.help-card ul {
+    list-style-position: inside;
+    color: #0c5460;
+}
+
+.help-card li {
+    margin-bottom: 0.5rem;
+}
+
+.help-card a {
+    color: #0c5460;
+    text-decoration: underline;
+}
+
+/* Back Link */
+.back-link {
+    padding: 2rem 0;
+    background-color: white;
+    text-align: center;
+}
+
+/* Error Page */
+.error-page {
+    padding: 6rem 0;
+    background-color: white;
+    text-align: center;
+}
+
+.error-page h1 {
+    font-size: 3rem;
+    color: #2c3e50;
+    margin-bottom: 1rem;
+}
+
+.error-page p {
+    font-size: 1.2rem;
+    color: #666;
+    margin-bottom: 2rem;
+}
+
+.error-actions {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .navbar .container {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .nav-links {
+        flex-direction: column;
+        gap: 1rem;
+        text-align: center;
+    }
+    
+    .hero h1 {
+        font-size: 1.8rem;
+    }
+    
+    .cta-buttons {
+        flex-direction: column;
+    }
+    
+    .features-grid,
+    .docs-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .page-header h1 {
+        font-size: 1.5rem;
+    }
+    
+    .feature-detail-card,
+    .config-section,
+    .api-item,
+    .issue-card {
+        padding: 1.5rem;
+    }
+}

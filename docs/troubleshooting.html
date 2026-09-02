@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Troubleshooting - SLightSFTP</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <div class="container">
+                <div class="logo">SLightSFTP</div>
+                <ul class="nav-links">
+                    <li><a href="index.html#features">Features</a></li>
+                    <li><a href="index.html#installation">Installation</a></li>
+                    <li><a href="index.html#documentation">Documentation</a></li>
+                    <li><a href="https://github.com/sujith/slightsftp" target="_blank">GitHub</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <section class="page-header">
+        <div class="container">
+            <h1>Troubleshooting</h1>
+            <p>Common issues and solutions - 100% Free & Open Source</p>
+        </div>
+    </section>
+
+    <section class="troubleshooting-content">
+        <div class="container">
+            <div class="troubleshoot-section">
+                <h2>Installation Issues</h2>
+                
+                <div class="issue-card">
+                    <h3>Node.js not found</h3>
+                    <p><strong>Problem:</strong> Command not found error when running npm commands</p>
+                    <p><strong>Solution:</strong> Install Node.js from nodejs.org or use a version manager like nvm</p>
+                    <pre><code># Install using nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+nvm install --lts
+nvm use --lts</code></pre>
+                </div>
+
+                <div class="issue-card">
+                    <h3>Dependency installation fails</h3>
+                    <p><strong>Problem:</strong> npm install fails with errors</p>
+                    <p><strong>Solution:</strong> Try clearing npm cache and reinstalling</p>
+                    <pre><code>npm cache clean --force
+rm -rf node_modules package-lock.json
+npm install</code></pre>
+                </div>
+
+                <div class="issue-card">
+                    <h3>Electron installation fails</h3>
+                    <p><strong>Problem:</strong> Electron binary download fails</p>
+                    <p><strong>Solution:</strong> Set Electron mirror or use proxy</p>
+                    <pre><code># Set Electron mirror
+export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+
+# Or use proxy
+export ELECTRON_MIRROR=https://ghproxy.com/</code></pre>
+                </div>
+            </div>
+
+            <div class="troubleshoot-section">
+                <h2>Server Issues</h2>
+                
+                <div class="issue-card">
+                    <h3>Server won't start</h3>
+                    <p><strong>Problem:</strong> Server fails to start on specified port</p>
+                    <p><strong>Solution:</strong> Check if port is already in use</p>
+                    <pre><code># Check port usage
+netstat -tuln | grep :21
+netstat -tuln | grep :22
+
+# Kill process using the port
+sudo kill -9 <PID></code></pre>
+                </div>
+
+                <div class="issue-card">
+                    <h3>Connection refused</h3>
+                    <p><strong>Problem:</strong> Clients cannot connect to the server</p>
+                    <p><strong>Solution:</strong> Check firewall settings and binding address</p>
+                    <pre><code># Check firewall status
+sudo ufw status
+
+# Allow ports
+sudo ufw allow 21/tcp
+sudo ufw allow 22/tcp
+
+# Ensure server is bound to correct IP
+# Use 0.0.0.0 for all interfaces</code></pre>
+                </div>
+
+                <div class="issue-card">
+                    <h3>Authentication fails</h3>
+                    <p><strong>Problem:</strong> Users cannot authenticate</p>
+                    <p><strong>Solution:</strong> Verify user credentials and authentication method</p>
+                    <ul>
+                        <li>Check username and password are correct</li>
+                        <li>Verify user is subscribed to the correct listener</li>
+                        <li>For SFTP, check public key format</li>
+                        <li>Ensure authentication method is enabled</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="troubleshoot-section">
+                <h2>Performance Issues</h2>
+                
+                <div class="issue-card">
+                    <h3>Slow file transfers</h3>
+                    <p><strong>Problem:</strong> File transfer speeds are slow</p>
+                    <p><strong>Solution:</strong> Check network and system resources</p>
+                    <ul>
+                        <li>Check network bandwidth and latency</li>
+                        <li>Verify disk I/O performance</li>
+                        <li>Check system resources (CPU, memory)</li>
+                        <li>Consider increasing buffer sizes</li>
+                    </ul>
+                </div>
+
+                <div class="issue-card">
+                    <h3>High memory usage</h3>
+                    <p><strong>Problem:</strong> Application uses excessive memory</p>
+                    <p><strong>Solution:</strong> Monitor connections and database size</p>
+                    <ul>
+                        <li>Check number of active connections</li>
+                        <li>Review database size and optimize if needed</li>
+                        <li>Restart application periodically</li>
+                        <li>Check for memory leaks in logs</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="troubleshoot-section">
+                <h2>GUI Issues</h2>
+                
+                <div class="issue-card">
+                    <h3>GUI won't open</h3>
+                    <p><strong>Problem:</strong> Electron window fails to open</p>
+                    <p><strong>Solution:</strong> Check display environment and dependencies</p>
+                    <pre><code># Check display environment
+echo $DISPLAY
+
+# On Linux, ensure X11 is running
+# On Windows, ensure no display scaling issues
+
+# Try running in dev mode for error details
+npm run dev</code></pre>
+                </div>
+
+                <div class="issue-card">
+                    <h3>Database errors in GUI</h3>
+                    <p><strong>Problem:</strong> GUI shows database connection errors</p>
+                    <p><strong>Solution:</strong> Verify database file and permissions</p>
+                    <pre><code># Check database file exists
+ls -la config.db
+
+# Check file permissions
+chmod 644 config.db
+
+# Test database integrity
+sqlite3 config.db "PRAGMA integrity_check;"</code></pre>
+                </div>
+            </div>
+
+            <div class="troubleshoot-section">
+                <h2>Permission Issues</h2>
+                
+                <div class="issue-card">
+                    <h3>Access denied errors</h3>
+                    <p><strong>Problem:</strong> Users get access denied for files</p>
+                    <p><strong>Solution:</strong> Check virtual path mappings and permissions</p>
+                    <ul>
+                        <li>Verify virtual path mapping is correct</li>
+                        <li>Check real path exists and is accessible</li>
+                        <li>Review user permissions for the path</li>
+                        <li>Check filesystem permissions on real path</li>
+                    </ul>
+                </div>
+
+                <div class="issue-card">
+                    <h3>Path not found errors</h3>
+                    <p><strong>Problem:</strong> Users cannot access configured paths</p>
+                    <p><strong>Solution:</strong> Verify path configuration and existence</p>
+                    <ul>
+                        <li>Ensure real directory exists</li>
+                        <li>Check virtual path format (should start with /)</li>
+                        <li>Verify user is subscribed to correct listener</li>
+                        <li>Check for typos in path configuration</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="troubleshoot-section">
+                <h2>Getting Help</h2>
+                
+                <div class="help-card">
+                    <h3>Community Support</h3>
+                    <ul>
+                        <li><strong>GitHub Issues:</strong> <a href="https://github.com/sujith/slightsftp/issues" target="_blank">Report bugs and request features</a></li>
+                        <li><strong>Documentation:</strong> Check the documentation sections for detailed guides</li>
+                        <li><strong>Logs:</strong> Check application logs for detailed error information</li>
+                    </ul>
+                </div>
+
+                <div class="help-card">
+                    <h3>Debug Mode</h3>
+                    <p>Enable debug mode for detailed logging:</p>
+                    <pre><code># Set debug environment variable
+export DEBUG=slightsftp:*
+npm start</code></pre>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="back-link">
+        <div class="container">
+            <a href="index.html" class="btn btn-secondary">← Back to Home</a>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 SLightSFTP. Free & Open Source MIT License.</p>
+            <div class="footer-links">
+                <a href="https://github.com/sujith/slightsftp" target="_blank">GitHub</a>
+                <a href="https://github.com/sujith/slightsftp/issues" target="_blank">Issues</a>
+                <a href="https://github.com/sujith/slightsftp/blob/main/LICENSE" target="_blank">MIT License</a>
+                <a href="https://github.com/sujith/slightsftp" target="_blank">⭐ Star on GitHub</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

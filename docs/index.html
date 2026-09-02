@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SLightSFTP - Multi-user FTP/SFTP Server with GUI</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <div class="container">
+                <div class="logo">SLightSFTP</div>
+                <ul class="nav-links">
+                    <li><a href="#features">Features</a></li>
+                    <li><a href="#installation">Installation</a></li>
+                    <li><a href="#documentation">Documentation</a></li>
+                    <li><a href="https://github.com/sujith/slightsftp" target="_blank">GitHub</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <section class="hero">
+        <div class="container">
+            <h1>Multi-user FTP/SFTP Server with GUI Management Interface</h1>
+            <p class="hero-subtitle">Lightweight, secure, and easy to manage file transfer server with a beautiful Electron-based GUI</p>
+            <p class="open-source-badge">🚀 100% Free & Open Source (MIT License)</p>
+            <div class="cta-buttons">
+                <a href="#installation" class="btn btn-primary">Get Started</a>
+                <a href="https://github.com/sujith/slightsftp" target="_blank" class="btn btn-secondary">View on GitHub</a>
+            </div>
+        </div>
+    </section>
+
+    <section id="features" class="features">
+        <div class="container">
+            <h2>Key Features</h2>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <h3>Multi-Protocol Support</h3>
+                    <p>Support for both FTP and SFTP protocols with multiple listeners on different ports</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Multi-User Management</h3>
+                    <p>Multiple users with password and SSH public key authentication options</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Virtual Path Mapping</h3>
+                    <p>Map virtual paths to real filesystem locations with granular per-user permissions</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Electron GUI</h3>
+                    <p>Beautiful cross-platform GUI for configuration, monitoring, and user management</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Web-Based Interface</h3>
+                    <p>Additional web-based GUI accessible via browser for remote management</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Granular Permissions</h3>
+                    <p>Read, write, delete, list, create directory, and rename permissions per user and path</p>
+                </div>
+                <div class="feature-card">
+                    <h3>SQLite Database</h3>
+                    <p>All configuration stored in SQLite database for easy backup and migration</p>
+                </div>
+                <div class="feature-card">
+                    <h3>System Tray Support</h3>
+                    <p>Runs in system tray for easy access with background operation</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Activity Logging</h3>
+                    <p>Comprehensive activity logging with export capabilities and automatic cleanup</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Session Management</h3>
+                    <p>Real-time session monitoring with ability to disconnect active connections</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Security Features</h3>
+                    <p>Forced password change on first login, secure password hashing, and GUI access control</p>
+                </div>
+                <div class="feature-card">
+                    <h3>Cross-Platform</h3>
+                    <p>Available for Windows, Linux, and macOS with installer packages</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section id="installation" class="installation">
+        <div class="container">
+            <h2>Installation</h2>
+            <p class="open-source-note">📦 This project is 100% free and open source under the MIT License. No costs, no restrictions.</p>
+            <div class="install-steps">
+                <div class="step">
+                    <h3>Step 1: Clone the repository</h3>
+                    <pre><code>git clone https://github.com/sujith/slightsftp.git
+cd slightsftp</code></pre>
+                </div>
+                <div class="step">
+                    <h3>Step 2: Install dependencies</h3>
+                    <pre><code>npm install</code></pre>
+                </div>
+                <div class="step">
+                    <h3>Step 3: Start the application</h3>
+                    <pre><code>npm start</code></pre>
+                </div>
+                <div class="step">
+                    <h3>Step 4: Access the GUI</h3>
+                    <p>The application will launch with the Electron GUI interface</p>
+                </div>
+            </div>
+            <div class="default-credentials">
+                <h3>Default Credentials</h3>
+                <p><strong>Username:</strong> admin</p>
+                <p><strong>Password:</strong> admin123</p>
+                <p class="warning">Please change these credentials after first login!</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="documentation" class="documentation">
+        <div class="container">
+            <h2>Documentation</h2>
+            <div class="docs-grid">
+                <a href="features.html" class="doc-card">
+                    <h3>Features Guide</h3>
+                    <p>Detailed information about all features and capabilities</p>
+                </a>
+                <a href="configuration.html" class="doc-card">
+                    <h3>Configuration</h3>
+                    <p>How to configure users, servers, and permissions</p>
+                </a>
+                <a href="api.html" class="doc-card">
+                    <h3>API Reference</h3>
+                    <p>API documentation for developers</p>
+                </a>
+                <a href="troubleshooting.html" class="doc-card">
+                    <h3>Troubleshooting</h3>
+                    <p>Common issues and solutions</p>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <section class="usage">
+        <div class="container">
+            <h2>Quick Start</h2>
+            <div class="usage-commands">
+                <pre><code># Start the application
+npm start
+
+# Run test client
+npm test
+
+# Development mode
+npm run dev</code></pre>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 SLightSFTP. Free & Open Source MIT License.</p>
+            <div class="footer-links">
+                <a href="https://github.com/sujith/slightsftp" target="_blank">GitHub</a>
+                <a href="https://github.com/sujith/slightsftp/issues" target="_blank">Issues</a>
+                <a href="https://github.com/sujith/slightsftp/blob/main/LICENSE" target="_blank">MIT License</a>
+                <a href="https://github.com/sujith/slightsftp" target="_blank">⭐ Star on GitHub</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>
