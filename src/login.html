@@ -251,7 +251,8 @@
         const passwordInput = document.getElementById('password');
         const loginBtn = document.getElementById('loginBtn');
         const errorMessage = document.getElementById('errorMessage');
-        const isElectron = !!(window.api && typeof window.api.invoke === 'function');
+        const isDesktopApp = window.location.protocol === 'file:';
+        const hasElectronBridge = !!(window.api && typeof window.api.invoke === 'function');
 
         function showError(message) {
             errorMessage.textContent = message;
@@ -271,7 +272,11 @@
             passwordInput.disabled = true;
 
             try {
-                if (isElectron) {
+                if (isDesktopApp) {
+                    if (!hasElectronBridge) {
+                        throw new Error('Desktop authentication bridge is unavailable');
+                    }
+
                     const result = await window.api.invoke('authenticate-user', username, password);
 
                     if (result.success && result.mustChangePassword) {
