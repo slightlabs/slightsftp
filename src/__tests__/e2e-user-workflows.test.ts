@@ -360,4 +360,102 @@ describe('Complete User Workflow Tests', () => {
         .set('Cookie', `sessionId=${sessionId}`);
     });
   });
+
+  describe('Permission Configuration Round-Trip Workflow', () => {
+    let sessionId: string;
+
+    test('should persist and update listener permissions for a subscribed user', async () => {
+      const loginResponse = await request(app)
+        .post('/api/login')
+        .send({ username: 'admin', password: 'admin123' });
+
+      expect(loginResponse.status).toBe(200);
+      const setCookie = loginResponse.headers['set-cookie'];
+      sessionId = setCookie![0].split(';')[0].split('=')[1];
+
+      const createUserResponse = await request(app)
+        .post('/api/users')
+        .set('Cookie', `sessionId=${sessionId}`)
+        .send({
+          username: 'permuser',
+          password: 'perm123',
+          passwordEnabled: true,
+          guiEnabled: true
+        });
+
+      expect(createUserResponse.status).toBe(200);
+      const userId = createUserResponse.body.id;
+
+      const createListenerResponse = await request(app)
+        .post('/api/listeners')
+        .set('Cookie', `sessionId=${sessionId}`)
+        .send({
+          name: 'Permissions SFTP',
+          protocol: 'SFTP',
+          bindingIp: '127.0.0.1',
+          port: 12310,
+          enabled: false
+        });
+
+      expect(createListenerResponse.status).toBe(200);
+      const listenerId = createListenerResponse.body.id;
+
+      const subscribeResponse = await request(app)
+        .post('/api/users/permuser/subscriptions')
+        .set('Cookie', `sessionId=${sessionId}`)
+        .send({ listenerId });
+
+      expect(subscribeResponse.status).toBe(200);
+
+      db.setPermission({
+        userId,
+        listenerId,
+        canRead: true,
+        canCreate: false,
+        canEdit: false,
+        canAppend: false,
+        canDelete: false,
+        canList: true,
+        canCreateDir: false,
+        canRename: false
+      });
+
+      const firstPermission = db.getPermission(userId, listenerId);
+      expect(firstPermission).toBeDefined();
+      expect(firstPermission?.canRead).toBe(true);
+      expect(firstPermission?.canList).toBe(true);
+      expect(firstPermission?.canCreate).toBe(false);
+
+      db.setPermission({
+        userId,
+        listenerId,
+        canRead: true,
+        canCreate: true,
+        canEdit: true,
+        canAppend: false,
+        canDelete: false,
+        canList: true,
+        canCreateDir: true,
+        canRename: false
+      });
+
+      const updatedPermission = db.getPermission(userId, listenerId);
+      expect(updatedPermission).toBeDefined();
+      expect(updatedPermission?.canCreate).toBe(true);
+      expect(updatedPermission?.canEdit).toBe(true);
+      expect(updatedPermission?.canCreateDir).toBe(true);
+
+      await request(app)
+        .delete(`/api/listeners/${listenerId}`)
+        .set('Cookie', `sessionId=${sessionId}`);
+
+      await request(app)
+        .delete('/api/users/permuser')
+        .set('Cookie', `sessionId=${sessionId}`);
+
+      await request(app)
+        .post('/api/logout')
+        .set('Cookie', `sessionId=${sessionId}`);
+    });
+  });
 });

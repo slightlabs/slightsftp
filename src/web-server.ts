@@ -46,7 +46,7 @@ export class WebServer {
     this.app.use(cookieParser());
 
     // Serve static files from src directory (HTML, CSS, JS)
-    // this.app.use('/assets', express.static(path.join(__dirname, '../assets')));
+    this.app.use('/assets', express.static(path.join(__dirname, '../assets')));
   }
 
   private generateSessionId(): string {
@@ -95,20 +95,14 @@ export class WebServer {
   }
 
   private setupRoutes(): void {
-    // Main landing page (download/marketing page) - NO AUTH REQUIRED
-    this.app.get('/', (req: Request, res: Response) => {
-      const indexHtml = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf-8');
-      res.type('text/html');
-      res.send(indexHtml);
-    });
-
-    // Serve renderer.js for admin interface
+    // Serve renderer.js
     this.app.get('/renderer.js', (req: Request, res: Response) => {
       const rendererPath = path.join(__dirname, 'renderer.js');
       let rendererJs = fs.readFileSync(rendererPath, 'utf-8');
       
-      // Remove Electron IPC bootstrap line (replaced by window.ipcRenderer mock below)
-      rendererJs = rendererJs.replace(/const ipcRenderer = window\.api \|\| window\.ipcRenderer;?\s*/g, '');
+      // Remove require('electron') statements for browser compatibility
+      rendererJs = rendererJs.replace(/const\s*{\s*ipcRenderer\s*}\s*=\s*require\('electron'\);?\s*/g, '');
+      rendererJs = rendererJs.replace(/const\s+\w+\s*=\s*require\('electron'\);?\s*/g, '');
       
       res.type('application/javascript');
       res.send(rendererJs);
@@ -118,8 +112,8 @@ export class WebServer {
     this.app.get('/login', (req: Request, res: Response) => {
       let loginHtml = fs.readFileSync(path.join(__dirname, 'login.html'), 'utf-8');
       
-      // Remove Electron IPC bootstrap line from login.html
-      loginHtml = loginHtml.replace(/const ipcRenderer = window\.api \|\| window\.ipcRenderer;?\s*/g, '');
+      // Remove the require('electron') line and replace ipcRenderer usage
+      loginHtml = loginHtml.replace(/const\s*{\s*ipcRenderer\s*}\s*=\s*require\('electron'\);?\s*/g, '');
       
       // Replace window.close() calls
       loginHtml = loginHtml.replace(/window\.close\(\);?/g, 'window.location.href = \'/\';');
@@ -127,16 +121,16 @@ export class WebServer {
       res.send(this.injectWebAPI(loginHtml, false));
     });
 
-    // Admin GUI page (requires authentication)
-    this.app.get('/admin', (req: Request, res: Response) => {
+    // Main GUI page
+    this.app.get('/', (req: Request, res: Response) => {
       const session = this.authenticateSession(req);
       if (!session) {
         res.redirect('/login');
         return;
       }
       
-      const adminHtml = fs.readFileSync(path.join(__dirname, 'admin.html'), 'utf-8');
-      res.send(this.injectWebAPI(adminHtml, true));
+      const indexHtml = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf-8');
+      res.send(this.injectWebAPI(indexHtml, true));
     });
 
     // Authentication endpoints
@@ -198,7 +192,7 @@ export class WebServer {
 
         this.logActivity(username, 'WEB_LOGIN_SUCCESS', 'User logged in via web interface', true);
         logger.info('Login successful for user:', username);
-        res.json({ success: true, username: user.username, redirect: '/admin' });
+        res.json({ success: true, username: user.username });
       } catch (error: any) {
         logger.error('Login error:', error);
         this.logActivity(username || 'unknown', 'WEB_LOGIN_ERROR', error.message, false);
@@ -1089,11 +1083,6 @@ export class WebServer {
     return html;
   }
 
-  /** Expose the Express app for testing via supertest */
-  getApp(): express.Application {
-    return this.app;
-  }
-
   async start(): Promise<void> {
     return new Promise((resolve) => {
       this.server.listen(this.port, () => {
@@ -1101,6 +1090,10 @@ export class WebServer {
         resolve();
       });
     });
+  }
+
+  getApp(): express.Application {
+    return this.app;
   }
 
   async stop(): Promise<void> {

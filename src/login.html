@@ -208,37 +208,39 @@
         <form id="loginForm">
             <div class="form-group">
                 <label for="username">Username</label>
-                <input type="text" id="username" name="username" placeholder="Enter your username"
-                    autocomplete="username" required autofocus>
+                <input 
+                    type="text" 
+                    id="username" 
+                    name="username" 
+                    placeholder="Enter your username"
+                    autocomplete="username"
+                    required
+                    autofocus
+                >
             </div>
+
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" name="password" placeholder="Enter your password"
-                    autocomplete="current-password" required>
+                <input 
+                    type="password" 
+                    id="password" 
+                    name="password" 
+                    placeholder="Enter your password"
+                    autocomplete="current-password"
+                    required
+                >
             </div>
-            <button type="submit" class="btn-login" id="loginBtn">Sign In</button>
+
+            <button type="submit" class="btn-login" id="loginBtn">
+                Sign In
+            </button>
         </form>
 
-        <!-- Shown only when the default password must be changed -->
-        <form id="changePasswordForm" style="display:none">
-            <p style="font-size:13px;color:#555;margin-bottom:14px;line-height:1.5">
-                ⚠️ You are using the default password.<br>Set a new password to continue.
-            </p>
-            <div class="form-group">
-                <label for="newPassword">New Password <span style="color:#c33;font-size:11px">(min 8 characters)</span></label>
-                <input type="password" id="newPassword" placeholder="New password" autocomplete="new-password" required>
-            </div>
-            <div class="form-group">
-                <label for="confirmPassword">Confirm Password</label>
-                <input type="password" id="confirmPassword" placeholder="Confirm new password" autocomplete="new-password" required>
-            </div>
-            <button type="submit" class="btn-login" id="changeBtn">Set Password &amp; Continue</button>
-        </form>
-
-        <div class="version">Version 1.1.0</div>
+        <div class="version">Version 1.0.0</div>
     </div>
 
     <script>
+        const { ipcRenderer } = require('electron');
 
         // Close button handler
         document.getElementById('closeButton').addEventListener('click', () => {
@@ -246,111 +248,70 @@
         });
 
         const loginForm = document.getElementById('loginForm');
-        const changePasswordForm = document.getElementById('changePasswordForm');
         const usernameInput = document.getElementById('username');
         const passwordInput = document.getElementById('password');
         const loginBtn = document.getElementById('loginBtn');
         const errorMessage = document.getElementById('errorMessage');
-        const isDesktopApp = window.location.protocol === 'file:';
-        const hasElectronBridge = !!(window.api && typeof window.api.invoke === 'function');
 
         function showError(message) {
             errorMessage.textContent = message;
             errorMessage.classList.add('show');
-            setTimeout(() => errorMessage.classList.remove('show'), 3000);
+            setTimeout(() => {
+                errorMessage.classList.remove('show');
+            }, 3000);
         }
 
         loginForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+
             const username = usernameInput.value.trim();
             const password = passwordInput.value;
-            if (!username || !password) { showError('Please enter both username and password'); return; }
 
+            if (!username || !password) {
+                showError('Please enter both username and password');
+                return;
+            }
+
+            // Disable form during login
             loginBtn.disabled = true;
             loginBtn.textContent = 'Signing in...';
             usernameInput.disabled = true;
             passwordInput.disabled = true;
 
             try {
-                if (isDesktopApp) {
-                    if (!hasElectronBridge) {
-                        throw new Error('Desktop authentication bridge is unavailable');
-                    }
+                const result = await ipcRenderer.invoke('authenticate-user', username, password);
 
-                    const result = await window.api.invoke('authenticate-user', username, password);
-
-                    if (result.success && result.mustChangePassword) {
-                        loginForm.style.display = 'none';
-                        changePasswordForm.style.display = 'block';
-                        return;
-                    }
-
-                    if (result.success) {
-                        window.close();
-                        return;
-                    }
-
-                    showError(result.error || 'Invalid username or password');
-                } else {
-                    const response = await fetch('/api/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ username, password })
-                    });
-                    const result = await response.json();
-
-                    if (result.success) {
-                        window.location.href = result.redirect || '/admin';
-                        return;
-                    }
-
-                    showError(result.error || 'Invalid username or password');
-                }
-
-                loginBtn.disabled = false;
-                loginBtn.textContent = 'Sign In';
-                usernameInput.disabled = false;
-                passwordInput.disabled = false;
-                passwordInput.value = '';
-                passwordInput.focus();
-            } catch (error) {
-                showError('An error occurred. Please try again.');
-                loginBtn.disabled = false;
-                loginBtn.textContent = 'Sign In';
-                usernameInput.disabled = false;
-                passwordInput.disabled = false;
-            }
-        });
-
-        changePasswordForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const newPwd = document.getElementById('newPassword').value;
-            const confirmPwd = document.getElementById('confirmPassword').value;
-            if (newPwd.length < 8) { showError('Password must be at least 8 characters'); return; }
-            if (newPwd !== confirmPwd) { showError('Passwords do not match'); return; }
-
-            const changeBtn = document.getElementById('changeBtn');
-            changeBtn.disabled = true;
-            changeBtn.textContent = 'Saving...';
-
-            try {
-                const result = await window.api.invoke('set-first-login-password', newPwd);
                 if (result.success) {
+                    // Login successful, main window will open
                     window.close();
                 } else {
-                    showError(result.error || 'Failed to change password');
-                    changeBtn.disabled = false;
-                    changeBtn.textContent = 'Set Password & Continue';
+                    showError(result.error || 'Invalid username or password');
+                    
+                    // Re-enable form
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Sign In';
+                    usernameInput.disabled = false;
+                    passwordInput.disabled = false;
+                    passwordInput.value = '';
+                    passwordInput.focus();
                 }
             } catch (error) {
                 showError('An error occurred. Please try again.');
-                changeBtn.disabled = false;
-                changeBtn.textContent = 'Set Password & Continue';
+                console.error('Login error:', error);
+                
+                // Re-enable form
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Sign In';
+                usernameInput.disabled = false;
+                passwordInput.disabled = false;
             }
         });
 
+        // Handle Enter key
         passwordInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') loginForm.dispatchEvent(new Event('submit'));
+            if (e.key === 'Enter') {
+                loginForm.dispatchEvent(new Event('submit'));
+            }
         });
     </script>
 </body>

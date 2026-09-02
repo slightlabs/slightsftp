@@ -1,14 +1,14 @@
 {
   "name": "slightsftp",
-  "version": "1.1.10",
+  "version": "1.1.0",
   "description": "Multi-user FTP/SFTP server with GUI management",
   "main": "dist/main.js",
   "scripts": {
     "build": "tsc && node -e \"const fs=require('fs');const path=require('path');if(!fs.existsSync('dist/assets'))fs.mkdirSync('dist/assets',{recursive:true});fs.copyFileSync('assets/icon.png','dist/assets/icon.png');fs.copyFileSync('src/index.html','dist/index.html');fs.copyFileSync('src/login.html','dist/login.html');fs.copyFileSync('src/admin.html','dist/admin.html');fs.copyFileSync('src/renderer.js','dist/renderer.js');\"",
-    "start": "npm run build && electron dist/main.js --no-sandbox",
+    "start": "npm run build && electron --no-sandbox dist/main.js",
     "start:web": "npm run build && node dist/web-only.js",
-    "dev": "npm run build && electron dist/main.js --no-sandbox",
-    "dev:web": "npm run build && node dist/web-only.js",
+    "dev": "tsc && electron --no-sandbox dist/main.js",
+    "dev:web": "tsc && node dist/web-only.js",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -17,9 +17,7 @@
     "test:comprehensive": "npm run setup:testusers && npm run test:client",
     "test:auto": "npm run build && powershell -ExecutionPolicy Bypass -File run-tests-with-server.ps1",
     "dist": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win --x64",
-    "dist:linux": "npm run build && electron-builder --linux --x64",
-    "release": "npm run build && electron-builder --publish always"
+    "dist:win": "npm run build && electron-builder --win --x64"
   },
   "keywords": [
     "ftp",
@@ -28,11 +26,8 @@
     "electron",
     "gui"
   ],
-  "author": {
-    "name": "SlightLabs",
-    "email": "sujithsg@gmail.com"
-  },
-  "license": "MIT",
+  "author": "Sujith Gunawardhane",
+  "license": "ISC",
   "build": {
     "appId": "com.slightsftp.app",
     "productName": "SLightSFTP",
@@ -40,16 +35,12 @@
       "output": "release",
       "buildResources": "build"
     },
-    "publish": {
-      "provider": "github",
-      "owner": "slightlabs",
-      "repo": "slightsftp"
-    },
     "files": [
       "dist/**/*",
       "src/index.html",
       "src/login.html",
       "src/renderer.js",
+      "src/admin.html",
       "assets/**/*",
       "node_modules/**/*",
       "package.json"
@@ -85,24 +76,6 @@
       ],
       "requestedExecutionLevel": "requireAdministrator"
     },
-    "linux": {
-      "icon": "build/icon.png",
-      "target": [
-        {
-          "target": "AppImage",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "deb",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "category": "Network"
-    },
     "msi": {
       "oneClick": false,
       "perMachine": true,
@@ -116,37 +89,37 @@
     }
   },
   "dependencies": {
-    "basic-ftp": "^6.2.1",
+    "basic-ftp": "^5.0.4",
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
     "ftp-srv": "^4.6.3",
-    "sql.js": "^1.14.2",
+    "sql.js": "^1.10.3",
     "ssh2": "^1.15.0",
     "winston": "^3.19.0",
-    "ws": "^8.21.3"
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/ftp": "^0.3.36",
     "@types/jest": "^29.5.11",
-    "@types/node": "^22.0.0",
-    "@types/sql.js": "^1.4.11",
+    "@types/node": "^20.19.27",
+    "@types/sql.js": "^1.4.9",
     "@types/ssh2": "^1.11.17",
     "@types/ssh2-sftp-client": "^9.0.6",
     "@types/supertest": "^7.2.1",
     "@types/ws": "^8.18.1",
-    "electron": "^44.0.0",
-    "electron-builder": "^26.15.3",
+    "electron": "^28.1.0",
+    "electron-builder": "^26.0.12",
     "ftp": "^0.3.10",
     "icon-gen": "^5.0.0",
     "jest": "^29.7.0",
-    "jest-environment-jsdom": "^30.5.0",
-    "png-to-ico": "^3.0.2",
-    "ssh2-sftp-client": "^12.1.1",
+    "jest-environment-jsdom": "^30.5.1",
+    "png-to-ico": "^3.0.1",
+    "ssh2-sftp-client": "^12.0.1",
     "supertest": "^7.2.2",
     "to-ico": "^1.1.5",
-    "ts-jest": "^29.4.12",
+    "ts-jest": "^29.1.1",
     "typescript": "^5.3.3"
   }
 }

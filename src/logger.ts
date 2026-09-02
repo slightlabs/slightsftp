@@ -10,8 +10,9 @@ function getLogsDirectory(): string {
     const isPackaged = app.isPackaged;
     
     if (isPackaged) {
-      // Production: write to userData (~/.config/SLightSFTP on Linux, %APPDATA% on Windows)
-      return path.join(app.getPath('userData'), 'logs');
+      // Production: Use installation directory
+      const installPath = path.dirname(app.getPath('exe'));
+      return path.join(installPath, 'logs');
     } else {
       // Development: Use current working directory
       return path.join(process.cwd(), 'logs');

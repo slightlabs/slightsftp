@@ -22,14 +22,14 @@ function getAppDirectories() {
   const isPackaged = app.isPackaged;
   
   if (isPackaged) {
-    // Production: write to userData (~/.config/SLightSFTP on Linux, %APPDATA% on Windows)
-    const userData = app.getPath('userData');
-
+    // Production: Use installation directory structure
+    const installPath = path.dirname(app.getPath('exe'));
+    
     return {
-      config: path.join(userData, 'config'),
-      data: path.join(userData, 'data'),
-      logs: path.join(userData, 'logs'),
-      ftpRoot: path.join(userData, 'data', 'ftp-root')
+      config: path.join(installPath, 'config'),
+      data: path.join(installPath, 'data'),
+      logs: path.join(installPath, 'logs'),
+      ftpRoot: path.join(installPath, 'data', 'ftp-root')
     };
   } else {
     // Development: Use current working directory
@@ -61,10 +61,8 @@ function createLoginWindow(): void {
     resizable: false,
     frame: false,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: false
+      nodeIntegration: true,
+      contextIsolation: false
     },
     icon: path.join(__dirname, '../assets/icon.png')
   });
@@ -89,10 +87,8 @@ function createWindow(): void {
     width: 1200,
     height: 800,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      sandbox: false
+      nodeIntegration: true,
+      contextIsolation: false
     },
     icon: path.join(__dirname, '../assets/icon.png')
   });
@@ -161,7 +157,7 @@ function createWindow(): void {
   ]);
   Menu.setApplicationMenu(menu);
 
-  mainWindow.loadFile(path.join(__dirname, 'admin.html'));
+  mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
   mainWindow.on('close', async (event) => {
     // If logging out, allow the window to close without hiding
@@ -304,7 +300,7 @@ async function initializeDatabase(): Promise<void> {
       name: 'Default SFTP',
       protocol: 'SFTP',
       bindingIp: '0.0.0.0',
-      port: 2222,
+      port: 22,
       enabled: true
     });
     
@@ -313,7 +309,7 @@ async function initializeDatabase(): Promise<void> {
       name: 'Default FTP',
       protocol: 'FTP',
       bindingIp: '0.0.0.0',
-      port: 2121,
+      port: 21,
       enabled: true
     });
     
@@ -365,36 +361,6 @@ async function initializeDatabase(): Promise<void> {
 
     logger.info('Default configuration created');
   }
-
-  // Development convenience: migrate legacy default ports to non-privileged values
-  // so local runs don't require sudo/root.
-  if (!app.isPackaged) {
-    const listeners = db.getAllListeners();
-
-    for (const listener of listeners) {
-      if (!listener.id) continue;
-
-      if (listener.name === 'Default SFTP' && listener.protocol === 'SFTP' && listener.port === 22) {
-        db.updateListener(listener.id, {
-          name: listener.name,
-          bindingIp: listener.bindingIp,
-          port: 2222,
-          enabled: listener.enabled
-        });
-        logger.info('Migrated Default SFTP port from 22 to 2222 for development');
-      }
-
-      if (listener.name === 'Default FTP' && listener.protocol === 'FTP' && listener.port === 21) {
-        db.updateListener(listener.id, {
-          name: listener.name,
-          bindingIp: listener.bindingIp,
-          port: 2121,
-          enabled: listener.enabled
-        });
-        logger.info('Migrated Default FTP port from 21 to 2121 for development');
-      }
-    }
-  }
 }
 
 function setupServerManager(): void {
@@ -444,9 +410,6 @@ function setupIpcHandlers(): void {
         return { success: false, error: 'Invalid username or password' };
       }
 
-      const DEFAULT_PASSWORD_HASH = crypto.createHash('sha256').update('admin123').digest('hex');
-      const mustChangePassword = user.password === DEFAULT_PASSWORD_HASH;
-
       // Authentication successful
       authenticatedUser = user;
       logger.info('Authentication successful! User:', { username: authenticatedUser.username });
@@ -463,11 +426,6 @@ function setupIpcHandlers(): void {
         success: true
       });
       
-      // If default password still in use, keep login window open for the password-change step
-      if (mustChangePassword) {
-        return { success: true, mustChangePassword: true, user: { username: user.username, id: user.id } };
-      }
-
       // Close login window and open main window
       if (loginWindow) {
         loginWindow.close();
@@ -482,29 +440,6 @@ function setupIpcHandlers(): void {
     } catch (error) {
       logger.error('Authentication error:', error);
       return { success: false, error: 'An error occurred during authentication' };
-    }
-  });
-
-  // Forced password change after first login with default credentials
-  ipcMain.handle('set-first-login-password', async (_event, newPassword: string) => {
-    try {
-      if (!authenticatedUser) return { success: false, error: 'Not authenticated' };
-      if (!newPassword || newPassword.length < 8) {
-        return { success: false, error: 'Password must be at least 8 characters' };
-      }
-      db.updateUser(authenticatedUser.username, { password: newPassword });
-      logger.info('Password changed for user:', authenticatedUser.username);
-
-      if (loginWindow) {
-        loginWindow.close();
-        loginWindow = null;
-      }
-      createWindow();
-      createTray();
-      return { success: true };
-    } catch (error) {
-      logger.error('Password change error:', error);
-      return { success: false, error: 'Failed to change password' };
     }
   });
 
@@ -556,14 +491,7 @@ function setupIpcHandlers(): void {
 
   // User operations
   ipcMain.handle('create-user', async (event, user) => {
-    const normalizedUser = {
-      ...user,
-      passwordEnabled: user.passwordEnabled !== undefined ? user.passwordEnabled : !!user.password,
-      guiEnabled: user.guiEnabled !== undefined ? user.guiEnabled : false,
-      publicKey: user.publicKey || ''
-    };
-
-    const userId = db.createUser(normalizedUser);
+    const userId = db.createUser(user);
     
     // Log user creation
     db.logActivity({
@@ -586,34 +514,6 @@ function setupIpcHandlers(): void {
   });
   
   ipcMain.handle('update-user', async (event, username, updates, listeners, virtualPaths, permissions) => {
-    // Compatibility path for older renderer payload: update-user({ ...userFields })
-    if (typeof username === 'object' && username !== null && updates === undefined) {
-      const legacyUser = username;
-      const lookupUsername = legacyUser.originalUsername || legacyUser.username;
-      const existingUser = db.getUser(lookupUsername);
-      if (!existingUser) throw new Error('User not found');
-
-      const legacyUpdates: any = {
-        publicKey: legacyUser.publicKey,
-        guiEnabled: legacyUser.guiEnabled,
-      };
-      if (legacyUser.password) {
-        legacyUpdates.password = legacyUser.password;
-        legacyUpdates.passwordEnabled = true;
-      }
-
-      db.updateUser(lookupUsername, legacyUpdates);
-
-      db.logActivity({
-        listenerId: null,
-        username: authenticatedUser?.username || 'system',
-        action: 'USER_UPDATED',
-        path: `/users/${lookupUsername}`,
-        success: true
-      });
-      return;
-    }
-
     const user = db.getUser(username);
     if (!user) throw new Error('User not found');
     
@@ -732,19 +632,6 @@ function setupIpcHandlers(): void {
   });
   
   ipcMain.handle('update-listener', async (event, id, updates) => {
-    // Compatibility path for older renderer payload: update-listener({ id, ...fields })
-    if (typeof id === 'object' && id !== null && updates === undefined) {
-      const legacyListener = id;
-      id = legacyListener.id;
-      updates = {
-        name: legacyListener.name,
-        protocol: legacyListener.protocol,
-        bindingIp: legacyListener.bindingIp,
-        port: legacyListener.port,
-        enabled: legacyListener.enabled
-      };
-    }
-
     db.updateListener(id, updates);
     
     const listener = db.getListener(id);
@@ -835,74 +722,6 @@ function setupIpcHandlers(): void {
   // Active sessions
   ipcMain.handle('get-active-sessions', async () => {
     return serverManager.getActiveSessions();
-  });
-
-  // Compatibility wrappers for older renderer channel names
-  ipcMain.handle('get-activity', async (_event, limit = 100) => {
-    return db.getRecentActivities(undefined, limit);
-  });
-
-  ipcMain.handle('clear-activity', async () => {
-    return db.clearAllActivities();
-  });
-
-  ipcMain.handle('get-user-subscriptions', async (_event, username: string) => {
-    const user = db.getUser(username);
-    if (!user || !user.id) return [];
-    return db.getUserListeners(user.id);
-  });
-
-  ipcMain.handle('add-user-subscription', async (_event, username: string, listenerId: number) => {
-    const user = db.getUser(username);
-    if (!user || !user.id) throw new Error('User not found');
-    db.subscribeUserToListener(user.id, listenerId);
-    return { success: true };
-  });
-
-  ipcMain.handle('remove-user-subscription', async (_event, username: string, listenerId: number) => {
-    const user = db.getUser(username);
-    if (!user || !user.id) throw new Error('User not found');
-    db.unsubscribeUserFromListener(user.id, listenerId);
-    return { success: true };
-  });
-
-  ipcMain.handle('get-user-virtual-paths', async (_event, username: string) => {
-    const user = db.getUser(username);
-    if (!user || !user.id) return [];
-    return db.getVirtualPaths(user.id);
-  });
-
-  ipcMain.handle('add-user-virtual-path', async (_event, username: string, virtualPath: string, localPath: string) => {
-    const user = db.getUser(username);
-    if (!user || !user.id) throw new Error('User not found');
-
-    const id = db.addVirtualPath({
-      userId: user.id,
-      virtualPath,
-      localPath,
-      canRead: true,
-      canWrite: true,
-      canAppend: true,
-      canDelete: true,
-      canList: true,
-      canCreateDir: true,
-      canRename: true,
-      applyToSubdirs: true
-    });
-    return { id };
-  });
-
-  ipcMain.handle('remove-user-virtual-path', async (_event, username: string, id: number) => {
-    const user = db.getUser(username);
-    if (!user || !user.id) throw new Error('User not found');
-
-    const userPaths = db.getVirtualPaths(user.id);
-    if (!userPaths.some(vp => vp.id === id)) {
-      throw new Error('Virtual path not found for user');
-    }
-
-    db.deleteVirtualPath(id);
-    return { success: true };
   });
 
   ipcMain.handle('disconnect-session', async (event, sessionId) => {

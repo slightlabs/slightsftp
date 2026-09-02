@@ -71,6 +71,28 @@ function buildVirtualPathRow(vp: { virtualPath: string; localPath: string; id: n
   return `<tr data-id="${vp.id}"><td>${sanitizeHtml(vp.virtualPath)}</td><td>${sanitizeHtml(vp.localPath)}</td></tr>`;
 }
 
+function ensureWebGuiStatus(statuses: any[]): any[] {
+  const normalizedStatuses = Array.isArray(statuses) ? [...statuses] : [];
+  const hasWebGuiStatus = normalizedStatuses.some(s => s?.listener?.id === -1);
+
+  if (!hasWebGuiStatus) {
+    normalizedStatuses.push({
+      listener: {
+        id: -1,
+        name: 'Web GUI Server',
+        protocol: 'HTTP',
+        bindingIp: '0.0.0.0',
+        port: 3000,
+        enabled: true,
+        maxConnections: 100
+      },
+      running: false
+    });
+  }
+
+  return normalizedStatuses;
+}
+
 // ── tests ───────────────────────────────────────────────────────────────────
 
 describe('Renderer utility functions', () => {
@@ -264,5 +286,37 @@ describe('window.api.invoke patterns', () => {
     mockInvoke.mockResolvedValueOnce({ success: true, user: { username: 'admin' } });
     await window.api.invoke('authenticate-user', 'admin', 'secret');
     expect(mockInvoke).toHaveBeenCalledWith('authenticate-user', 'admin', 'secret');
+  });
+});
+
+describe('Listener fallback behavior', () => {
+  test('adds Web GUI status when backend omits it', () => {
+    const input = [
+      {
+        listener: { id: 1, name: 'Default SFTP', protocol: 'SFTP', port: 2222, bindingIp: '0.0.0.0', enabled: true },
+        running: true
+      }
+    ];
+
+    const output = ensureWebGuiStatus(input);
+    const webGui = output.find(s => s.listener.id === -1);
+
+    expect(webGui).toBeDefined();
+    expect(webGui.listener.name).toBe('Web GUI Server');
+    expect(webGui.listener.protocol).toBe('HTTP');
+  });
+
+  test('does not duplicate Web GUI status if it already exists', () => {
+    const input = [
+      {
+        listener: { id: -1, name: 'Web GUI Server', protocol: 'HTTP', port: 3000, bindingIp: '0.0.0.0', enabled: true },
+        running: true
+      }
+    ];
+
+    const output = ensureWebGuiStatus(input);
+    const webGuiEntries = output.filter(s => s.listener.id === -1);
+
+    expect(webGuiEntries).toHaveLength(1);
   });
 });

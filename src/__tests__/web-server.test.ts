@@ -110,17 +110,15 @@ describe('WebServer REST API', () => {
 
   // ═══════════════════════════════════════════════════════════════════════════
   describe('Page Routes', () => {
-    test('GET / — returns landing page (no auth required)', async () => {
+    test('GET / — redirects to login when not authenticated', async () => {
       const res = await request(app).get('/');
-      expect(res.status).toBe(200);
-      expect(res.text).toContain('Lightweight FTP/SFTP Server');
-      expect(res.text).toContain('Download');
-    });
-
-    test('GET /admin — redirects to login without auth', async () => {
-      const res = await request(app).get('/admin');
       expect(res.status).toBe(302);
       expect(res.headers.location).toBe('/login');
+    });
+
+    test('GET /admin — returns 404 (route not exposed in current web server)', async () => {
+      const res = await request(app).get('/admin');
+      expect(res.status).toBe(404);
     });
   });
 
@@ -131,7 +129,7 @@ describe('WebServer REST API', () => {
         .send({ username: 'admin', password: PASSWORD });
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      expect(res.body.redirect).toBe('/admin');
+      expect(res.body.username).toBe('admin');
       expect(res.headers['set-cookie']).toBeDefined();
     });
 

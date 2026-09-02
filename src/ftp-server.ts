@@ -184,7 +184,7 @@ export class FTPServer extends EventEmitter {
   }
 }
 
-class CustomFileSystem extends FileSystem {
+export class CustomFileSystem extends FileSystem {
   private db: DatabaseManager;
   private user: User;
   private listener: Listener;
@@ -491,5 +491,3 @@ class CustomFileSystem extends FileSystem {
     });
   }
 }
-
-export { CustomFileSystem };

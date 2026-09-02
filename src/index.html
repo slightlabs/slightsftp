@@ -1,10 +1,9 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'">
-  <title>SLightSFTP - Lightweight FTP/SFTP Server</title>
+  <title>SLightSFTP Manager</title>
   <style>
     * {
       margin: 0;
@@ -14,274 +13,909 @@
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: #f5f5f5;
       color: #333;
-      line-height: 1.6;
-      min-height: 100vh;
+      overflow: hidden;
     }
 
     .container {
-      max-width: 1200px;
-      margin: 0 auto;
-      padding: 20px;
+      display: flex;
+      height: 100vh;
+    }
+
+    .sidebar {
+      width: 200px;
+      background: #2c3e50;
+      color: white;
+      padding: 20px 0;
+    }
+
+    .sidebar-item {
+      padding: 12px 20px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .sidebar-item:hover {
+      background: #34495e;
+    }
+
+    .sidebar-item.active {
+      background: #3498db;
+    }
+
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
     }
 
     .header {
-      text-align: center;
-      padding: 60px 20px;
-      color: white;
+      background: white;
+      padding: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
     .header h1 {
-      font-size: 48px;
-      font-weight: 700;
-      margin-bottom: 10px;
+      font-size: 24px;
+      font-weight: 600;
     }
 
-    .header p {
-      font-size: 20px;
-      opacity: 0.9;
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+
+    .user-badge {
+      background: #3498db;
+      color: white;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .user-badge::before {
+      content: "👤 ";
+    }
+
+    .btn-logout {
+      padding: 8px 16px;
+      background: #e74c3c;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.2s;
+    }
+
+    .btn-logout:hover {
+      background: #c0392b;
     }
 
     .content {
-      background: white;
-      border-radius: 16px;
-      padding: 40px;
-      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-      margin-bottom: 40px;
-    }
-
-    .section {
-      margin-bottom: 40px;
-    }
-
-    .section h2 {
-      font-size: 28px;
-      color: #2c3e50;
-      margin-bottom: 20px;
-      border-bottom: 3px solid #667eea;
-      padding-bottom: 10px;
-    }
-
-    .features {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-      gap: 20px;
-      margin-top: 20px;
-    }
-
-    .feature {
-      background: #f8f9fa;
+      flex: 1;
       padding: 20px;
+      overflow-y: auto;
+    }
+
+    .panel {
+      display: none;
+    }
+
+    .panel.active {
+      display: block;
+    }
+
+    .card {
+      background: white;
       border-radius: 8px;
-      border-left: 4px solid #667eea;
-    }
-
-    .feature h3 {
-      color: #2c3e50;
-      margin-bottom: 10px;
-    }
-
-    .download-section {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      padding: 30px;
-      border-radius: 12px;
-      margin-top: 30px;
-    }
-
-    .download-section h3 {
+      padding: 20px;
       margin-bottom: 20px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     }
 
-    .download-buttons {
-      display: flex;
-      gap: 15px;
-      flex-wrap: wrap;
+    .card h2 {
+      font-size: 18px;
+      margin-bottom: 15px;
+      color: #2c3e50;
     }
 
     .btn {
-      padding: 15px 30px;
+      padding: 8px 16px;
       border: none;
-      border-radius: 8px;
+      border-radius: 4px;
       cursor: pointer;
-      font-size: 16px;
-      font-weight: 600;
-      transition: all 0.3s;
-      text-decoration: none;
-      display: inline-block;
+      font-size: 14px;
+      transition: background 0.2s;
+      margin-right: 8px;
     }
 
     .btn-primary {
-      background: white;
-      color: #667eea;
+      background: #3498db;
+      color: white;
     }
 
     .btn-primary:hover {
-      background: #f0f0f0;
-      transform: translateY(-2px);
+      background: #2980b9;
     }
 
-    .btn-secondary {
-      background: rgba(255,255,255,0.2);
+    .btn-success {
+      background: #27ae60;
       color: white;
-      border: 2px solid white;
     }
 
-    .btn-secondary:hover {
-      background: rgba(255,255,255,0.3);
+    .btn-success:hover {
+      background: #229954;
     }
 
-    .info-box {
-      background: #e3f2fd;
-      border-left: 4px solid #2196f3;
-      padding: 15px;
-      margin-top: 20px;
+    .btn-danger {
+      background: #e74c3c;
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: #c0392b;
+    }
+
+    .btn-warning {
+      background: #f39c12;
+      color: white;
+    }
+
+    .btn-warning:hover {
+      background: #e67e22;
+    }
+
+    .form-group {
+      margin-bottom: 15px;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: 500;
+      color: #555;
+    }
+
+    .form-group input,
+    .form-group select,
+    .form-group textarea {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+
+    .form-group textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      width: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    table th,
+    table td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+
+    table th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #555;
+    }
+
+    table tr:hover {
+      background: #f8f9fa;
+    }
+
+    .status-indicator {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+
+    .status-running {
+      background: #27ae60;
+    }
+
+    .status-stopped {
+      background: #e74c3c;
+    }
+
+    .activity-log {
+      max-height: 300px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      background: #2c3e50;
+      color: #ecf0f1;
+      padding: 10px;
       border-radius: 4px;
     }
 
-    .system-requirements {
-      background: #fff3e0;
-      border-left: 4px solid #ff9800;
-      padding: 15px;
-      margin-top: 20px;
-      border-radius: 4px;
+    .activity-item {
+      padding: 4px 0;
+      border-bottom: 1px solid #34495e;
     }
 
-    .footer {
-      text-align: center;
-      color: white;
+    .activity-success {
+      color: #2ecc71;
+    }
+
+    .activity-error {
+      color: #e74c3c;
+    }
+
+    .listener-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 20px;
+    }
+
+    .listener-card {
+      background: white;
+      border-radius: 8px;
       padding: 20px;
-      opacity: 0.8;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      position: relative;
     }
 
-    @media (max-width: 768px) {
-      .header h1 {
-        font-size: 32px;
-      }
-      
-      .content {
-        padding: 20px;
-      }
-      
-      .download-buttons {
-        flex-direction: column;
-      }
+    .listener-card h3 {
+      margin-bottom: 10px;
+      color: #2c3e50;
+    }
+
+    .listener-info {
+      margin: 10px 0;
+      font-size: 14px;
+      color: #666;
+    }
+
+    .listener-actions {
+      margin-top: 15px;
+      display: flex;
+      gap: 8px;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: 8px;
+      padding: 30px;
+      max-width: 600px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .modal-header h2 {
+      font-size: 20px;
+      color: #2c3e50;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      font-size: 24px;
+      cursor: pointer;
+      color: #999;
+    }
+
+    .close-btn:hover {
+      color: #333;
+    }
+
+    .permissions-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    .virtual-path-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px;
+      background: #f8f9fa;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: #999;
+    }
+
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      margin-bottom: 15px;
+      font-size: 14px;
+      color: #666;
+    }
+
+    .breadcrumb-item {
+      cursor: pointer;
+      padding: 4px 8px;
+      border-radius: 4px;
+      transition: background 0.2s;
+    }
+
+    .breadcrumb-item:hover {
+      background: #e9ecef;
+    }
+
+    .breadcrumb-separator {
+      margin: 0 5px;
+      color: #999;
+    }
+
+    .file-list {
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .file-item {
+      display: flex;
+      align-items: center;
+      padding: 12px 15px;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .file-item:last-child {
+      border-bottom: none;
+    }
+
+    .file-item:hover {
+      background: #f8f9fa;
+    }
+
+    .file-icon {
+      width: 24px;
+      height: 24px;
+      margin-right: 12px;
+      font-size: 20px;
+    }
+
+    .file-info {
+      flex: 1;
+    }
+
+    .file-name {
+      font-weight: 500;
+      color: #2c3e50;
+      margin-bottom: 2px;
+    }
+
+    .file-meta {
+      font-size: 12px;
+      color: #999;
+    }
+
+    .file-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .user-selector {
+      margin-bottom: 15px;
+      padding: 10px;
+      background: #f8f9fa;
+      border-radius: 4px;
+    }
+
+    .user-selector select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <div class="header">
-      <h1>SLightSFTP</h1>
-      <p>Lightweight FTP/SFTP Server Manager</p>
+    <div class="sidebar">
+      <div class="sidebar-item active" data-panel="dashboard">Dashboard</div>
+      <div class="sidebar-item" data-panel="listeners">Listeners</div>
+      <div class="sidebar-item" data-panel="sessions">Active Sessions</div>
+      <div class="sidebar-item" data-panel="users">Users</div>
+      <div class="sidebar-item" data-panel="files">Files</div>
+      <div class="sidebar-item" data-panel="activity">Activity Log</div>
     </div>
 
-    <div class="content">
-      <div class="section">
-        <h2>About SLightSFTP</h2>
-        <p>SLightSFTP is a lightweight, easy-to-use FTP/SFTP server manager built with Electron. It provides a simple web interface for managing file transfer servers, users, and permissions without the complexity of traditional server administration.</p>
-        
-        <div class="features">
-          <div class="feature">
-            <h3>🚀 Easy Setup</h3>
-            <p>Quick installation and configuration with minimal setup required</p>
+    <div class="main-content">
+      <div class="header">
+        <h1>SLightSFTP Server Manager</h1>
+        <div class="user-info">
+          <div class="user-badge" id="currentUser">Loading...</div>
+          <button class="btn-logout" onclick="logout()">Logout</button>
+        </div>
+      </div>
+
+      <div class="content">
+        <!-- Dashboard Panel -->
+        <div id="dashboard" class="panel active">
+          <div class="card">
+            <h2>Activity Monitor (Last 15 Minutes)</h2>
+            <div style="position: relative; height: 200px; background: #1a1a1a; border-radius: 4px; padding: 10px;">
+              <canvas id="activityChart" style="width: 100%; height: 100%;"></canvas>
+              <div style="position: absolute; top: 15px; right: 15px; color: #888; font-size: 12px; font-family: monospace;">
+                <div id="chartMaxValue" style="text-align: right;">0 events/min</div>
+              </div>
+              <div style="position: absolute; bottom: 15px; right: 15px; color: #888; font-size: 11px;">
+                <span style="display: inline-block; width: 12px; height: 12px; background: #e74c3c; border-radius: 2px; margin-right: 5px;"></span>Errors
+                <span style="display: inline-block; width: 12px; height: 12px; background: #27ae60; border-radius: 2px; margin: 0 5px 0 15px;"></span>Success
+              </div>
+            </div>
           </div>
-          <div class="feature">
-            <h3>👥 User Management</h3>
-            <p>Create and manage users with password and SSH key authentication</p>
+
+          <div class="card">
+            <h2>Server Overview</h2>
+            <div id="server-overview"></div>
           </div>
-          <div class="feature">
-            <h3>🔒 Secure</h3>
-            <p>Support for both FTP and SFTP protocols with flexible permissions</p>
+
+          <div class="card">
+            <h2>System Statistics</h2>
+            <div id="system-stats" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;">
+              <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 8px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <div style="font-size: 36px; font-weight: bold;" id="totalUsersCount">0</div>
+                <div style="margin-top: 5px; opacity: 0.9;">Total Users</div>
+              </div>
+              <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); border-radius: 8px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <div style="font-size: 36px; font-weight: bold;" id="activeSessionsCount">0</div>
+                <div style="margin-top: 5px; opacity: 0.9;">Active Sessions</div>
+              </div>
+              <div style="text-align: center; padding: 20px; background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); border-radius: 8px; color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                <div style="font-size: 36px; font-weight: bold;" id="activeUsersCount">0</div>
+                <div style="margin-top: 5px; opacity: 0.9;">Active Users</div>
+              </div>
+            </div>
           </div>
-          <div class="feature">
-            <h3>📊 Activity Monitoring</h3>
-            <p>Real-time activity logging and session monitoring</p>
+
+          <div class="card">
+            <h2>Active Listeners</h2>
+            <div id="active-listeners" class="listener-grid"></div>
+          </div>
+
+          <div class="card">
+            <h2>Recent Activity</h2>
+            <div id="dashboard-activity" class="activity-log"></div>
+          </div>
+        </div>
+
+        <!-- Listeners Panel -->
+        <div id="listeners" class="panel">
+          <div class="card">
+            <h2>Manage Listeners</h2>
+            <button class="btn btn-primary" onclick="showAddListenerModal()">Add Listener</button>
+          </div>
+
+          <div id="listeners-list"></div>
+        </div>
+
+        <!-- Users Panel -->
+        <div id="users" class="panel">
+          <div class="card">
+            <h2>Manage Users</h2>
+            <button class="btn btn-primary" onclick="showAddUserModal()">Add User</button>
+          </div>
+
+          <div class="card">
+            <table id="users-table">
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Password Auth</th>
+                  <th>Public Key Auth</th>
+                  <th>GUI Access</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Activity Panel -->
+        <div id="activity" class="panel">
+          <div class="card">
+            <h2>Activity Log Management</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 15px; background: #f8f9fa; border-radius: 4px;">
+              <div>
+                <strong>Total Entries:</strong> <span id="activityCount">0</span> |
+                <strong>Retention:</strong> <span id="logRetentionDisplay">30</span> days
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn btn-success" onclick="copyActivityLog()">📋 Copy</button>
+                <button class="btn btn-success" onclick="saveActivityLog()">💾 Save</button>
+                <button class="btn btn-primary" onclick="showClearActivityModal()">Clear by Date</button>
+                <button class="btn btn-danger" onclick="clearAllActivities()">Clear All</button>
+                <button class="btn" onclick="showLogSettingsModal()">Settings</button>
+              </div>
+            </div>
+            <div class="activity-log" id="full-activity-log" style="max-height: 600px;"></div>
+          </div>
+        </div>
+
+        <!-- Files Panel -->
+        <div id="files" class="panel">
+          <div class="card">
+            <h2>File Browser</h2>
+            <div class="user-selector">
+              <label><strong>Browse as User:</strong></label>
+              <select id="fileBrowserUser" onchange="loadUserFiles()">
+                <option value="">Select a user...</option>
+              </select>
+            </div>
+            <div id="fileBrowserContent" style="display: none;">
+              <div class="breadcrumb" id="fileBreadcrumb"></div>
+              <div class="file-list" id="fileList"></div>
+            </div>
+            <div id="fileBrowserEmpty" class="empty-state">
+              Select a user to browse their files
+            </div>
+          </div>
+        </div>
+
+        <!-- Active Sessions Panel -->
+        <div id="sessions" class="panel">
+          <div class="card">
+            <h2>Active Sessions</h2>
+            <p>Real-time view of all connected users. You can forcefully disconnect any session.</p>
+          </div>
+
+          <div class="card">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Protocol</th>
+                  <th>Listener</th>
+                  <th>IP Address</th>
+                  <th>Connected Since</th>
+                  <th>Duration</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="sessions-table">
+                <tr>
+                  <td colspan="7" class="empty-state">No active sessions</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
-
-      <div class="section">
-        <h2>Download</h2>
-        <div class="download-section">
-          <h3>Get SLightSFTP</h3>
-          <p style="margin-bottom: 20px;">Choose your platform to download the latest version</p>
-          <div class="download-buttons">
-            <a href="#" class="btn btn-primary">📥 Download for Linux</a>
-            <a href="#" class="btn btn-secondary">🪟 Download for Windows</a>
-            <a href="#" class="btn btn-secondary">🍎 Download for macOS</a>
-          </div>
-        </div>
-        
-        <div class="info-box">
-          <strong>📦 Package Information:</strong>
-          <p>Current Version: 1.1.0 | Release Date: 2024</p>
-          <p>Package Size: ~150MB (includes Electron runtime)</p>
-        </div>
-
-        <div class="info-box" style="margin-top: 20px; background: #d4edda; border-left-color: #28a745;">
-          <strong>🔐 Already Installed?</strong>
-          <p><a href="/login" style="color: #155724; font-weight: 600;">Access Admin Interface</a></p>
-        </div>
-      </div>
-
-      <div class="section">
-        <h2>System Requirements</h2>
-        <div class="system-requirements">
-          <p><strong>Operating Systems:</strong></p>
-          <ul style="margin-left: 20px; margin-top: 10px;">
-            <li>Linux (Ubuntu 18.04+, Debian 10+, Fedora 30+)</li>
-            <li>Windows 10 or later</li>
-            <li>macOS 10.15 (Catalina) or later</li>
-          </ul>
-          <p style="margin-top: 15px;"><strong>Minimum Requirements:</strong></p>
-          <ul style="margin-left: 20px; margin-top: 10px;">
-            <li>2GB RAM (4GB recommended)</li>
-            <li>100MB free disk space</li>
-            <li>Network connection for SFTP/FTP transfers</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="section">
-        <h2>Quick Start</h2>
-        <ol style="margin-left: 20px; line-height: 2;">
-          <li>Download and install SLightSFTP for your platform</li>
-          <li>Launch the application - it will start in your system tray</li>
-          <li>Click the tray icon to open the web management interface</li>
-          <li>Default login: username <code>admin</code>, password <code>admin123</code></li>
-          <li>Create your first listener and users to start transferring files</li>
-        </ol>
-      </div>
-
-      <div class="section">
-        <h2>Features</h2>
-        <ul style="margin-left: 20px; line-height: 2;">
-          <li><strong>Multi-Protocol Support:</strong> Both FTP and SFTP protocols</li>
-          <li><strong>User Management:</strong> Create users with password or SSH key authentication</li>
-          <li><strong>Virtual Paths:</strong> Map remote paths to local directories</li>
-          <li><strong>Permission Control:</strong> Fine-grained permissions (read, write, delete, etc.)</li>
-          <li><strong>Activity Logging:</strong> Track all file transfer activities</li>
-          <li><strong>Session Management:</strong> Monitor and disconnect active sessions</li>
-          <li><strong>Web Interface:</strong> Built-in web management interface</li>
-          <li><strong>Cross-Platform:</strong> Works on Linux, Windows, and macOS</li>
-        </ul>
-      </div>
-
-      <div class="section">
-        <h2>Support</h2>
-        <p>For issues, questions, or contributions, please visit our GitHub repository or contact support.</p>
-        <div class="info-box">
-          <strong>🔗 Useful Links:</strong>
-          <p>GitHub Repository | Documentation | Issue Tracker</p>
-        </div>
-      </div>
-    </div>
-
-    <div class="footer">
-      <p>© 2024 SLightSFTP. Licensed under MIT License.</p>
     </div>
   </div>
+
+  <!-- Add Listener Modal -->
+  <div id="addListenerModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Add Listener</h2>
+        <button class="close-btn" onclick="closeModal('addListenerModal')">&times;</button>
+      </div>
+      <form id="addListenerForm">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" name="name" required>
+        </div>
+        <div class="form-group">
+          <label>Protocol</label>
+          <select name="protocol" required>
+            <option value="FTP">FTP</option>
+            <option value="SFTP">SFTP</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Binding IP</label>
+          <input type="text" name="bindingIp" value="0.0.0.0" required>
+        </div>
+        <div class="form-group">
+          <label>Port</label>
+          <input type="number" name="port" required>
+        </div>
+        <div class="form-group checkbox-group">
+          <input type="checkbox" name="enabled" checked>
+          <label>Enabled</label>
+        </div>
+        <button type="submit" class="btn btn-primary">Create Listener</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Listener Modal -->
+  <div id="editListenerModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Edit Listener</h2>
+        <button class="close-btn" onclick="closeModal('editListenerModal')">&times;</button>
+      </div>
+      <form id="editListenerForm">
+        <input type="hidden" name="id">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" name="name" required>
+        </div>
+        <div class="form-group">
+          <label>Protocol</label>
+          <select name="protocol" required disabled>
+            <option value="FTP">FTP</option>
+            <option value="SFTP">SFTP</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Binding IP</label>
+          <input type="text" name="bindingIp" required>
+        </div>
+        <div class="form-group">
+          <label>Port</label>
+          <input type="number" name="port" required>
+        </div>
+        <div class="form-group checkbox-group">
+          <input type="checkbox" name="enabled">
+          <label>Enabled</label>
+        </div>
+        <button type="submit" class="btn btn-primary">Update Listener</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit Web Server Port Modal -->
+  <div id="editWebPortModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Edit Web Server Port</h2>
+        <button class="close-btn" onclick="closeModal('editWebPortModal')">&times;</button>
+      </div>
+      <form id="editWebPortForm">
+        <div class="form-group">
+          <label>Port</label>
+          <input type="text" id="webServerPort" name="port" pattern="[0-9]+" inputmode="numeric" required autofocus>
+          <small style="color: #666; display: block; margin-top: 5px;">Enter a port number between 1 and 65535</small>
+        </div>
+        <div style="background: #e3f2fd; padding: 10px; border-radius: 4px; margin-bottom: 15px;">
+          <p style="margin: 0; font-size: 13px; color: #1976d2;">
+            ℹ️ The web server will be restarted on the new port. You'll need to access the web GUI at the new URL.
+          </p>
+        </div>
+        <div style="display: flex; gap: 10px;">
+          <button type="submit" class="btn btn-primary">Apply</button>
+          <button type="button" class="btn" onclick="closeModal('editWebPortModal')">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add User Modal -->
+  <div id="addUserModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Add User</h2>
+        <button class="close-btn" onclick="closeModal('addUserModal')">&times;</button>
+      </div>
+      <form id="addUserForm">
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" name="username" required>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" name="password">
+        </div>
+        <div class="form-group checkbox-group">
+          <input type="checkbox" name="passwordEnabled" checked>
+          <label>Enable Password Authentication</label>
+        </div>
+        <div class="form-group">
+          <label>Public Key (Base64)</label>
+          <textarea name="publicKey" placeholder="Optional SSH public key in base64 format"></textarea>
+        </div>
+        <div class="form-group checkbox-group">
+          <input type="checkbox" name="guiEnabled">
+          <label>Enable GUI Access</label>
+        </div>
+        <button type="submit" class="btn btn-primary">Create User</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Edit User Modal -->
+  <div id="editUserModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Edit User</h2>
+        <button class="close-btn" onclick="closeModal('editUserModal')">&times;</button>
+      </div>
+      <form id="editUserForm">
+        <input type="hidden" name="username">
+        <div class="form-group">
+          <label>New Password (leave empty to keep current)</label>
+          <input type="password" name="password">
+        </div>
+        <div class="form-group checkbox-group">
+          <input type="checkbox" name="passwordEnabled">
+          <label>Enable Password Authentication</label>
+        </div>
+        <div class="form-group">
+          <label>Public Key (Base64)</label>
+          <textarea name="publicKey"></textarea>
+        </div>
+        <div class="form-group checkbox-group">
+          <input type="checkbox" name="guiEnabled">
+          <label>Enable GUI Access</label>
+        </div>
+        <h3>Subscribed Listeners & Permissions</h3>
+        <div id="userListenersCheckboxes"></div>
+        <h3>Virtual Paths</h3>
+        <div id="virtualPathsList"></div>
+        <button type="button" class="btn btn-success" onclick="addVirtualPath()">Add Virtual Path</button>
+        <hr style="margin: 20px 0;">
+        <button type="submit" class="btn btn-primary">Update User</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Virtual Path Modal -->
+  <div id="virtualPathModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="virtualPathModalTitle">Add Virtual Path</h2>
+        <button class="close-btn" onclick="closeModal('virtualPathModal')">&times;</button>
+      </div>
+      <form id="virtualPathForm">
+        <input type="hidden" id="vpIndex" value="-1">
+        <div class="form-group">
+          <label>Virtual Path</label>
+          <input type="text" id="vpVirtualPath" placeholder="/data" required>
+        </div>
+        <div class="form-group">
+          <label>Real Path</label>
+          <input type="text" id="vpRealPath" placeholder="C:\\data" required>
+          <button type="button" class="btn" onclick="browseFolderForVirtualPath()" style="margin-top: 5px;">Browse...</button>
+        </div>
+        <h3>Permission</h3>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0;">
+          <div class="checkbox-group">
+            <input type="checkbox" id="vpCanRead" checked>
+            <label>Read (Download)</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="vpCanList" checked>
+            <label>List</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="vpCanWrite">
+            <label>Write (Upload)</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="vpCanAppend">
+            <label>Append (Resume and Overwrite)</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="vpCanCreateDir">
+            <label>Create directory</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="vpCanRename">
+            <label>Rename</label>
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" id="vpCanDelete">
+            <label>Delete</label>
+          </div>
+        </div>
+        <div class="checkbox-group">
+          <input type="checkbox" id="vpApplyToSubdirs" checked>
+          <label>Permission will apply to its sub-directories</label>
+        </div>
+        <button type="submit" class="btn btn-primary">OK</button>
+        <button type="button" class="btn" onclick="closeModal('virtualPathModal')">Cancel</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Clear Activity Modal -->
+  <div id="clearActivityModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Clear Activity Log</h2>
+        <button class="close-btn" onclick="closeModal('clearActivityModal')">&times;</button>
+      </div>
+      <form id="clearActivityForm">
+        <div class="form-group">
+          <label>Clear logs before:</label>
+          <input type="datetime-local" id="clearBeforeDate" required>
+        </div>
+        <p style="color: #666; font-size: 14px; margin: 10px 0;">
+          This will permanently delete all activity logs before the selected date and time.
+        </p>
+        <button type="submit" class="btn btn-danger">Clear Logs</button>
+        <button type="button" class="btn" onclick="closeModal('clearActivityModal')">Cancel</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Log Settings Modal -->
+  <div id="logSettingsModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Activity Log Settings</h2>
+        <button class="close-btn" onclick="closeModal('logSettingsModal')">&times;</button>
+      </div>
+      <form id="logSettingsForm">
+        <div class="form-group">
+          <label>Automatic Cleanup (days):</label>
+          <input type="number" id="logRetentionDays" min="1" max="365" required>
+          <small style="color: #666; display: block; margin-top: 5px;">
+            Logs older than this will be automatically deleted when the server starts. Default: 30 days.
+          </small>
+        </div>
+        <div style="margin: 15px 0; padding: 10px; background: #fff3cd; border-radius: 4px;">
+          <strong>⚠ Current Status:</strong><br>
+          <span id="oldLogsStatus">Checking...</span>
+        </div>
+        <button type="submit" class="btn btn-primary">Save Settings</button>
+        <button type="button" class="btn btn-warning" onclick="cleanupOldLogsNow()">Cleanup Now</button>
+        <button type="button" class="btn" onclick="closeModal('logSettingsModal')">Cancel</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="renderer.js"></script>
 </body>
 </html>
