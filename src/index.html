@@ -1167,6 +1167,40 @@
     </div>
   </div>
 
+  <!-- First-run setup wizard -->
+  <div id="setupWizard" class="modal">
+    <div class="modal-content" style="max-width: 560px;">
+      <div class="modal-header">
+        <h2>Welcome to SLightSFTP 👋</h2>
+        <button class="close-btn" onclick="skipSetup()" title="Skip setup">&times;</button>
+      </div>
+      <div id="setupStep1">
+        <p>Let's share your first folder over SFTP. It takes a minute.</p>
+        <div class="form-group">
+          <label>Folder to share</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="setupFolder" placeholder="/srv/files" style="flex: 1;">
+            <button type="button" class="btn" onclick="pickSetupFolder()">Browse...</button>
+          </div>
+        </div>
+        <div class="form-group"><label>Username for the person you share with</label><input type="text" id="setupUser" placeholder="e.g. alice"></div>
+        <div class="form-group"><label>Their password (at least 8 characters)</label><input type="password" id="setupPassword"></div>
+        <div class="form-group checkbox-group"><input type="checkbox" id="setupWrite" checked><label for="setupWrite">Allow uploads, renames and deletes (otherwise read-only)</label></div>
+        <div class="form-group checkbox-group"><input type="checkbox" id="setupPortal" checked><label for="setupPortal">Also allow access from a web browser (file portal)</label></div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end;">
+          <button type="button" class="btn" onclick="skipSetup()">Skip</button>
+          <button type="button" class="btn btn-primary" onclick="runSetup()">Share folder</button>
+        </div>
+      </div>
+      <div id="setupStep2" style="display: none;">
+        <p>✅ Done! <strong id="setupDoneUser"></strong> can now connect:</p>
+        <pre id="setupConnect" style="background: #2c3e50; color: #ecf0f1; padding: 12px; border-radius: 4px; white-space: pre-wrap;"></pre>
+        <p style="font-size: 13px; color: #666;">Server key fingerprint (users can check it on first connect): <code id="setupFingerprint"></code></p>
+        <div style="display: flex; justify-content: flex-end;"><button type="button" class="btn btn-primary" onclick="finishSetup()">Go to dashboard</button></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Two-factor Modal -->
   <div id="twoFactorModal" class="modal">
     <div class="modal-content">

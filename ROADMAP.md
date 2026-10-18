@@ -40,7 +40,7 @@ Items are implemented in order. Each ships with tests and is marked here when do
 
 ## Phase 5 — Polish & reach
 
-- [ ] First-run setup wizard.
+- [x] First-run setup wizard.
 - [ ] Auto-update from GitHub Releases.
 - [x] Dark mode.
 - [ ] macOS build; winget / Homebrew / Flatpak listings.

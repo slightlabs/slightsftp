@@ -130,6 +130,7 @@ const backend: Record<string, Handler> = {
   'get-recent-activities': () => model.activities,
   'get-activity-count': () => model.activities.length,
   'get-all-settings': () => model.settings,
+  'get-setting': (k: string) => model.settings[k],
   'set-setting': (k: string, v: string) => { model.settings[k] = v; },
   'get-old-logs-stats': () => ({ count: 4 }),
   'cleanup-old-activities': () => ({ count: 4 }),
@@ -267,6 +268,59 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       jest.advanceTimersByTime(3000);
       await flush();
       expect(calls('get-recent-activities').length).toBeGreaterThanOrEqual(before + 3);
+    });
+  });
+
+  describe('first-run setup wizard', () => {
+    let savedUsers: any[];
+    beforeAll(() => { savedUsers = model.users; model.users = [model.users[0]]; delete model.settings.setupComplete; });
+    afterAll(() => { model.users = savedUsers; });
+
+    test('is not shown once other users exist or setup was completed', async () => {
+      model.users = savedUsers;
+      await (window as any).maybeShowSetupWizard();
+      expect($('#setupWizard').classList.contains('active')).toBe(false);
+      model.users = [savedUsers[0]];
+      model.settings.setupComplete = 'true';
+      await (window as any).maybeShowSetupWizard();
+      expect($('#setupWizard').classList.contains('active')).toBe(false);
+      delete model.settings.setupComplete;
+    });
+
+    test('validates input, creates a user with access to the folder, and shows how to connect', async () => {
+      await (window as any).maybeShowSetupWizard();
+      expect($('#setupWizard').classList.contains('active')).toBe(true);
+
+      buttonByText($('#setupStep1'), 'Share folder').click();
+      await flush();
+      expect((window.alert as jest.Mock).mock.calls.at(-1)[0]).toBe('Choose the folder to share.');
+
+      buttonByText($('#setupStep1'), 'Browse...').click();
+      await flush();
+      expect($<HTMLInputElement>('#setupFolder').value).toBe('/picked/folder');
+      $<HTMLInputElement>('#setupUser').value = 'erin';
+      $<HTMLInputElement>('#setupPassword').value = 'short';
+      buttonByText($('#setupStep1'), 'Share folder').click();
+      await flush();
+      expect((window.alert as jest.Mock).mock.calls.at(-1)[0]).toMatch(/at least 8/);
+
+      $<HTMLInputElement>('#setupPassword').value = 'Erin-Pass-123';
+      $<HTMLInputElement>('#setupWrite').checked = false;
+      buttonByText($('#setupStep1'), 'Share folder').click();
+      await flush();
+
+      expect(lastCall('create-user')).toEqual([{ username: 'erin', password: 'Erin-Pass-123', passwordEnabled: true, guiEnabled: false, portalEnabled: true }]);
+      const [name, , listeners, vps, perms] = lastCall('update-user')!;
+      expect(name).toBe('erin');
+      expect(listeners).toEqual([1]);
+      expect(vps).toEqual([expect.objectContaining({ virtualPath: '/', localPath: '/picked/folder', canRead: true, canWrite: false, canDelete: false })]);
+      expect(perms[0]).toMatchObject({ listenerId: 1, canRead: true, canCreate: false });
+      expect($('#setupConnect').textContent).toContain('sftp -P 2222 erin@');
+      expect($('#setupFingerprint').textContent).toBe('SHA256:abcDEF123');
+      expect(model.settings.setupComplete).toBe('true');
+
+      buttonByText($('#setupStep2'), 'Go to dashboard').click();
+      expect($('#setupWizard').classList.contains('active')).toBe(false);
     });
   });
 

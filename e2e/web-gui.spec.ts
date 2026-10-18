@@ -82,6 +82,10 @@ test('the default admin must choose a new password, then lands on the dashboard'
   await page.fill('#confirmPassword', 'Br0wser-Admin!');
   await page.click('#changePasswordBtn');
   await expect(page).toHaveURL(`http://127.0.0.1:${webPort}/`);
+  // first run: the setup wizard greets the admin; these tests set things up by hand
+  await expect(page.locator('#setupWizard')).toHaveClass(/active/);
+  await page.locator('#setupStep1').getByRole('button', { name: 'Skip' }).click();
+  await expect(page.locator('#setupWizard')).not.toHaveClass(/active/);
   await expect(page.locator('#currentUser')).toHaveText('admin');
   await expect(page.locator('#totalUsersCount')).toHaveText('1');
   await expect(page.locator('#server-overview')).toContainText('Total Listeners');

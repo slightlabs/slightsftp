@@ -77,6 +77,9 @@ test('rejects bad credentials in the login window', async () => {
 
 test('first admin login forces a new password, then opens the dashboard window', async () => {
   dashboard = await signIn('admin', 'admin123', ADMIN_PW);
+  await expect(dashboard.locator('#setupWizard')).toHaveClass(/active/);
+  await dashboard.locator('#setupStep1').getByRole('button', { name: 'Skip' }).click();
+  await expect(dashboard.locator('#setupWizard')).not.toHaveClass(/active/);
   await expect(dashboard.locator('#currentUser')).toHaveText('admin');
   await expect(dashboard.locator('#totalUsersCount')).toHaveText('1');
   await expect(dashboard.locator('#server-overview')).toContainText('3');

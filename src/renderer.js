@@ -110,6 +110,82 @@ async function disableTwoFactor() {
   }
 }
 
+// First-run setup wizard: shown once, when the admin is the only user
+async function maybeShowSetupWizard() {
+  try {
+    const done = await ipcRenderer.invoke('get-setting', 'setupComplete');
+    if (done === 'true') return;
+    const users = await ipcRenderer.invoke('get-all-users');
+    if (users.length > 1) return;
+    showModal('setupWizard');
+  } catch (err) {
+    console.error('Setup wizard check failed:', err);
+  }
+}
+
+async function pickSetupFolder() {
+  const folder = await ipcRenderer.invoke('select-directory');
+  if (folder) document.getElementById('setupFolder').value = folder;
+}
+
+async function skipSetup() {
+  await ipcRenderer.invoke('set-setting', 'setupComplete', 'true');
+  closeModal('setupWizard');
+}
+
+async function runSetup() {
+  const folder = document.getElementById('setupFolder').value.trim();
+  const username = document.getElementById('setupUser').value.trim();
+  const password = document.getElementById('setupPassword').value;
+  const write = document.getElementById('setupWrite').checked;
+  if (!folder) return alert('Choose the folder to share.');
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(username)) return alert('Use letters, digits, dots, dashes or underscores for the username.');
+  if (password.length < 8) return alert('The password needs at least 8 characters.');
+
+  try {
+    const findSftp = async () => (await ipcRenderer.invoke('get-all-listener-statuses'))
+      .find(s => s.listener.protocol === 'SFTP' && s.listener.id > 0);
+    let sftp = await findSftp();
+    if (!sftp) {
+      // e.g. a fresh headless install: create the default SFTP listener
+      await ipcRenderer.invoke('create-listener', { name: 'SFTP', protocol: 'SFTP', bindingIp: '0.0.0.0', port: 2222, enabled: true, tlsMode: 'none' });
+      sftp = await findSftp();
+    }
+
+    await ipcRenderer.invoke('create-user', {
+      username, password, passwordEnabled: true, guiEnabled: false,
+      portalEnabled: document.getElementById('setupPortal').checked
+    });
+    const user = await ipcRenderer.invoke('get-user', username);
+    await ipcRenderer.invoke('update-user', username, {}, [sftp.listener.id], [{
+      virtualPath: '/', localPath: folder, userId: user.id,
+      canRead: true, canList: true, canWrite: write, canAppend: write,
+      canDelete: write, canCreateDir: write, canRename: write, applyToSubdirs: true
+    }], [{
+      userId: user.id, listenerId: sftp.listener.id, canRead: true, canList: true,
+      canCreate: write, canEdit: write, canAppend: write, canDelete: write, canCreateDir: write, canRename: write
+    }]);
+    if (!(await findSftp()).running) await ipcRenderer.invoke('start-listener', sftp.listener.id);
+
+    const identity = await ipcRenderer.invoke('get-server-identity').catch(() => ({}));
+    const host = (typeof location !== 'undefined' && location.hostname && location.protocol.startsWith('http')) ? location.hostname : 'this-computer';
+    document.getElementById('setupDoneUser').textContent = username;
+    document.getElementById('setupConnect').textContent =
+      `sftp -P ${sftp.listener.port} ${username}@${host}\n\nor in FileZilla / WinSCP:\n  Host: ${host}   Port: ${sftp.listener.port}   Protocol: SFTP`;
+    document.getElementById('setupFingerprint').textContent = identity.sshHostKeyFingerprint || '';
+    document.getElementById('setupStep1').style.display = 'none';
+    document.getElementById('setupStep2').style.display = 'block';
+    await ipcRenderer.invoke('set-setting', 'setupComplete', 'true');
+  } catch (err) {
+    alert(`Setup failed: ${errorText(err)}`);
+  }
+}
+
+function finishSetup() {
+  closeModal('setupWizard');
+  loadDashboard();
+}
+
 // Theme: system → dark → light
 function toggleTheme() {
   const order = [undefined, 'dark', 'light'];
@@ -140,6 +216,7 @@ async function logout() {
 // Initialize on page load
 window.addEventListener('DOMContentLoaded', () => {
   loadAuthenticatedUser();
+  maybeShowSetupWizard();
   initializeActivityChart();
   loadDashboard();
   
