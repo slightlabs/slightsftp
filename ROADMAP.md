@@ -12,7 +12,7 @@ Items are implemented in order. Each ships with tests and is marked here when do
 - [x] **Forced password change on first login** — the default `admin/admin123` (and any user flagged by an admin) must choose a new password before reaching the dashboard (desktop and web).
 - [x] **HTTPS for the web GUI** — self-signed certificate generated on first use, or bring your own; HTTP→HTTPS option.
 - [x] **FTPS (explicit TLS) for FTP listeners** — per-listener toggle, reuses the server certificate.
-- [ ] **Accurate docs** — replace the fictional API page with the real REST API; correct platform claims.
+- [x] **Accurate docs** — replace the fictional API page with the real REST API; correct platform claims.
 
 ## Phase 2 — Headline features
 

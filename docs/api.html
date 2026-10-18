@@ -24,200 +24,221 @@
     <section class="page-header">
         <div class="container">
             <h1>API Reference</h1>
-            <p>Developer documentation for extending SLightSFTP - 100% Free & Open Source</p>
+            <p>Automate SLightSFTP through the same REST API the web GUI uses</p>
         </div>
     </section>
 
     <section class="api-content">
         <div class="container">
             <div class="api-section">
-                <h2>Core Modules</h2>
-                
+                <h2>REST API</h2>
                 <div class="api-item">
-                    <h3>Server Module</h3>
-                    <p>Main server implementation for FTP/SFTP protocols</p>
-                    <pre><code>// Example: Creating a new server
-const { createServer } = require('./src/server');
+                    <p>The web GUI is a client of a JSON REST API served by the web GUI server (default <code>http://localhost:3000</code>, or <code>https://</code> when HTTPS is enabled). Everything the GUI can do, scripts can do too. Start the server from the desktop app (<em>Listeners → Web GUI Server → Start</em>) or headless with <code>WEB_PORT=3000 WEB_HTTPS=true node dist/web-only.js</code>.</p>
+                    <pre><code># sign in and keep the session cookie
+curl -k -c jar -H 'Content-Type: application/json' \
+     -d '{"username":"admin","password":"&lt;your password&gt;"}' https://localhost:3000/api/login
 
-const server = createServer({
-    protocol: 'sftp',
-    port: 22,
-    host: '0.0.0.0'
-});
+# list connected clients
+curl -k -b jar https://localhost:3000/api/sessions
 
-server.start();</code></pre>
-                </div>
-
-                <div class="api-item">
-                    <h3>Database Module</h3>
-                    <p>SQLite database operations for configuration management</p>
-                    <pre><code>// Example: Database operations
-const { Database } = require('./src/database');
-
-const db = new Database('config.db');
-
-// Create user
-await db.createUser({
-    username: 'newuser',
-    password: 'securepassword',
-    permissions: ['read', 'write']
-});
-
-// Get user
-const user = await db.getUser('newuser');</code></pre>
-                </div>
-
-                <div class="api-item">
-                    <h3>Authentication Module</h3>
-                    <p>User authentication handling for both password and public key</p>
-                    <pre><code>// Example: Authentication
-const { authenticate } = require('./src/auth');
-
-// Password authentication
-const result = await authenticate.password('username', 'password');
-
-// Public key authentication
-const result = await authenticate.publicKey('username', publicKey);</code></pre>
+# create an SFTP listener on port 2222
+curl -k -b jar -H 'Content-Type: application/json' \
+     -d '{"name":"Partners","protocol":"SFTP","bindingIp":"0.0.0.0","port":2222,"enabled":true}' \
+     https://localhost:3000/api/listeners</code></pre>
+                    <p>Live events: open a WebSocket to the same host and port (<code>ws://</code> or <code>wss://</code>) to receive <code>{ "type": "activity", "data": { listenerId, username, action, path, success, timestamp } }</code> messages for every login, transfer and admin action.</p>
                 </div>
             </div>
-
             <div class="api-section">
-                <h2>Configuration API</h2>
-                
+                <h2>Authentication</h2>
+                <p>Sign in to receive an <code>HttpOnly</code> <code>sessionId</code> cookie (also <code>Secure</code> when the GUI is served over HTTPS). Every other <code>/api</code> endpoint requires it and answers <code>401</code> without it. While a password change is pending, only the change-password, user and logout endpoints are available (others answer <code>403</code> with <code>requirePasswordChange: true</code>).</p>
                 <div class="api-item">
-                    <h3>User Management</h3>
-                    <pre><code>// User CRUD operations
-const { UserManager } = require('./src/managers/user');
-
-const userManager = new UserManager(db);
-
-// Create user
-await userManager.create({
-    username: 'user1',
-    password: 'pass123',
-    guiAccess: true
-});
-
-// Update user
-await userManager.update('user1', {
-    password: 'newpass456'
-});
-
-// Delete user
-await userManager.delete('user1');
-
-// List users
-const users = await userManager.list();</code></pre>
+                    <h3><code>POST /api/login</code></h3>
+                    <p>Body <code>{ username, password }</code>. Returns <code>{ success, username }</code>, plus <code>requirePasswordChange: true</code> when a new password must be chosen. Only users with GUI access may sign in.</p>
                 </div>
-
                 <div class="api-item">
-                    <h3>Server Management</h3>
-                    <pre><code>// Server configuration operations
-const { ServerManager } = require('./src/managers/server');
-
-const serverManager = new ServerManager(db);
-
-// Create listener
-await serverManager.createListener({
-    protocol: 'ftp',
-    port: 2121,
-    host: '127.0.0.1',
-    enabled: true
-});
-
-// Update listener
-await serverManager.updateListener(1, {
-    port: 2122
-});
-
-// Delete listener
-await serverManager.deleteListener(1);</code></pre>
+                    <h3><code>POST /api/change-password</code></h3>
+                    <p>Body <code>{ newPassword, currentPassword }</code>. <code>currentPassword</code> is not needed while a change is being forced. New passwords need at least 8 characters and must differ from the default and the current one.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/logout</code></h3>
+                    <p>Ends the session.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/user</code></h3>
+                    <p>The signed-in user: <code>{ username }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/server-identity</code></h3>
+                    <p><code>{ sshHostKeyFingerprint }</code> — give this to users so their SFTP client can verify the server.</p>
                 </div>
             </div>
-
             <div class="api-section">
-                <h2>Events API</h2>
-                
+                <h2>Listeners</h2>
+                <p>FTP and SFTP servers. <code>tlsMode</code> (FTP only) is <code>none</code>, <code>optional</code> or <code>required</code>.</p>
                 <div class="api-item">
-                    <h3>Server Events</h3>
-                    <pre><code>// Server event handling
-const { EventEmitter } = require('events');
-
-class Server extends EventEmitter {
-    // Connection events
-    on('connection', (client) => {
-        console.log('New client connected:', client.address);
-    });
-
-    on('disconnect', (client) => {
-        console.log('Client disconnected:', client.address);
-    });
-
-    on('error', (error) => {
-        console.error('Server error:', error);
-    });
-}</code></pre>
+                    <h3><code>GET /api/listeners</code></h3>
+                    <p>All listeners.</p>
                 </div>
-
                 <div class="api-item">
-                    <h3>File Operation Events</h3>
-                    <pre><code>// File operation monitoring
-server.on('upload', (data) => {
-    console.log('File uploaded:', data.filename);
-});
-
-server.on('download', (data) => {
-    console.log('File downloaded:', data.filename);
-});
-
-server.on('delete', (data) => {
-    console.log('File deleted:', data.filename);
-});</code></pre>
+                    <h3><code>GET /api/listeners/:id</code></h3>
+                    <p>One listener, or <code>404</code>.</p>
                 </div>
-            </div>
-
-            <div class="api-section">
-                <h2>Plugin System</h2>
-                
                 <div class="api-item">
-                    <h3>Custom Plugins</h3>
-                    <pre><code>// Creating custom plugins
-const { Plugin } = require('./src/plugin');
-
-class CustomPlugin extends Plugin {
-    constructor() {
-        super('custom-plugin');
-    }
-
-    async onLoad() {
-        console.log('Plugin loaded');
-    }
-
-    async onUnload() {
-        console.log('Plugin unloaded');
-    }
-
-    async onFileUpload(data) {
-        // Custom file upload handling
-    }
-}
-
-// Register plugin
-server.registerPlugin(new CustomPlugin());</code></pre>
+                    <h3><code>POST /api/listeners</code></h3>
+                    <p>Body <code>{ name, protocol: 'FTP'|'SFTP', bindingIp, port, enabled, tlsMode? }</code>. Enabled listeners start immediately.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>PUT /api/listeners/:id</code></h3>
+                    <p>Body <code>{ name, bindingIp, port, enabled, tlsMode? }</code>. A running listener is restarted with the new settings.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>DELETE /api/listeners/:id</code></h3>
+                    <p>Stops (if running) and deletes the listener.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/listeners/:id/start</code></h3>
+                    <p>Start; <code>400</code> if already running or disabled.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/listeners/:id/stop</code></h3>
+                    <p>Stop.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/listeners/:id/restart</code></h3>
+                    <p>Restart.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/listener-statuses</code></h3>
+                    <p><code>[{ listener, running }]</code> including the web GUI itself (<code>id: -1</code>, protocol <code>HTTP</code>/<code>HTTPS</code>).</p>
                 </div>
             </div>
-
             <div class="api-section">
-                <h2>CLI API</h2>
-                
+                <h2>Users</h2>
+                <p>Password hashes are never returned.</p>
                 <div class="api-item">
-                    <h3>Command Line Interface</h3>
-                    <pre><code>// Available CLI commands
-npm start              # Start the application
-npm test               # Run test client
-npm run dev            # Development mode
-npm run build          # Build for production
-npm run package        # Package as executable</code></pre>
+                    <h3><code>GET /api/users</code></h3>
+                    <p>All users.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/users/:username</code></h3>
+                    <p>One user, or <code>404</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/users</code></h3>
+                    <p>Body <code>{ username, password, passwordEnabled, publicKey?, guiEnabled, mustChangePassword? }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>PUT /api/users/:username</code></h3>
+                    <p>Body <code>{ password?, passwordEnabled, publicKey?, guiEnabled, mustChangePassword? }</code>. Optionally also <code>listeners</code> (ids), <code>virtualPaths</code> and <code>permissions</code> arrays to replace the user's access in one call.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>DELETE /api/users/:username</code></h3>
+                    <p>Delete the user.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/users/:username/subscriptions</code></h3>
+                    <p>Listener ids the user may connect to.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/users/:username/subscriptions</code></h3>
+                    <p>Body <code>{ listenerId }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>DELETE /api/users/:username/subscriptions/:listenerId</code></h3>
+                    <p>Revoke access to a listener.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/users/:username/virtual-paths</code></h3>
+                    <p>The user's virtual path mappings.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/users/:username/virtual-paths</code></h3>
+                    <p>Body <code>{ virtualPath, localPath, canRead, canWrite, canAppend, canDelete, canList, canCreateDir, canRename, applyToSubdirs }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>DELETE /api/users/:username/virtual-paths/:id</code></h3>
+                    <p>Remove a mapping.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/users/id/:userId/listeners</code></h3>
+                    <p>Listener ids by user id.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/users/id/:userId/virtual-paths</code></h3>
+                    <p>Virtual paths by user id.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/users/id/:userId/permissions/:listenerId</code></h3>
+                    <p>Listener-level permissions, or <code>null</code>.</p>
+                </div>
+            </div>
+            <div class="api-section">
+                <h2>Sessions</h2>
+                <div class="api-item">
+                    <h3><code>GET /api/sessions</code></h3>
+                    <p>Connected FTP/SFTP clients: <code>{ sessionId, username, ipAddress, connectedAt, listenerId, listenerName, protocol }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>DELETE /api/sessions/:sessionId</code></h3>
+                    <p>Disconnect a client; <code>404</code> if it already left.</p>
+                </div>
+            </div>
+            <div class="api-section">
+                <h2>Files</h2>
+                <p>Paths are virtual paths of the given user; <code>..</code> and anything outside the user's mappings is refused with <code>403</code>.</p>
+                <div class="api-item">
+                    <h3><code>GET /api/files/browse?username=&amp;path=</code></h3>
+                    <p><code>{ files: [{ name, type, size, modified }], currentPath }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/files/download?username=&amp;path=</code></h3>
+                    <p>Downloads a file (<code>Content-Disposition: attachment</code>).</p>
+                </div>
+            </div>
+            <div class="api-section">
+                <h2>Activity log &amp; settings</h2>
+                <div class="api-item">
+                    <h3><code>GET /api/activity?limit=</code></h3>
+                    <p>Most recent entries (default 100).</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/activity/count</code></h3>
+                    <p><code>{ count }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>DELETE /api/activity</code></h3>
+                    <p>Body <code>{ beforeDate? }</code> (ISO 8601). Without a date the whole log is cleared. Returns <code>{ success, count }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/activity/old-stats?retentionDays=</code></h3>
+                    <p>Entries older than the retention period: <code>{ count }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/activity/cleanup</code></h3>
+                    <p>Apply the retention period now: <code>{ success, count }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/settings</code></h3>
+                    <p>All settings, e.g. <code>logRetentionDays</code>, <code>webHttps</code>, <code>tlsCertPath</code>, <code>tlsKeyPath</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/settings/:key</code></h3>
+                    <p><code>{ key, value }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>PUT /api/settings/:key</code></h3>
+                    <p>Body <code>{ value }</code>.</p>
+                </div>
+            </div>
+            <div class="api-section">
+                <h2>Command line</h2>
+                <div class="api-item">
+                    <pre><code>npm start            # build and run the desktop app
+npm run start:web    # build and run headless with the web GUI (WEB_PORT, WEB_HTTPS)
+npm test             # unit, integration and end-to-end tests
+npm run test:e2e     # browser and desktop GUI tests (Playwright)
+npm run dist:linux   # build AppImage + .deb
+npm run dist:win     # build the Windows MSI</code></pre>
                 </div>
             </div>
         </div>
@@ -231,11 +252,11 @@ npm run package        # Package as executable</code></pre>
 
     <footer>
         <div class="container">
-            <p>&copy; 2024 SLightSFTP. Free & Open Source MIT License.</p>
+            <p>&copy; 2024–2026 SLightSFTP. Free & Open Source MIT License.</p>
             <div class="footer-links">
                 <a href="https://github.com/slightlabs/slightsftp" target="_blank">GitHub</a>
                 <a href="https://github.com/slightlabs/slightsftp/issues" target="_blank">Issues</a>
-                <a href="https://github.com/slightlabs/slightsftp/blob/main/LICENSE" target="_blank">MIT License</a>
+                <a href="https://github.com/slightlabs/slightsftp/blob/master/LICENSE" target="_blank">MIT License</a>
                 <a href="https://github.com/slightlabs/slightsftp" target="_blank">⭐ Star on GitHub</a>
             </div>
         </div>

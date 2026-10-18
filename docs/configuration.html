@@ -78,9 +78,10 @@
                 <div class="config-item">
                     <h3>Security Settings</h3>
                     <ul>
-                        <li><strong>SSL/TLS:</strong> Enable secure connections for FTP</li>
-                        <li><strong>Host Key:</strong> SSH host key for SFTP</li>
-                        <li><strong>Authentication Methods:</strong> Configure allowed auth methods</li>
+                        <li><strong>FTPS:</strong> per FTP listener choose <em>None</em>, <em>FTPS optional</em> (clients may use AUTH TLS) or <em>FTPS required</em> (unencrypted logins are refused)</li>
+                        <li><strong>HTTPS:</strong> enable <em>Use HTTPS</em> for the web GUI in <em>Listeners → Web GUI Server → Edit Port</em>. A self-signed certificate is created automatically; set the <code>tlsCertPath</code> and <code>tlsKeyPath</code> settings to use your own</li>
+                        <li><strong>SFTP host key:</strong> generated once and kept in the config directory (<code>ssh_host_rsa_key</code>); its SHA256 fingerprint is shown on each SFTP listener so users can verify the server</li>
+                        <li><strong>Passwords:</strong> stored as salted scrypt hashes; users authenticate with a password and/or an SSH public key</li>
                     </ul>
                 </div>
             </div>
@@ -142,7 +143,7 @@
                     <h3>Default Credentials</h3>
                     <p><strong>Username:</strong> admin</p>
                     <p><strong>Password:</strong> admin123</p>
-                    <p class="warning">⚠️ Please change these credentials immediately after first login!</p>
+                    <p class="warning">⚠️ You must choose a new password the first time you sign in with the default one.</p>
                 </div>
             </div>
         </div>
@@ -156,11 +157,11 @@
 
     <footer>
         <div class="container">
-            <p>&copy; 2024 SLightSFTP. Free & Open Source MIT License.</p>
+            <p>&copy; 2024–2026 SLightSFTP. Free & Open Source MIT License.</p>
             <div class="footer-links">
                 <a href="https://github.com/slightlabs/slightsftp" target="_blank">GitHub</a>
                 <a href="https://github.com/slightlabs/slightsftp/issues" target="_blank">Issues</a>
-                <a href="https://github.com/slightlabs/slightsftp/blob/main/LICENSE" target="_blank">MIT License</a>
+                <a href="https://github.com/slightlabs/slightsftp/blob/master/LICENSE" target="_blank">MIT License</a>
                 <a href="https://github.com/slightlabs/slightsftp" target="_blank">⭐ Star on GitHub</a>
             </div>
         </div>

@@ -4,13 +4,17 @@ Multi-user FTP/SFTP server with GUI management interface.
 
 ## Features
 
-- Multiple FTP/SFTP listeners
+- Multiple SFTP, FTP and FTPS (explicit TLS) listeners
+- Desktop GUI (Electron) and a browser-based admin GUI, optionally over HTTPS
 - Multi-user support with password and public key authentication
-- Virtual path mapping
-- Granular permissions per user
-- Electron-based GUI for configuration and monitoring
-- SQLite database for configuration storage
-- System tray support
+- Virtual path mapping with granular per-user, per-path permissions
+- Users can never leave their virtual paths (`..` is confined)
+- Salted scrypt password hashing; forced password change on first login
+- Stable SFTP host key with a fingerprint you can share with users
+- Live sessions, activity log and a REST API ([docs](https://slightlabs.github.io/slightsftp/api.html))
+- SQLite database for configuration storage; system tray support
+
+See [ROADMAP.md](ROADMAP.md) for what's coming next.
 
 ## Installation
 
@@ -31,7 +35,7 @@ npm test
 ## Default Credentials
 
 - Username: `admin`
-- Password: `admin123`
+- Password: `admin123` — you must choose a new password the first time you sign in
 
 ## Configuration
 
