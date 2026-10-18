@@ -8,3 +8,6 @@ if (!process.env.SLIGHTSFTP_CERT_DIR) {
   fs.mkdirSync(dir, { recursive: true });
   process.env.SLIGHTSFTP_CERT_DIR = dir;
 }
+
+// never call the real GitHub API from tests
+process.env.SLIGHTSFTP_NO_UPDATE_CHECK = process.env.SLIGHTSFTP_NO_UPDATE_CHECK || '1';

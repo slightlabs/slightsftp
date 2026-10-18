@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { DatabaseManager } from './database';
@@ -20,6 +20,7 @@ import { limitFromForm } from './bandwidth';
 import { purgeExpired, purgeItem, recycleSettings, restoreItem, saveRecycleSettings } from './recycle-bin';
 import { createApiToken } from './api-tokens';
 import { createBackup, restoreBackup } from './backup';
+import { checkForUpdate } from './update-check';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -592,6 +593,18 @@ function setupIpcHandlers(): void {
   ipcMain.handle('set-security-settings', async (event, settings) => {
     saveGuardSettings(db, settings || {});
     return getLoginGuard(db).settings();
+  });
+
+  // Update notifications (GitHub Releases)
+  ipcMain.handle('check-for-update', async () => checkForUpdate(db, app.getVersion()));
+
+  ipcMain.handle('open-external', async (event, url) => {
+    // only release pages of this project
+    if (typeof url === 'string' && url.startsWith('https://github.com/slightlabs/slightsftp/')) {
+      await shell.openExternal(url);
+      return true;
+    }
+    return false;
   });
 
   // Configuration backup / restore

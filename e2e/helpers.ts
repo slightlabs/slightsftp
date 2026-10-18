@@ -47,7 +47,7 @@ export async function startWebOnlyServer(cwd: string, port: number): Promise<Chi
   }
   const child = spawn(process.execPath, [path.join(DIST, 'web-only.js')], {
     cwd,
-    env: { ...process.env, WEB_PORT: String(port) },
+    env: { ...process.env, WEB_PORT: String(port), SLIGHTSFTP_NO_UPDATE_CHECK: '1' },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let output = '';

@@ -41,7 +41,7 @@ Items are implemented in order. Each ships with tests and is marked here when do
 ## Phase 5 — Polish & reach
 
 - [x] First-run setup wizard.
-- [ ] Auto-update from GitHub Releases.
+- [x] Update notifications from GitHub Releases (in-place auto-update is not supported for MSI / .deb packages).
 - [x] Dark mode.
 - [ ] macOS build; winget / Homebrew / Flatpak listings.
 - [ ] Cloud storage virtual paths (S3, Azure Blob).

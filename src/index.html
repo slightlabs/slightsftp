@@ -539,6 +539,11 @@
 
       <div class="content">
         <!-- Dashboard Panel -->
+        <div id="updateBanner" style="display: none; background: #e3f2fd; border-left: 4px solid #3498db; padding: 10px 14px; margin-bottom: 16px; border-radius: 4px;">
+          🎉 <strong>SLightSFTP <span id="updateVersion"></span></strong> is available (you have <span id="updateCurrent"></span>).
+          <a href="#" id="updateLink" style="color: #2980b9;">Download</a>
+          <button type="button" class="close-btn" style="float: right;" onclick="document.getElementById('updateBanner').style.display='none'">&times;</button>
+        </div>
         <div id="dashboard" class="panel active">
           <div class="card">
             <h2>Activity Monitor (Last 15 Minutes)</h2>

@@ -82,6 +82,8 @@ const backend: Record<string, Handler> = {
   'set-security-settings': (u: any) => { Object.assign(model.security, u); return model.security; },
   'get-ip-bans': () => model.bans,
   'get-api-tokens': () => model.tokens,
+  'check-for-update': () => ({ currentVersion: '1.5.0', latestVersion: '1.6.0', updateAvailable: true, url: 'https://github.com/slightlabs/slightsftp/releases/tag/v1.6.0' }),
+  'open-external': () => true,
   'export-backup': () => ({ success: true, path: '/home/admin/slightsftp-backup.json' }),
   'import-backup': () => ({ success: true, users: 3, listeners: 2, restoredFiles: [] }),
   'create-api-token': (name: string) => { const t = { id: model.tokens.length + 1, name, hint: 'sst_abc123', createdAt: new Date().toISOString(), lastUsedAt: null, expiresAt: null }; model.tokens.push(t); return { ...t, token: 'sst_abc123SECRET' }; },
@@ -321,6 +323,16 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
 
       buttonByText($('#setupStep2'), 'Go to dashboard').click();
       expect($('#setupWizard').classList.contains('active')).toBe(false);
+    });
+  });
+
+  describe('update notification', () => {
+    test('a newer release shows a banner that opens the release page', async () => {
+      expect($('#updateBanner').style.display).toBe('block');
+      expect($('#updateBanner').textContent).toContain('SLightSFTP 1.6.0 is available (you have 1.5.0)');
+      $('#updateLink').click();
+      await flush();
+      expect(lastCall('open-external')).toEqual(['https://github.com/slightlabs/slightsftp/releases/tag/v1.6.0']);
     });
   });
 

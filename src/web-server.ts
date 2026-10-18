@@ -26,6 +26,7 @@ import { limitFromForm } from './bandwidth';
 import { purgeItem, recycleSettings, restoreItem, saveRecycleSettings } from './recycle-bin';
 import { authenticateToken, createApiToken } from './api-tokens';
 import { createBackup, restoreBackup } from './backup';
+import { checkForUpdate } from './update-check';
 
 const APP_VERSION: string = require('../package.json').version;
 
@@ -379,6 +380,11 @@ export class WebServer {
       } catch (error: any) {
         res.status(400).json({ error: error.message });
       }
+    });
+
+    // Update notifications
+    this.app.get('/api/update', async (req: Request, res: Response) => {
+      res.json(await checkForUpdate(this.db, APP_VERSION, { force: req.query.force === '1' }));
     });
 
     // Configuration backup / restore
@@ -1605,6 +1611,8 @@ export class WebServer {
               };
               input.click();
             }),
+            'check-for-update': () => api('GET', '/api/update'),
+            'open-external': async (url) => { window.open(url, '_blank', 'noopener'); return true; },
             'get-webhooks': () => api('GET', '/api/webhooks'),
             'create-webhook': (hook) => api('POST', '/api/webhooks', hook),
             'update-webhook': (id, hook) => api('PUT', \`/api/webhooks/\${id}\`, hook),

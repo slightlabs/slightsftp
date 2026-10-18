@@ -50,7 +50,7 @@ test.beforeAll(async () => {
   app = await electron.launch({
     args: ['--no-sandbox', path.join(DIST, 'main.js')],
     cwd: workDir, // development layout: config.db + ftp-root live in the working directory
-    env: { ...process.env, WEB_PORT: String(webPort), ELECTRON_DISABLE_SECURITY_WARNINGS: 'true' },
+    env: { ...process.env, WEB_PORT: String(webPort), ELECTRON_DISABLE_SECURITY_WARNINGS: 'true', SLIGHTSFTP_NO_UPDATE_CHECK: '1' },
   });
 });
 

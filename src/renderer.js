@@ -110,6 +110,26 @@ async function disableTwoFactor() {
   }
 }
 
+// Update notification banner
+async function checkForUpdates() {
+  try {
+    const info = await ipcRenderer.invoke('check-for-update');
+    if (!info || !info.updateAvailable || !info.url) return;
+    document.getElementById('updateVersion').textContent = info.latestVersion;
+    document.getElementById('updateCurrent').textContent = info.currentVersion;
+    const link = document.getElementById('updateLink');
+    link.href = info.url;
+    link.onclick = (e) => {
+      e.preventDefault();
+      // desktop: open in the system browser; web: a normal new tab
+      ipcRenderer.invoke('open-external', info.url).catch(() => window.open(info.url, '_blank', 'noopener'));
+    };
+    document.getElementById('updateBanner').style.display = 'block';
+  } catch (err) {
+    console.error('Update check failed:', err);
+  }
+}
+
 // First-run setup wizard: shown once, when the admin is the only user
 async function maybeShowSetupWizard() {
   try {
@@ -217,6 +237,7 @@ async function logout() {
 window.addEventListener('DOMContentLoaded', () => {
   loadAuthenticatedUser();
   maybeShowSetupWizard();
+  checkForUpdates();
   initializeActivityChart();
   loadDashboard();
   
