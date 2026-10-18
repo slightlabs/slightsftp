@@ -1,8 +1,8 @@
 import initSqlJs, { Database } from 'sql.js';
 import * as path from 'path';
-import * as crypto from 'crypto';
 import * as fs from 'fs';
 import { User, VirtualPath, Permission, Listener, UserListener, ServerActivity } from './types';
+import { hashPassword, verifyPasswordHash } from './password';
 
 export class DatabaseManager {
   private db: Database | null = null;
@@ -209,10 +209,31 @@ export class DatabaseManager {
     this.save();
   }
 
+  /**
+   * Protocol (SFTP/FTP) password authentication: requires password auth to be
+   * enabled for the user.
+   */
   verifyPassword(username: string, password: string): boolean {
     const user = this.getUser(username);
-    if (!user || !user.password || !user.passwordEnabled) return false;
-    return this.hashPassword(password) === user.password;
+    if (!user || !user.passwordEnabled) return false;
+    return this.checkPassword(username, password);
+  }
+
+  /**
+   * Check a user's password (used by GUI logins too). Legacy unsalted hashes are
+   * transparently upgraded to scrypt on success.
+   */
+  checkPassword(username: string, password: string): boolean {
+    if (!this.db) throw new Error('Database not initialized');
+    const user = this.getUser(username);
+    if (!user || !user.password) return false;
+
+    const { valid, needsRehash } = verifyPasswordHash(user.password, password);
+    if (valid && needsRehash) {
+      this.db.run('UPDATE users SET password = ? WHERE username = ?', [hashPassword(password), username]);
+      this.save();
+    }
+    return valid;
   }
 
   // Virtual path operations
@@ -666,7 +687,7 @@ export class DatabaseManager {
   }
   // Helper methods
   private hashPassword(password: string): string {
-    return crypto.createHash('sha256').update(password).digest('hex');
+    return hashPassword(password);
   }
 
   private mapUserFromRow(columns: string[], row: any[]): User {

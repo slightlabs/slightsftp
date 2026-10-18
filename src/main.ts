@@ -4,7 +4,6 @@ import * as fs from 'fs';
 import { DatabaseManager } from './database';
 import { ServerManager } from './server-manager';
 import { WebServer } from './web-server';
-import * as crypto from 'crypto';
 import logger from './logger';
 import { resolveUserPath } from './path-utils';
 
@@ -424,13 +423,7 @@ function setupIpcHandlers(): void {
         return { success: false, error: 'Invalid username or password' };
       }
 
-      // Hash the provided password
-      const hashedPassword = crypto
-        .createHash('sha256')
-        .update(password)
-        .digest('hex');
-
-      if (user.password !== hashedPassword) {
+      if (!db.checkPassword(username, password)) {
         return { success: false, error: 'Invalid username or password' };
       }
 

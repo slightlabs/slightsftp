@@ -57,6 +57,11 @@ describe('WebServer REST API', () => {
   beforeEach(() => {
     mockDb = {
       getUser: jest.fn().mockReturnValue(ADMIN_USER),
+      // real hash verification against whatever user the getUser mock returns
+      checkPassword: jest.fn((u: string, pw: string) => {
+        const user = (mockDb.getUser as jest.Mock)(u);
+        return !!user && require('../password').verifyPasswordHash(user.password, pw).valid;
+      }),
       getAllUsers: jest.fn().mockReturnValue([ADMIN_USER]),
       createUser: jest.fn().mockReturnValue(2),
       updateUser: jest.fn(),

@@ -39,14 +39,19 @@ class FakeServerManager extends EventEmitter {
 }
 
 function makeMockDb() {
-  return {
+  const db: any = {
     getUser: jest.fn().mockReturnValue(ADMIN),
+    checkPassword: jest.fn((u: string, pw: string) => {
+      const user = db.getUser(u);
+      return !!user && require('../password').verifyPasswordHash(user.password, pw).valid;
+    }),
     getAllUsers: jest.fn().mockReturnValue([ADMIN]),
     getAllListeners: jest.fn().mockReturnValue([]),
     getListener: jest.fn().mockReturnValue(undefined),
     getRecentActivities: jest.fn().mockReturnValue([]),
     logActivity: jest.fn(),
-  } as any;
+  };
+  return db;
 }
 
 function wsConnect(port: number): Promise<WS.WebSocket> {

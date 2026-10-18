@@ -231,11 +231,12 @@ describe('Electron main process (main.ts) with real backend', () => {
       listenerIds = (await invoke('get-all-listeners')).map((l: any) => l.id);
     });
 
-    test('create-user stores a single-hashed password', async () => {
+    test('create-user stores a salted scrypt hash, never the password', async () => {
       const id = await invoke('create-user', { username: 'bob', password: 'bob-pass', passwordEnabled: true, guiEnabled: true });
       expect(typeof id).toBe('number');
       const bob = await invoke('get-user', 'bob');
-      expect(bob.password).toBe(require('crypto').createHash('sha256').update('bob-pass').digest('hex'));
+      expect(bob.password).toMatch(/^scrypt\$16384\$8\$1\$/);
+      expect(bob.password).not.toContain('bob-pass');
       expect((await invoke('authenticate-user', 'bob', 'bob-pass')).success).toBe(true);
       // re-login as admin for the rest of the suite
       await invoke('logout');

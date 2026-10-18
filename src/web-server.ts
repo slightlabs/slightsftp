@@ -72,10 +72,6 @@ export class WebServer {
     return crypto.randomBytes(32).toString('hex');
   }
 
-  private hashPassword(password: string): string {
-    return crypto.createHash('sha256').update(password).digest('hex');
-  }
-
   private authenticateSession(req: Request): WebSession | null {
     const sessionId = req.cookies.sessionId;
     if (!sessionId) {
@@ -170,22 +166,8 @@ export class WebServer {
         }
 
         // Verify password
-        if (!user.password || !password) {
-          logger.info('Password check failed:', { hasUserPassword: !!user.password, hasProvidedPassword: !!password });
+        if (!password || !this.db.checkPassword(username, password)) {
           this.logActivity(username, 'WEB_LOGIN_FAILED', 'Invalid credentials', false);
-          res.status(401).json({ error: 'Invalid credentials' });
-          return;
-        }
-        
-        const hashedPassword = this.hashPassword(password);
-        logger.info('Password hash comparison:', { 
-          provided: hashedPassword,
-          stored: user.password,
-          match: user.password === hashedPassword
-        });
-        
-        if (user.password !== hashedPassword) {
-          this.logActivity(username, 'WEB_LOGIN_FAILED', 'Invalid password', false);
           res.status(401).json({ error: 'Invalid credentials' });
           return;
         }
