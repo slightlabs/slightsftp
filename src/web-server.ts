@@ -24,6 +24,7 @@ import { checksumsEnabled } from './checksum';
 import { getQuotaManager, quotaFromMegabytes } from './quota';
 import { limitFromForm } from './bandwidth';
 import { purgeItem, recycleSettings, restoreItem, saveRecycleSettings } from './recycle-bin';
+import { authenticateToken, createApiToken } from './api-tokens';
 
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
@@ -118,6 +119,27 @@ export class WebServer {
   }
 
   private requireAuth(req: Request, res: Response, next: NextFunction): void {
+    // Personal access tokens for scripts: "Authorization: Bearer sst_..."
+    const auth = req.headers.authorization;
+    if (auth && /^Bearer\s+/i.test(auth)) {
+      const guard = getLoginGuard(this.db);
+      const ip = req.socket.remoteAddress;
+      if (guard.isBanned(ip)) {
+        res.status(429).json({ error: TOO_MANY_ATTEMPTS });
+        return;
+      }
+      const username = authenticateToken(this.db, auth.replace(/^Bearer\s+/i, '').trim());
+      const user = username ? this.db.getUser(username) : undefined;
+      if (!user || !user.guiEnabled || !userIpAllowed(user, ip)) {
+        guard.recordFailure(ip, 'API token');
+        res.status(401).json({ error: 'Invalid or expired token' });
+        return;
+      }
+      (req as any).session = { username: user.username, loginTime: new Date(), viaToken: true };
+      next();
+      return;
+    }
+
     const session = this.authenticateSession(req);
     if (!session) {
       res.status(401).json({ error: 'Unauthorized' });
@@ -513,6 +535,35 @@ export class WebServer {
 
     this.app.get('/api/server-identity', (req: Request, res: Response) => {
       res.json({ sshHostKeyFingerprint: hostKeyFingerprint() });
+    });
+
+    // Personal access tokens (for the signed-in user)
+    this.app.get('/api/tokens', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      res.json(this.db.listApiTokens(session.username));
+    });
+
+    this.app.post('/api/tokens', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      try {
+        const { token, info } = createApiToken(this.db, session.username, req.body?.name, req.body?.expiresInDays);
+        this.logActivity(session.username, 'WEB_API_TOKEN_CREATED', info.name, true);
+        res.status(201).json({ ...info, token });
+      } catch (error: any) {
+        res.status(400).json({ error: error.message });
+      }
+    });
+
+    this.app.delete('/api/tokens/:id', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      const token = this.db.listApiTokens(session.username).find(t => t.id === parseInt(req.params.id));
+      if (!token) {
+        res.status(404).json({ error: 'Token not found' });
+        return;
+      }
+      this.db.deleteApiToken(token.id);
+      this.logActivity(session.username, 'WEB_API_TOKEN_REVOKED', token.name, true);
+      res.json({ success: true });
     });
 
     // Two-factor sign-in for the signed-in admin
@@ -1501,6 +1552,9 @@ export class WebServer {
             'restore-trash-item': (id) => api('POST', \`/api/trash/\${id}/restore\`),
             'purge-trash-item': (id) => api('DELETE', \`/api/trash/\${id}\`),
             'empty-trash': () => api('DELETE', '/api/trash'),
+            'get-api-tokens': () => api('GET', '/api/tokens'),
+            'create-api-token': (name, expiresInDays) => api('POST', '/api/tokens', { name, expiresInDays }),
+            'revoke-api-token': (id) => api('DELETE', \`/api/tokens/\${id}\`),
             'get-webhooks': () => api('GET', '/api/webhooks'),
             'create-webhook': (hook) => api('POST', '/api/webhooks', hook),
             'update-webhook': (id, hook) => api('PUT', \`/api/webhooks/\${id}\`, hook),

@@ -572,6 +572,7 @@ document.getElementById('trashSettingsForm').addEventListener('submit', async (e
 // Security (brute-force protection)
 async function loadSecurity() {
   loadAuditSettings();
+  loadApiTokens();
   const [settings, bans] = await Promise.all([
     ipcRenderer.invoke('get-security-settings'),
     ipcRenderer.invoke('get-ip-bans')
@@ -594,6 +595,40 @@ async function loadSecurity() {
     </tr>
   `).join('') : '<tr><td colspan="5" class="empty-state">No banned addresses</td></tr>';
 }
+
+async function loadApiTokens() {
+  const tokens = await ipcRenderer.invoke('get-api-tokens');
+  const fmt = (d) => (d ? new Date(d).toLocaleString() : '—');
+  document.getElementById('api-tokens-table').innerHTML = tokens.length ? tokens.map(t => `
+    <tr>
+      <td>${escapeHtml(t.name)}</td>
+      <td><code>${escapeHtml(t.hint)}…</code></td>
+      <td>${fmt(t.createdAt)}</td>
+      <td>${fmt(t.lastUsedAt)}</td>
+      <td>${t.expiresAt ? fmt(t.expiresAt) : 'Never'}</td>
+      <td><button class="btn btn-danger" onclick="revokeApiToken(${Number(t.id)})">Revoke</button></td>
+    </tr>`).join('') : '<tr><td colspan="6" class="empty-state">No tokens</td></tr>';
+}
+
+async function revokeApiToken(id) {
+  if (!confirm('Revoke this token? Scripts using it will stop working.')) return;
+  try { await ipcRenderer.invoke('revoke-api-token', id); } catch (err) { alert(errorText(err)); }
+  loadApiTokens();
+}
+
+document.getElementById('apiTokenForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target.elements;
+  try {
+    const created = await ipcRenderer.invoke('create-api-token', f.namedItem('name').value.trim(), f.namedItem('expiresInDays').value);
+    document.getElementById('newApiTokenValue').textContent = created.token;
+    document.getElementById('newApiToken').style.display = 'block';
+    e.target.reset();
+  } catch (err) {
+    alert(`Failed to create token: ${errorText(err)}`);
+  }
+  loadApiTokens();
+});
 
 async function loadAuditSettings() {
   const audit = await ipcRenderer.invoke('get-audit-settings');

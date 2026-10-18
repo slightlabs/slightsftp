@@ -174,6 +174,17 @@ export class DatabaseManager {
         deletedAt TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS api_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        name TEXT NOT NULL,
+        tokenHash TEXT UNIQUE NOT NULL,
+        hint TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        lastUsedAt TEXT,
+        expiresAt TEXT
+      );
+
       CREATE INDEX IF NOT EXISTS idx_activities_listener ON server_activities(listenerId);
       CREATE INDEX IF NOT EXISTS idx_activities_timestamp ON server_activities(timestamp);
     `);
@@ -668,6 +679,50 @@ export class DatabaseManager {
         applyToSubdirs: vp.applyToSubdirs
       } as VirtualPath);
     }
+  }
+
+  // API tokens (only hashes are stored)
+  addApiToken(t: { username: string; name: string; tokenHash: string; hint: string; expiresAt: string | null }): number {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('INSERT INTO api_tokens (username, name, tokenHash, hint, createdAt, expiresAt) VALUES (?, ?, ?, ?, ?, ?)',
+      [t.username, t.name, t.tokenHash, t.hint, new Date().toISOString(), t.expiresAt]);
+    const result = this.db.exec('SELECT last_insert_rowid() as id');
+    this.save();
+    return result[0].values[0][0] as number;
+  }
+
+  listApiTokens(username?: string): Array<{ id: number; username: string; name: string; hint: string; createdAt: string; lastUsedAt: string | null; expiresAt: string | null }> {
+    if (!this.db) throw new Error('Database not initialized');
+    const cols = 'id, username, name, hint, createdAt, lastUsedAt, expiresAt';
+    const result = username
+      ? this.db.exec(`SELECT ${cols} FROM api_tokens WHERE username = ? ORDER BY id DESC`, [username])
+      : this.db.exec(`SELECT ${cols} FROM api_tokens ORDER BY id DESC`);
+    if (result.length === 0) return [];
+    return result[0].values.map(row => {
+      const o: any = {};
+      result[0].columns.forEach((c, i) => { o[c] = row[i]; });
+      return o;
+    });
+  }
+
+  findApiToken(tokenHash: string): { id: number; username: string; expiresAt: string | null } | undefined {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = this.db.exec('SELECT id, username, expiresAt FROM api_tokens WHERE tokenHash = ?', [tokenHash]);
+    if (result.length === 0 || result[0].values.length === 0) return undefined;
+    const [id, username, expiresAt] = result[0].values[0];
+    return { id: id as number, username: username as string, expiresAt: expiresAt as string | null };
+  }
+
+  touchApiToken(id: number): void {
+    if (!this.db) return;
+    this.db.run('UPDATE api_tokens SET lastUsedAt = ? WHERE id = ?', [new Date().toISOString(), id]);
+    this.save();
+  }
+
+  deleteApiToken(id: number): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('DELETE FROM api_tokens WHERE id = ?', [id]);
+    this.save();
   }
 
   // Recycle bin

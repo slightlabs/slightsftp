@@ -19,6 +19,7 @@ const INVOKE_CHANNELS = [
   'set-first-login-password', 'get-server-identity', 'get-shares', 'revoke-share',
   'totp-setup', 'totp-enable', 'totp-disable',
   'get-ip-bans', 'unban-ip', 'get-security-settings', 'set-security-settings',
+  'get-api-tokens', 'create-api-token', 'revoke-api-token',
   'get-trash', 'set-trash-settings', 'restore-trash-item', 'purge-trash-item', 'empty-trash',
   'get-audit-settings', 'set-audit-settings', 'test-syslog',
   'get-webhooks', 'create-webhook', 'update-webhook', 'delete-webhook', 'test-webhook',

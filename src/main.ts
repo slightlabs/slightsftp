@@ -18,6 +18,7 @@ import { checksumsEnabled } from './checksum';
 import { getQuotaManager, quotaFromMegabytes } from './quota';
 import { limitFromForm } from './bandwidth';
 import { purgeExpired, purgeItem, recycleSettings, restoreItem, saveRecycleSettings } from './recycle-bin';
+import { createApiToken } from './api-tokens';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -590,6 +591,21 @@ function setupIpcHandlers(): void {
   ipcMain.handle('set-security-settings', async (event, settings) => {
     saveGuardSettings(db, settings || {});
     return getLoginGuard(db).settings();
+  });
+
+  // Personal access tokens for the REST API (signed-in user)
+  ipcMain.handle('get-api-tokens', async () => (authenticatedUser ? db.listApiTokens(authenticatedUser.username) : []));
+  ipcMain.handle('create-api-token', async (event, name, expiresInDays) => {
+    if (!authenticatedUser) throw new Error('Not signed in');
+    const { token, info } = createApiToken(db, authenticatedUser.username, name, expiresInDays);
+    db.logActivity({ listenerId: null, username: authenticatedUser.username, action: 'API_TOKEN_CREATED', path: info.name, success: true });
+    return { ...info, token };
+  });
+  ipcMain.handle('revoke-api-token', async (event, id) => {
+    const token = authenticatedUser && db.listApiTokens(authenticatedUser.username).find(t => t.id === id);
+    if (!token) throw new Error('Token not found');
+    db.deleteApiToken(id);
+    return { success: true };
   });
 
   // Recycle bin

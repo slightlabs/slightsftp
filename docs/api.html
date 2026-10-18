@@ -45,6 +45,7 @@ curl -k -b jar https://localhost:3000/api/sessions
 curl -k -b jar -H 'Content-Type: application/json' \
      -d '{"name":"Partners","protocol":"SFTP","bindingIp":"0.0.0.0","port":2222,"enabled":true}' \
      https://localhost:3000/api/listeners</code></pre>
+                    <p>For scripts, create a personal access token under <em>Security → API Tokens</em> and send it instead of a session cookie: <code>curl -k -H "Authorization: Bearer sst_…" https://localhost:3000/api/sessions</code>. Tokens act as the user who created them, can expire and can be revoked; they bypass two-factor sign-in, so keep them secret.</p>
                     <p>Live events: open a WebSocket to the same host and port (<code>ws://</code> or <code>wss://</code>) to receive <code>{ "type": "activity", "data": { listenerId, username, action, path, success, timestamp } }</code> messages for every login, transfer and admin action.</p>
                 </div>
             </div>

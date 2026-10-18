@@ -661,6 +661,23 @@
             </form>
           </div>
           <div class="card">
+            <h2>API Tokens</h2>
+            <p style="color: #666; margin-top: 0;">Personal access tokens let scripts use the REST API as you: <code>Authorization: Bearer sst_…</code>. They do not need your second factor, so keep them secret and give them an expiry.</p>
+            <form id="apiTokenForm" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;">
+              <div class="form-group" style="margin: 0;"><label>Name</label><input type="text" name="name" placeholder="backup script" required></div>
+              <div class="form-group" style="margin: 0;"><label>Expires after (days)</label><input type="number" name="expiresInDays" min="1" max="3650" value="90"></div>
+              <button type="submit" class="btn btn-primary">Create token</button>
+            </form>
+            <div id="newApiToken" style="display: none; margin-top: 12px; background: #e8f5e9; padding: 10px; border-radius: 4px;">
+              Copy this token now — it will not be shown again:<br><code id="newApiTokenValue" style="word-break: break-all;"></code>
+            </div>
+            <table class="table">
+              <thead><tr><th>Name</th><th>Token</th><th>Created</th><th>Last used</th><th>Expires</th><th></th></tr></thead>
+              <tbody id="api-tokens-table"></tbody>
+            </table>
+          </div>
+
+          <div class="card">
             <h2>Audit Export</h2>
             <p style="color: #666; margin-top: 0;">Forward every activity entry to a syslog server or SIEM (RFC 5424), and record a SHA-256 checksum for every uploaded file.</p>
             <form id="auditSettingsForm">

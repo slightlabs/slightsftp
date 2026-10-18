@@ -46,6 +46,7 @@ const model = {
   ],
   settings: { logRetentionDays: '30' } as Record<string, string>,
   adminTotp: false,
+  tokens: [] as any[],
   trashSettings: { enabled: true, retentionDays: 30 },
   trash: [
     { id: 1, username: 'carol', virtualPath: `/${XSS}.doc`, size: 4096, deletedAt: new Date().toISOString() },
@@ -80,6 +81,9 @@ const backend: Record<string, Handler> = {
   'get-security-settings': () => model.security,
   'set-security-settings': (u: any) => { Object.assign(model.security, u); return model.security; },
   'get-ip-bans': () => model.bans,
+  'get-api-tokens': () => model.tokens,
+  'create-api-token': (name: string) => { const t = { id: model.tokens.length + 1, name, hint: 'sst_abc123', createdAt: new Date().toISOString(), lastUsedAt: null, expiresAt: null }; model.tokens.push(t); return { ...t, token: 'sst_abc123SECRET' }; },
+  'revoke-api-token': (id: number) => { model.tokens = model.tokens.filter(t => t.id !== id); return { success: true }; },
   'get-trash': () => ({ settings: model.trashSettings, items: model.trash }),
   'set-trash-settings': (u: any) => Object.assign(model.trashSettings, u),
   'restore-trash-item': (id: number) => { model.trash = model.trash.filter(t => t.id !== id); return { success: true }; },
@@ -517,6 +521,21 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       const row = $$('#bans-table tr')[0];
       expect(row.textContent).toContain('203.0.113.9');
       expect(row.querySelector('img')).toBeNull();
+    });
+
+    test('API tokens: create shows the token once; revoke removes it', async () => {
+      expect($('#api-tokens-table').textContent).toContain('No tokens');
+      const f = $<HTMLFormElement>('#apiTokenForm');
+      (f.elements as any).namedItem('name').value = `CI ${XSS}`;
+      await submit(f);
+      expect(lastCall('create-api-token')).toEqual([`CI ${XSS}`, '90']);
+      expect($('#newApiTokenValue').textContent).toBe('sst_abc123SECRET');
+      expect($('#api-tokens-table').textContent).toContain('sst_abc123…');
+      expect($('#api-tokens-table').textContent).not.toContain('SECRET');
+      expect($('#api-tokens-table').querySelector('img')).toBeNull();
+      buttonByText($$('#api-tokens-table tr')[0], 'Revoke').click();
+      await flush();
+      expect(lastCall('revoke-api-token')).toEqual([1]);
     });
 
     test('audit export settings load, save and test', async () => {
