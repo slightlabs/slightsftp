@@ -9,6 +9,7 @@ import { getServerCertificate } from './tls';
 import { uploadChecksum } from './checksum';
 import { QuotaExceededError, QuotaManager, getQuotaManager } from './quota';
 import { RateLimiter, getLimiter } from './bandwidth';
+import { deleteFile } from './recycle-bin';
 import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { SessionTransferStats, TransferDirection, TransferHandle, TransferTracker } from './transfers';
 
@@ -597,13 +598,16 @@ export class CustomFileSystem extends FileSystem {
             resolve(undefined);
           });
         } else {
-          fs.unlink(realPath, (err) => {
-            if (err) {
-              this.logCallback('DELETE_FAILED', fileName, false);
-              return reject(err);
+          try {
+            const virtual = toVirtualPath(this.virtualPaths, realPath);
+            if (deleteFile(this.db, this.user.username, virtual, realPath) === 'trashed') {
+              this.logCallback('DELETE (to recycle bin)', fileName, true);
             }
             resolve(undefined);
-          });
+          } catch (err) {
+            this.logCallback('DELETE_FAILED', fileName, false);
+            reject(err);
+          }
         }
       });
     });

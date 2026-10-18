@@ -476,6 +476,7 @@
       <div class="sidebar-item" data-panel="shares">Shared Links</div>
       <div class="sidebar-item" data-panel="webhooks">Webhooks</div>
       <div class="sidebar-item" data-panel="security">Security</div>
+      <div class="sidebar-item" data-panel="trash">Recycle Bin</div>
       <div class="sidebar-item" data-panel="activity">Activity Log</div>
     </div>
 
@@ -620,6 +621,24 @@
         </div>
 
         <!-- Active Sessions Panel -->
+        <div id="trash" class="panel">
+          <div class="card">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <h2>Recycle Bin</h2>
+              <button class="btn btn-danger" onclick="emptyTrash()">Empty</button>
+            </div>
+            <form id="trashSettingsForm" style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+              <div class="checkbox-group"><input type="checkbox" name="enabled" id="trashEnabled"><label for="trashEnabled">Keep deleted files</label></div>
+              <label>for <input type="number" name="retentionDays" min="1" max="3650" style="width: 80px;"> days</label>
+              <button type="submit" class="btn">Save</button>
+            </form>
+            <table class="table">
+              <thead><tr><th>User</th><th>File</th><th>Size</th><th>Deleted</th><th></th></tr></thead>
+              <tbody id="trash-table"></tbody>
+            </table>
+          </div>
+        </div>
+
         <div id="security" class="panel">
           <div class="card">
             <h2>Brute-force Protection</h2>

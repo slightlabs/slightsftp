@@ -17,6 +17,7 @@ import { SyslogForwarder, formatSyslog, readSyslogSettings, saveSyslogSettings }
 import { checksumsEnabled } from './checksum';
 import { getQuotaManager, quotaFromMegabytes } from './quota';
 import { limitFromForm } from './bandwidth';
+import { purgeExpired, purgeItem, recycleSettings, restoreItem, saveRecycleSettings } from './recycle-bin';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -589,6 +590,33 @@ function setupIpcHandlers(): void {
   ipcMain.handle('set-security-settings', async (event, settings) => {
     saveGuardSettings(db, settings || {});
     return getLoginGuard(db).settings();
+  });
+
+  // Recycle bin
+  const trashView = (item: any) => { const { trashPath, ...rest } = item; return rest; };
+  ipcMain.handle('get-trash', async () => ({ settings: recycleSettings(db), items: db.listTrashItems().map(trashView) }));
+  ipcMain.handle('set-trash-settings', async (event, settings) => {
+    saveRecycleSettings(db, settings || {});
+    return recycleSettings(db);
+  });
+  ipcMain.handle('restore-trash-item', async (event, id) => {
+    const item = db.getTrashItem(id);
+    if (!item) throw new Error('Not in the recycle bin');
+    restoreItem(db, item);
+    getQuotaManager(db).invalidate(item.username);
+    db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'TRASH_RESTORED', path: `${item.username}:${item.virtualPath}`, success: true });
+    return { success: true };
+  });
+  ipcMain.handle('purge-trash-item', async (event, id) => {
+    const item = db.getTrashItem(id);
+    if (!item) throw new Error('Not in the recycle bin');
+    purgeItem(db, item);
+    return { success: true };
+  });
+  ipcMain.handle('empty-trash', async () => {
+    const items = db.listTrashItems();
+    items.forEach(item => purgeItem(db, item));
+    return { success: true, count: items.length };
   });
 
   // Audit export
@@ -1217,6 +1245,9 @@ app.whenReady().then(async () => {
   
   await initializeDatabase();
   webhooks = new WebhookDispatcher(db);
+  // Purge recycle-bin items past their retention period now and every hour
+  purgeExpired(db);
+  setInterval(() => { try { purgeExpired(db); } catch (err) { logger.error('Recycle bin cleanup failed:', err); } }, 3_600_000).unref();
   syslog = new SyslogForwarder(db);
   
   // Cleanup old activity logs based on retention settings

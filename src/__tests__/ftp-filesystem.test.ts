@@ -25,6 +25,9 @@ jest.mock('ftp-srv', () => {
   return { default: FtpSrvMock, FileSystem };
 });
 
+// deletes go through the recycle bin; its behaviour is covered in recycle-bin.test.ts
+jest.mock('../recycle-bin', () => ({ deleteFile: jest.fn(() => 'deleted') }));
+
 jest.mock('fs', () => {
   const real = jest.requireActual('fs');
   return {
@@ -192,11 +195,10 @@ describe('CustomFileSystem', () => {
     test('delete() unlinks a file', async () => {
       const { cfs, logCb } = makeFs();
       const statMock = jest.fn((_p: any, cb: any) => cb(null, { isDirectory: () => false }));
-      const unlinkMock = jest.fn((_p: any, cb: any) => cb(null));
       (fs.stat as unknown as jest.Mock).mockImplementation(statMock);
-      (fs.unlink as unknown as jest.Mock).mockImplementation(unlinkMock);
       await cfs.delete('/file.txt');
       expect(logCb).toHaveBeenCalledWith('DELETE', '/file.txt', true);
+      expect(require('../recycle-bin').deleteFile).toHaveBeenCalledWith(expect.anything(), expect.any(String), expect.any(String), expect.stringContaining('file.txt'));
     });
 
     test('delete() rmdirs a directory', async () => {

@@ -46,6 +46,11 @@ const model = {
   ],
   settings: { logRetentionDays: '30' } as Record<string, string>,
   adminTotp: false,
+  trashSettings: { enabled: true, retentionDays: 30 },
+  trash: [
+    { id: 1, username: 'carol', virtualPath: `/${XSS}.doc`, size: 4096, deletedAt: new Date().toISOString() },
+    { id: 2, username: 'carol', virtualPath: '/old.txt', size: 10, deletedAt: new Date().toISOString() },
+  ] as any[],
   webhooks: [] as any[],
   audit: { checksumUploads: true, syslog: { enabled: false, host: '', port: 514, protocol: 'udp', facility: 16 } } as any,
   security: { enabled: true, maxFailures: 5, windowMinutes: 10, banMinutes: 15, allowlist: '127.0.0.0/8, ::1' },
@@ -75,6 +80,11 @@ const backend: Record<string, Handler> = {
   'get-security-settings': () => model.security,
   'set-security-settings': (u: any) => { Object.assign(model.security, u); return model.security; },
   'get-ip-bans': () => model.bans,
+  'get-trash': () => ({ settings: model.trashSettings, items: model.trash }),
+  'set-trash-settings': (u: any) => Object.assign(model.trashSettings, u),
+  'restore-trash-item': (id: number) => { model.trash = model.trash.filter(t => t.id !== id); return { success: true }; },
+  'purge-trash-item': (id: number) => { model.trash = model.trash.filter(t => t.id !== id); return { success: true }; },
+  'empty-trash': () => { const count = model.trash.length; model.trash = []; return { success: true, count }; },
   'get-audit-settings': () => model.audit,
   'set-audit-settings': (u: any) => { model.audit = { ...model.audit, ...u, syslog: { ...model.audit.syslog, ...(u.syslog || {}) } }; return model.audit; },
   'test-syslog': () => ({ ok: false, error: 'connect ECONNREFUSED' }),
@@ -255,7 +265,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
   });
 
   describe('navigation', () => {
-    test.each(['listeners', 'sessions', 'users', 'files', 'shares', 'webhooks', 'security', 'activity', 'dashboard'])('sidebar switches to the %s panel', async panel => {
+    test.each(['listeners', 'sessions', 'users', 'files', 'shares', 'webhooks', 'security', 'trash', 'activity', 'dashboard'])('sidebar switches to the %s panel', async panel => {
       await openPanel(panel);
       expect($$('.panel.active').map(p => p.id)).toEqual([panel]);
       expect($$('.sidebar-item.active').map(i => i.dataset.panel)).toEqual([panel]);
@@ -534,6 +544,35 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       await flush();
       expect(lastCall('unban-ip')).toEqual(['203.0.113.9']);
       expect($('#bans-table').textContent).toContain('No banned addresses');
+    });
+  });
+
+  describe('recycle bin panel', () => {
+    beforeAll(() => openPanel('trash'));
+
+    test('lists deleted files (names as text) and restores / purges them', async () => {
+      const rows = () => $$('#trash-table tr');
+      expect(rows()).toHaveLength(2);
+      expect(rows()[0].textContent).toContain('4 KB');
+      expect($('#trash-table').querySelector('img')).toBeNull();
+
+      buttonByText(rows()[0], 'Restore').click();
+      await flush();
+      expect(lastCall('restore-trash-item')).toEqual([1]);
+      expect(rows()).toHaveLength(1);
+
+      buttonByText(rows()[0], 'Delete forever').click();
+      await flush();
+      expect(lastCall('purge-trash-item')).toEqual([2]);
+      expect($('#trash-table').textContent).toContain('The recycle bin is empty');
+    });
+
+    test('settings are saved', async () => {
+      const f = $<HTMLFormElement>('#trashSettingsForm');
+      expect((f.elements as any).namedItem('retentionDays').value).toBe('30');
+      (f.elements as any).namedItem('retentionDays').value = '14';
+      await submit(f);
+      expect(lastCall('set-trash-settings')).toEqual([{ enabled: true, retentionDays: 14 }]);
     });
   });
 

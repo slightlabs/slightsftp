@@ -129,6 +129,7 @@
   <main>
     <div class="toolbar">
       <nav class="crumbs" id="crumbs" aria-label="Folder path"></nav>
+      <button type="button" id="trashBtn">Recycle bin</button>
       <button type="button" id="mySharesBtn">My links</button>
       <button type="button" id="requestBtn" title="Create a link others can use to upload files here">Request files</button>
       <button type="button" id="newFolderBtn">New folder</button>
@@ -192,6 +193,13 @@
     <div class="error" id="tfOffError" hidden></div>
     <div class="dialog-actions"><button type="button" id="tfClose3">Close</button><button type="button" class="danger" id="tfDisable">Turn off</button></div>
   </div>
+</dialog>
+
+<dialog id="trashDialog">
+  <h2>Recycle bin</h2>
+  <p class="sub">Files you deleted. Restore them to where they were.</p>
+  <div class="shares" id="trashList"></div>
+  <div class="dialog-actions"><button type="button" id="trashClose">Close</button></div>
 </dialog>
 
 <div class="toast" id="toast" hidden></div>
@@ -556,6 +564,26 @@
       toast('Two-factor sign-in is off');
     } catch (err) { showError('tfOffError', err.message); }
   });
+
+  // ── recycle bin ────────────────────────────────────────────────────────
+  async function loadTrash() {
+    const list = $('trashList');
+    list.replaceChildren();
+    const items = await api('GET', '/portal/api/trash').catch(err => { toast(err.message); return []; });
+    if (!items.length) list.append(el('p', { className: 'sub', textContent: 'The recycle bin is empty.' }));
+    for (const item of items) {
+      const restore = el('button', { type: 'button', textContent: 'Restore', onclick: async () => {
+        try { await api('POST', `/portal/api/trash/${item.id}/restore`); toast('Restored'); await open(state.path); } catch (err) { toast(err.message); }
+        loadTrash();
+      } });
+      list.append(el('div', { className: 'item' },
+        el('div', { className: 'what', textContent: item.virtualPath }),
+        el('div', { className: 'info', textContent: `${formatSize(item.size)} · deleted ${new Date(item.deletedAt).toLocaleString()}` }),
+        restore));
+    }
+  }
+  $('trashBtn').addEventListener('click', async () => { await loadTrash(); $('trashDialog').showModal(); });
+  $('trashClose').addEventListener('click', () => $('trashDialog').close());
 
   // ── boot ───────────────────────────────────────────────────────────────
   async function start() {

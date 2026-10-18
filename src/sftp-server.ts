@@ -10,6 +10,7 @@ import { findAuthorizedKey, parseAuthorizedKeys } from './authorized-keys';
 import { uploadChecksum } from './checksum';
 import { getQuotaManager } from './quota';
 import { getLimiter } from './bandwidth';
+import { deleteFile } from './recycle-bin';
 import { SessionTransferStats, TransferHandle, TransferTracker } from './transfers';
 // SFTP constants (from ssh2-streams)
 const SFTP_STATUS_CODE = {
@@ -720,8 +721,8 @@ export class SFTPServer extends EventEmitter {
 
                 const realPath = pathMapper(filePath);
                 try {
-                  fs.unlinkSync(realPath);
-                  logActivity('REMOVE', filePath, true);
+                  const outcome = deleteFile(this.db, username!, filePath, realPath);
+                  logActivity(outcome === 'trashed' ? 'REMOVE (to recycle bin)' : 'REMOVE', filePath, true);
                   quota.invalidate(username!);
                   sftp.status(reqId, SFTP_STATUS_CODE.OK);
                 } catch (err) {

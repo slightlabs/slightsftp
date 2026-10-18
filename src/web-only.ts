@@ -5,6 +5,7 @@ import logger from './logger';
 import { getServerCertificate, setCertificateDir } from './tls';
 import { WebhookDispatcher } from './webhooks';
 import { SyslogForwarder } from './syslog';
+import { purgeExpired } from './recycle-bin';
 
 // Initialize database and server manager
 const db = new DatabaseManager();  // Use default config.db
@@ -58,6 +59,8 @@ console.log('🚀 Starting SLightSFTP Server with Web GUI...\n');
       setCertificateDir(process.cwd());
       tls = await getServerCertificate({ certPath: db.getSetting('tlsCertPath'), keyPath: db.getSetting('tlsKeyPath') });
     }
+    purgeExpired(db);
+    setInterval(() => { try { purgeExpired(db); } catch { /* logged on next run */ } }, 3_600_000).unref();
     const webhooks = new WebhookDispatcher(db);
     const syslog = new SyslogForwarder(db);
     const webServer = new WebServer(db, serverManager, WEB_PORT, { tls, webhooks, syslog });

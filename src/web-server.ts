@@ -23,6 +23,7 @@ import { SyslogForwarder, formatSyslog, readSyslogSettings, saveSyslogSettings }
 import { checksumsEnabled } from './checksum';
 import { getQuotaManager, quotaFromMegabytes } from './quota';
 import { limitFromForm } from './bandwidth';
+import { purgeItem, recycleSettings, restoreItem, saveRecycleSettings } from './recycle-bin';
 
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
@@ -351,6 +352,58 @@ export class WebServer {
       } catch (error: any) {
         res.status(400).json({ error: error.message });
       }
+    });
+
+    // Recycle bin
+    const trashView = (item: any) => { const { trashPath, ...rest } = item; return rest; };
+    this.app.get('/api/trash', (req: Request, res: Response) => {
+      res.json({ settings: recycleSettings(this.db), items: this.db.listTrashItems().map(trashView) });
+    });
+
+    this.app.put('/api/trash/settings', (req: Request, res: Response) => {
+      try {
+        saveRecycleSettings(this.db, req.body || {});
+        res.json(recycleSettings(this.db));
+      } catch (error: any) {
+        res.status(400).json({ error: error.message });
+      }
+    });
+
+    this.app.post('/api/trash/:id/restore', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      const item = this.db.getTrashItem(parseInt(req.params.id));
+      if (!item) {
+        res.status(404).json({ error: 'Not in the recycle bin' });
+        return;
+      }
+      try {
+        restoreItem(this.db, item);
+        getQuotaManager(this.db).invalidate(item.username);
+        this.logActivity(session.username, 'WEB_TRASH_RESTORED', `${item.username}:${item.virtualPath}`, true);
+        res.json({ success: true });
+      } catch (error: any) {
+        res.status(410).json({ error: error.message });
+      }
+    });
+
+    this.app.delete('/api/trash/:id', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      const item = this.db.getTrashItem(parseInt(req.params.id));
+      if (!item) {
+        res.status(404).json({ error: 'Not in the recycle bin' });
+        return;
+      }
+      purgeItem(this.db, item);
+      this.logActivity(session.username, 'WEB_TRASH_PURGED', `${item.username}:${item.virtualPath}`, true);
+      res.json({ success: true });
+    });
+
+    this.app.delete('/api/trash', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      const items = this.db.listTrashItems();
+      items.forEach(item => purgeItem(this.db, item));
+      this.logActivity(session.username, 'WEB_TRASH_EMPTIED', `${items.length} item(s)`, true);
+      res.json({ success: true, count: items.length });
     });
 
     // Audit export (syslog forwarding, upload checksums)
@@ -1443,6 +1496,11 @@ export class WebServer {
             'get-audit-settings': () => api('GET', '/api/audit/settings'),
             'set-audit-settings': (settings) => api('PUT', '/api/audit/settings', settings),
             'test-syslog': () => api('POST', '/api/audit/test-syslog'),
+            'get-trash': () => api('GET', '/api/trash'),
+            'set-trash-settings': (settings) => api('PUT', '/api/trash/settings', settings),
+            'restore-trash-item': (id) => api('POST', \`/api/trash/\${id}/restore\`),
+            'purge-trash-item': (id) => api('DELETE', \`/api/trash/\${id}\`),
+            'empty-trash': () => api('DELETE', '/api/trash'),
             'get-webhooks': () => api('GET', '/api/webhooks'),
             'create-webhook': (hook) => api('POST', '/api/webhooks', hook),
             'update-webhook': (id, hook) => api('PUT', \`/api/webhooks/\${id}\`, hook),

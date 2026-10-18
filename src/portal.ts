@@ -21,6 +21,7 @@ import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { beginTotpSetup, checkSecondFactor, confirmTotpSetup, disableTotp } from './two-factor';
 import { QuotaExceededError, getQuotaManager, quotaLimiter } from './quota';
 import { getLimiter, sendFileThrottled, throttle } from './bandwidth';
+import { deleteFile, purgeItem, restoreItem } from './recycle-bin';
 
 export const PORTAL_COOKIE = 'portalSession';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -317,10 +318,38 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     if (stat.isDirectory()) {
       await fs.promises.rmdir(target.localPath);
     } else {
-      await fs.promises.unlink(target.localPath);
+      deleteFile(db, user.username, target.virtual, target.localPath);
     }
     getQuotaManager(db).invalidate(user.username);
     options.logActivity(user.username, 'PORTAL_DELETE', target.virtual, true);
+    res.json({ success: true });
+  }));
+
+  // ── recycle bin (own items) ───────────────────────────────────────────
+  const ownTrash = (req: Request) => {
+    const user: User = (req as any).portalUser;
+    const item = db.getTrashItem(Number(req.params.id));
+    if (!item || item.username !== user.username) throw new HttpError(404, 'Not in the recycle bin');
+    return item;
+  };
+
+  router.get('/trash', (req, res) => {
+    const user: User = (req as any).portalUser;
+    res.json(db.listTrashItems(user.username).map(({ trashPath, originalPath, ...rest }) => rest));
+  });
+
+  router.post('/trash/:id/restore', handle((req, res) => {
+    const item = ownTrash(req);
+    restoreItem(db, item);
+    getQuotaManager(db).invalidate(item.username);
+    options.logActivity(item.username, 'PORTAL_RESTORE', item.virtualPath, true);
+    res.json({ success: true });
+  }));
+
+  router.delete('/trash/:id', handle((req, res) => {
+    const item = ownTrash(req);
+    purgeItem(db, item);
+    options.logActivity(item.username, 'PORTAL_PURGE', item.virtualPath, true);
     res.json({ success: true });
   }));
 

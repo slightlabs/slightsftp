@@ -164,6 +164,16 @@ export class DatabaseManager {
         expiresAt TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS trash_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL,
+        virtualPath TEXT NOT NULL,
+        originalPath TEXT NOT NULL,
+        trashPath TEXT NOT NULL,
+        size INTEGER NOT NULL DEFAULT 0,
+        deletedAt TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_activities_listener ON server_activities(listenerId);
       CREATE INDEX IF NOT EXISTS idx_activities_timestamp ON server_activities(timestamp);
     `);
@@ -658,6 +668,39 @@ export class DatabaseManager {
         applyToSubdirs: vp.applyToSubdirs
       } as VirtualPath);
     }
+  }
+
+  // Recycle bin
+  addTrashItem(item: { username: string; virtualPath: string; originalPath: string; trashPath: string; size: number }): number {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('INSERT INTO trash_items (username, virtualPath, originalPath, trashPath, size, deletedAt) VALUES (?, ?, ?, ?, ?, ?)',
+      [item.username, item.virtualPath, item.originalPath, item.trashPath, item.size, new Date().toISOString()]);
+    const result = this.db.exec('SELECT last_insert_rowid() as id');
+    this.save();
+    return result[0].values[0][0] as number;
+  }
+
+  listTrashItems(username?: string): Array<{ id: number; username: string; virtualPath: string; originalPath: string; trashPath: string; size: number; deletedAt: string }> {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = username
+      ? this.db.exec('SELECT * FROM trash_items WHERE username = ? ORDER BY id DESC', [username])
+      : this.db.exec('SELECT * FROM trash_items ORDER BY id DESC');
+    if (result.length === 0) return [];
+    return result[0].values.map(row => {
+      const o: any = {};
+      result[0].columns.forEach((c, i) => { o[c] = row[i]; });
+      return o;
+    });
+  }
+
+  getTrashItem(id: number) {
+    return this.listTrashItems().find(i => i.id === id);
+  }
+
+  deleteTrashItem(id: number): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('DELETE FROM trash_items WHERE id = ?', [id]);
+    this.save();
   }
 
   // IP bans (brute-force protection)

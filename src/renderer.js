@@ -218,6 +218,9 @@ function loadPanelData(panelId) {
     case 'security':
       loadSecurity();
       break;
+    case 'trash':
+      loadTrash();
+      break;
   }
 }
 
@@ -517,6 +520,54 @@ async function editListener(id) {
   }
 }
 
+
+// Recycle bin
+async function loadTrash() {
+  const { settings, items } = await ipcRenderer.invoke('get-trash');
+  const f = document.getElementById('trashSettingsForm').elements;
+  f.namedItem('enabled').checked = settings.enabled;
+  f.namedItem('retentionDays').value = settings.retentionDays;
+  document.getElementById('trash-table').innerHTML = items.length ? items.map(item => `
+    <tr>
+      <td>${escapeHtml(item.username)}</td>
+      <td>${escapeHtml(item.virtualPath)}</td>
+      <td>${formatBytes(item.size)}</td>
+      <td>${new Date(item.deletedAt).toLocaleString()}</td>
+      <td>
+        <button class="btn btn-success" onclick="restoreTrashItem(${Number(item.id)})">Restore</button>
+        <button class="btn btn-danger" onclick="purgeTrashItem(${Number(item.id)})">Delete forever</button>
+      </td>
+    </tr>`).join('') : '<tr><td colspan="5" class="empty-state">The recycle bin is empty</td></tr>';
+}
+
+async function restoreTrashItem(id) {
+  try { await ipcRenderer.invoke('restore-trash-item', id); } catch (err) { alert(`Failed to restore: ${errorText(err)}`); }
+  loadTrash();
+}
+
+async function purgeTrashItem(id) {
+  if (!confirm('Delete this file permanently?')) return;
+  try { await ipcRenderer.invoke('purge-trash-item', id); } catch (err) { alert(errorText(err)); }
+  loadTrash();
+}
+
+async function emptyTrash() {
+  if (!confirm('Permanently delete everything in the recycle bin?')) return;
+  const result = await ipcRenderer.invoke('empty-trash');
+  alert(`Deleted ${result.count} item(s).`);
+  loadTrash();
+}
+
+document.getElementById('trashSettingsForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target.elements;
+  try {
+    await ipcRenderer.invoke('set-trash-settings', { enabled: f.namedItem('enabled').checked, retentionDays: parseInt(f.namedItem('retentionDays').value) });
+  } catch (err) {
+    alert(`Failed to save: ${errorText(err)}`);
+  }
+  loadTrash();
+});
 
 // Security (brute-force protection)
 async function loadSecurity() {
