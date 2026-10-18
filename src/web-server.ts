@@ -14,6 +14,7 @@ import { resolveUserPath } from './path-utils';
 import { requiresPasswordChange, validateNewPassword } from './password';
 import { hostKeyFingerprint } from './tls';
 import { registerPortalRoutes } from './portal';
+import { describeShare, registerShareRoutes, shareUrl } from './shares';
 
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
@@ -178,6 +179,10 @@ export class WebServer {
       logActivity: (username, action, filePath, success) => this.logActivity(username, action, filePath, success),
       secureCookies: () => this.isHttps(),
     });
+    registerShareRoutes(this.app, this.db, {
+      logActivity: (username, action, filePath, success) => this.logActivity(username, action, filePath, success),
+      secureCookies: () => this.isHttps(),
+    });
 
     // Authentication endpoints
     this.app.post('/api/login', async (req: Request, res: Response) => {
@@ -276,6 +281,23 @@ export class WebServer {
       this.db.updateUser(session.username, { password: newPassword, mustChangePassword: false });
       session.mustChangePassword = false;
       this.logActivity(session.username, 'WEB_PASSWORD_CHANGED', 'Password changed via web interface', true);
+      res.json({ success: true });
+    });
+
+    // Share links (admins see and can revoke everyone's)
+    this.app.get('/api/shares', (req: Request, res: Response) => {
+      res.json(this.db.listShares().map(sh => describeShare(sh, shareUrl(req, sh.token))));
+    });
+
+    this.app.delete('/api/shares/:id', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      const share = this.db.getShare(parseInt(req.params.id));
+      if (!share) {
+        res.status(404).json({ error: 'Link not found' });
+        return;
+      }
+      this.db.revokeShare(share.id!);
+      this.logActivity(session.username, 'WEB_SHARE_REVOKED', `${share.owner}:${share.virtualPath}`, true);
       res.json({ success: true });
     });
 
@@ -1203,6 +1225,8 @@ export class WebServer {
               return { success: true, savedPath: 'your browser downloads folder' };
             },
             'get-server-identity': () => api('GET', '/api/server-identity'),
+            'get-shares': () => api('GET', '/api/shares'),
+            'revoke-share': (id) => api('DELETE', \`/api/shares/\${id}\`),
             'get-virtual-paths': (userId) => api('GET', \`/api/users/id/\${userId}/virtual-paths\`),
             'get-permission': (userId, listenerId) => api('GET', \`/api/users/id/\${userId}/permissions/\${listenerId}\`),
             'get-listener-status': async (id) => {

@@ -447,6 +447,33 @@ describe('Electron main process (main.ts) with real backend', () => {
     });
   });
 
+  describe('share link handlers', () => {
+    test('links created in the portal are listed (without secrets) and can be revoked from the desktop', async () => {
+      const port = await getFreePort();
+      await invoke('start-web-server', port);
+      try {
+        await invoke('create-user', { username: 'sharer', password: 'Sharer-Pass1', passwordEnabled: true, guiEnabled: false, portalEnabled: true });
+        await invoke('update-user', 'sharer', {}, [], [{ virtualPath: '/', localPath: ftpRoot, ...FULL_VPATH_PERMS }], []);
+        fs.writeFileSync(path.join(ftpRoot, 'shared.txt'), 'shared');
+
+        const portal = require('supertest').agent(`http://127.0.0.1:${port}`);
+        await portal.post('/portal/api/login').send({ username: 'sharer', password: 'Sharer-Pass1' }).expect(200);
+        const created = (await portal.post('/portal/api/shares').send({ path: '/shared.txt', type: 'download', password: 'pass1234' }).expect(201)).body;
+
+        const listed = await invoke('get-shares');
+        expect(listed).toEqual([expect.objectContaining({ id: created.id, owner: 'sharer', virtualPath: '/shared.txt', status: 'active', hasPassword: true })]);
+        expect(listed[0]).not.toHaveProperty('passwordHash');
+
+        expect(await invoke('revoke-share', created.id)).toEqual({ success: true });
+        expect((await invoke('get-shares'))[0].status).toBe('revoked');
+        await require('supertest')(`http://127.0.0.1:${port}`).get(`/s/${created.token}/info`).expect(404);
+        await expect(invoke('revoke-share', 12345)).rejects.toThrow('Link not found');
+      } finally {
+        await invoke('stop-web-server');
+      }
+    });
+  });
+
   describe('embedded web GUI server handlers', () => {
     const get = (port: number, p: string) => new Promise<number>((resolve, reject) => {
       http.get({ host: '127.0.0.1', port, path: p }, res => { res.resume(); resolve(res.statusCode!); }).on('error', reject);

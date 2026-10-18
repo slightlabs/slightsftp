@@ -14,6 +14,8 @@ import { resolveUserPath, ResolvedUserPath } from './path-utils';
 import { requiresPasswordChange, validateNewPassword } from './password';
 import { User, VirtualPath } from './types';
 import logger from './logger';
+import QRCode from 'qrcode';
+import { createShare, describeShare, shareUrl, ShareError } from './shares';
 
 export const PORTAL_COOKIE = 'portalSession';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -255,6 +257,44 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     }
     options.logActivity(user.username, 'PORTAL_DELETE', target.virtual, true);
     res.json({ success: true });
+  }));
+
+  // ── share links ─────────────────────────────────────────────────────────
+  router.get('/shares', (req, res) => {
+    const user: User = (req as any).portalUser;
+    res.json(db.listShares(user.username).map(sh => describeShare(sh, shareUrl(req, sh.token))));
+  });
+
+  router.post('/shares', handle((req, res) => {
+    const user: User = (req as any).portalUser;
+    try {
+      const share = createShare(db, user, req.body || {});
+      options.logActivity(user.username, share.type === 'upload' ? 'SHARE_CREATED_UPLOAD' : 'SHARE_CREATED', share.virtualPath, true);
+      res.status(201).json(describeShare(share, shareUrl(req, share.token)));
+    } catch (err) {
+      if (err instanceof ShareError) throw new HttpError(err.status, err.message);
+      throw err;
+    }
+  }));
+
+  const ownShare = (req: Request) => {
+    const user: User = (req as any).portalUser;
+    const share = db.getShare(Number(req.params.id));
+    if (!share || share.owner !== user.username) throw new HttpError(404, 'Link not found');
+    return share;
+  };
+
+  router.delete('/shares/:id', handle((req, res) => {
+    const share = ownShare(req);
+    db.revokeShare(share.id!);
+    options.logActivity(share.owner, 'SHARE_REVOKED', share.virtualPath, true);
+    res.json({ success: true });
+  }));
+
+  router.get('/shares/:id/qr.svg', handle(async (req, res) => {
+    const share = ownShare(req);
+    const svg = await QRCode.toString(shareUrl(req, share.token), { type: 'svg', margin: 1, errorCorrectionLevel: 'M' });
+    res.type('image/svg+xml').send(svg);
   }));
 
   app.use('/portal/api', router);

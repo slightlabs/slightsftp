@@ -4,7 +4,7 @@
   "description": "Multi-user FTP/SFTP server with GUI management",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc && node -e \"const fs=require('fs');const path=require('path');if(!fs.existsSync('dist/assets'))fs.mkdirSync('dist/assets',{recursive:true});fs.copyFileSync('assets/icon.png','dist/assets/icon.png');fs.copyFileSync('src/index.html','dist/index.html');fs.copyFileSync('src/login.html','dist/login.html');fs.copyFileSync('src/admin.html','dist/admin.html');fs.copyFileSync('src/renderer.js','dist/renderer.js');fs.copyFileSync('src/portal.html','dist/portal.html');\"",
+    "build": "tsc && node -e \"const fs=require('fs');const path=require('path');if(!fs.existsSync('dist/assets'))fs.mkdirSync('dist/assets',{recursive:true});fs.copyFileSync('assets/icon.png','dist/assets/icon.png');fs.copyFileSync('src/index.html','dist/index.html');fs.copyFileSync('src/login.html','dist/login.html');fs.copyFileSync('src/admin.html','dist/admin.html');fs.copyFileSync('src/renderer.js','dist/renderer.js');fs.copyFileSync('src/portal.html','dist/portal.html');fs.copyFileSync('src/share.html','dist/share.html');\"",
     "start": "npm run build && electron --no-sandbox dist/main.js",
     "start:web": "npm run build && node dist/web-only.js",
     "dev": "tsc && electron --no-sandbox dist/main.js",
@@ -50,6 +50,7 @@
       "src/renderer.js",
       "src/admin.html",
       "src/portal.html",
+      "src/share.html",
       "assets/**/*",
       "node_modules/**/*",
       "package.json"
@@ -106,6 +107,7 @@
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
     "ftp-srv": "^4.6.3",
+    "qrcode": "1.5.4",
     "selfsigned": "5.5.0",
     "sql.js": "^1.10.3",
     "ssh2": "^1.15.0",
@@ -119,6 +121,7 @@
     "@types/ftp": "^0.3.36",
     "@types/jest": "^29.5.11",
     "@types/node": "^20.19.27",
+    "@types/qrcode": "1.5.5",
     "@types/sql.js": "^1.4.9",
     "@types/ssh2": "^1.11.17",
     "@types/ssh2-sftp-client": "^9.0.6",

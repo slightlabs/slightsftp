@@ -1,7 +1,7 @@
 import initSqlJs, { Database } from 'sql.js';
 import * as path from 'path';
 import * as fs from 'fs';
-import { User, VirtualPath, Permission, Listener, UserListener, ServerActivity, FtpTlsMode } from './types';
+import { User, VirtualPath, Permission, Listener, UserListener, ServerActivity, FtpTlsMode, Share } from './types';
 import { hashPassword, verifyPasswordHash } from './password';
 
 function normalizeTlsMode(mode: unknown): FtpTlsMode {
@@ -125,6 +125,20 @@ export class DatabaseManager {
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS shares (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        token TEXT UNIQUE NOT NULL,
+        owner TEXT NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('download', 'upload')),
+        virtualPath TEXT NOT NULL,
+        passwordHash TEXT,
+        expiresAt TEXT,
+        maxDownloads INTEGER,
+        downloadCount INTEGER NOT NULL DEFAULT 0,
+        revoked INTEGER NOT NULL DEFAULT 0,
+        createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE INDEX IF NOT EXISTS idx_activities_listener ON server_activities(listenerId);
@@ -576,6 +590,56 @@ export class DatabaseManager {
         applyToSubdirs: vp.applyToSubdirs
       } as VirtualPath);
     }
+  }
+
+  // Share links
+  createShare(share: Share): number {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run(`
+      INSERT INTO shares (token, owner, type, virtualPath, passwordHash, expiresAt, maxDownloads)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `, [share.token, share.owner, share.type, share.virtualPath, share.passwordHash ?? null, share.expiresAt ?? null, share.maxDownloads ?? null]);
+    const result = this.db.exec('SELECT last_insert_rowid() as id');
+    this.save();
+    return result[0].values[0][0] as number;
+  }
+
+  getShare(id: number): Share | undefined {
+    return this.queryShares('SELECT * FROM shares WHERE id = ?', [id])[0];
+  }
+
+  getShareByToken(token: string): Share | undefined {
+    return this.queryShares('SELECT * FROM shares WHERE token = ?', [token])[0];
+  }
+
+  /** All shares, or those created by `owner`, newest first. */
+  listShares(owner?: string): Share[] {
+    return owner
+      ? this.queryShares('SELECT * FROM shares WHERE owner = ? ORDER BY id DESC', [owner])
+      : this.queryShares('SELECT * FROM shares ORDER BY id DESC', []);
+  }
+
+  revokeShare(id: number): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('UPDATE shares SET revoked = 1 WHERE id = ?', [id]);
+    this.save();
+  }
+
+  recordShareDownload(id: number): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('UPDATE shares SET downloadCount = downloadCount + 1 WHERE id = ?', [id]);
+    this.save();
+  }
+
+  private queryShares(sql: string, params: any[]): Share[] {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = this.db.exec(sql, params);
+    if (result.length === 0) return [];
+    return result[0].values.map(row => {
+      const obj: any = {};
+      result[0].columns.forEach((col, i) => { obj[col] = row[i]; });
+      return { ...obj, revoked: obj.revoked === 1 } as Share;
+    });
   }
 
   getListenerUsers(listenerId: number): number[] {

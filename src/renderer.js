@@ -161,6 +161,9 @@ function loadPanelData(panelId) {
     case 'activity':
       loadActivityLog();
       break;
+    case 'shares':
+      loadShares();
+      break;
   }
 }
 
@@ -459,6 +462,37 @@ async function editListener(id) {
   }
 }
 
+
+// Shared links
+async function loadShares() {
+  const shares = await ipcRenderer.invoke('get-shares');
+  const tbody = document.getElementById('shares-table');
+  if (!shares.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No shared links yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = shares.map(sh => `
+    <tr>
+      <td>${escapeHtml(sh.owner)}</td>
+      <td>${escapeHtml(sh.virtualPath)}${sh.hasPassword ? ' 🔒' : ''}</td>
+      <td>${sh.type === 'upload' ? 'Upload' : 'Download'}</td>
+      <td>${escapeHtml(sh.status)}</td>
+      <td>${sh.type === 'upload' ? '—' : `${sh.downloadCount}${sh.maxDownloads ? ' / ' + sh.maxDownloads : ''}`}</td>
+      <td>${sh.expiresAt ? new Date(sh.expiresAt).toLocaleString() : 'Never'}</td>
+      <td>${sh.status === 'active' ? `<button class="btn btn-danger" onclick="revokeShare(${Number(sh.id)})">Revoke</button>` : ''}</td>
+    </tr>
+  `).join('');
+}
+
+async function revokeShare(id) {
+  if (!confirm('Revoke this link? Anyone using it will lose access immediately.')) return;
+  try {
+    await ipcRenderer.invoke('revoke-share', id);
+    loadShares();
+  } catch (err) {
+    alert(`Failed to revoke link: ${err.message}`);
+  }
+}
 
 // Active Sessions
 async function loadActiveSessions() {

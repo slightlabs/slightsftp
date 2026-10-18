@@ -8,6 +8,7 @@ import logger from './logger';
 import { resolveUserPath } from './path-utils';
 import { requiresPasswordChange, validateNewPassword } from './password';
 import { getServerCertificate, hostKeyFingerprint, setCertificateDir } from './tls';
+import { describeShare } from './shares';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -529,6 +530,25 @@ function setupIpcHandlers(): void {
     });
 
     completeLogin(db.getUser(user.username));
+    return { success: true };
+  });
+
+  // Share links created in the web file portal
+  ipcMain.handle('get-shares', async () => {
+    return db.listShares().map(share => describeShare(share));
+  });
+
+  ipcMain.handle('revoke-share', async (event, id) => {
+    const share = db.getShare(id);
+    if (!share) throw new Error('Link not found');
+    db.revokeShare(id);
+    db.logActivity({
+      listenerId: null,
+      username: authenticatedUser?.username || 'system',
+      action: 'SHARE_REVOKED',
+      path: `${share.owner}:${share.virtualPath}`,
+      success: true
+    });
     return { success: true };
   });
 

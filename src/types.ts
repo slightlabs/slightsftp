@@ -71,3 +71,21 @@ export interface ServerActivity {
   timestamp?: string;
   success: boolean;
 }
+
+export type ShareType = 'download' | 'upload';
+
+export interface Share {
+  id?: number;
+  /** unguessable URL token (/s/<token>) */
+  token: string;
+  owner: string;
+  type: ShareType;
+  /** virtual path of the shared file or folder, in the owner's namespace */
+  virtualPath: string;
+  passwordHash?: string | null;
+  expiresAt?: string | null;
+  maxDownloads?: number | null;
+  downloadCount?: number;
+  revoked?: boolean;
+  createdAt?: string;
+}

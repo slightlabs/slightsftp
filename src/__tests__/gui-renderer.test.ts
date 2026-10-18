@@ -43,6 +43,10 @@ const model = {
     { id: 3, listenerId: null, username: 'admin', action: 'GUI_LOGIN', path: '/', success: true, timestamp: nowSql() },
   ],
   settings: { logRetentionDays: '30' } as Record<string, string>,
+  shares: [
+    { id: 7, owner: 'carol', virtualPath: `/${XSS}.pdf`, type: 'download', status: 'active', downloadCount: 1, maxDownloads: 5, expiresAt: null, hasPassword: true },
+    { id: 8, owner: 'carol', virtualPath: '/inbox', type: 'upload', status: 'expired', downloadCount: 0, maxDownloads: null, expiresAt: '2026-01-01T00:00:00.000Z', hasPassword: false },
+  ] as any[],
   files: {
     '/': [
       { name: 'sub', isDirectory: true, size: 0, mtime: new Date().toISOString() },
@@ -56,6 +60,8 @@ const model = {
 const backend: Record<string, Handler> = {
   'get-authenticated-user': () => ({ username: 'admin', id: 1 }),
   'get-server-identity': () => ({ sshHostKeyFingerprint: 'SHA256:abcDEF123' }),
+  'get-shares': () => model.shares,
+  'revoke-share': (id: number) => { model.shares.find(x => x.id === id)!.status = 'revoked'; return { success: true }; },
   'logout': () => ({ success: true }),
   'get-all-listener-statuses': () => [
     ...model.listeners.map(l => ({ listener: l, running: model.running.has(l.id) })),
@@ -219,7 +225,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
   });
 
   describe('navigation', () => {
-    test.each(['listeners', 'sessions', 'users', 'files', 'activity', 'dashboard'])('sidebar switches to the %s panel', async panel => {
+    test.each(['listeners', 'sessions', 'users', 'files', 'shares', 'activity', 'dashboard'])('sidebar switches to the %s panel', async panel => {
       await openPanel(panel);
       expect($$('.panel.active').map(p => p.id)).toEqual([panel]);
       expect($$('.sidebar-item.active').map(i => i.dataset.panel)).toEqual([panel]);
@@ -456,6 +462,27 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       expect((window.confirm as jest.Mock).mock.calls[0][0]).toContain('dave');
       expect(lastCall('delete-user')).toEqual(['dave']);
       expect(row('dave')).toBeUndefined();
+    });
+  });
+
+  describe('shared links panel', () => {
+    beforeAll(() => openPanel('shares'));
+
+    test('lists every link with status, usage and expiry; paths are text', () => {
+      const rows = $$('#shares-table tr');
+      expect(rows).toHaveLength(2);
+      const first = Array.from(rows[0].children).map(c => c.textContent!.trim());
+      expect(first.slice(0, 5)).toEqual(['carol', `/${XSS}.pdf 🔒`, 'Download', 'active', '1 / 5']);
+      expect(first[5]).toBe('Never');
+      expect($('#shares-table').querySelector('img')).toBeNull();
+      expect(buttonByText(rows[1], 'Revoke')).toBeUndefined(); // expired
+    });
+
+    test('Revoke asks for confirmation and updates the row', async () => {
+      buttonByText($$('#shares-table tr')[0], 'Revoke').click();
+      await flush();
+      expect(lastCall('revoke-share')).toEqual([7]);
+      expect($$('#shares-table tr')[0].textContent).toContain('revoked');
     });
   });
 

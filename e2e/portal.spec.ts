@@ -118,6 +118,78 @@ test('renames and deletes', async () => {
   expect(fs.existsSync(path.join(home, 'final-report.pdf'))).toBe(false);
 });
 
+test('shares a file with a password-protected link that works in another browser', async ({ browser }) => {
+  await row('welcome.txt').getByRole('button', { name: 'Share' }).click();
+  await expect(page.locator('#shareDialog')).toBeVisible();
+  await page.fill('#shareLimit', '3');
+  await page.fill('#sharePassword', 'letmein');
+  await page.click('#shareCreate');
+  await expect(page.locator('#shareLink')).toHaveValue(/\/s\/[A-Za-z0-9_-]+$/);
+  const url = await page.locator('#shareLink').inputValue();
+  await expect.poll(() => page.locator('#shareQr').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await page.click('#shareClose');
+
+  const visitor = await (await browser.newContext({ acceptDownloads: true })).newPage();
+  await visitor.goto(url);
+  await expect(visitor.getByText('This link is password protected')).toBeVisible();
+  await visitor.fill('#sharePassword', 'nope');
+  await visitor.getByRole('button', { name: 'Unlock' }).click();
+  await expect(visitor.locator('#lockError')).toHaveText('Wrong password');
+  await visitor.fill('#sharePassword', 'letmein');
+  await visitor.getByRole('button', { name: 'Unlock' }).click();
+  await expect(visitor.locator('#fileName')).toHaveText('welcome.txt');
+  await expect(visitor.locator('#fileMeta')).toContainText('Shared by pam');
+  await expect(visitor.locator('#fileMeta')).toContainText('3 downloads left');
+  const pending = visitor.waitForEvent('download');
+  await visitor.click('#fileDownload');
+  expect(fs.readFileSync((await (await pending).path())!, 'utf8')).toBe('hi from the portal');
+  await visitor.context().close();
+});
+
+test('"Request files" lets an outsider upload into a folder without seeing it', async ({ browser }) => {
+  await row('docs').locator('.name button').click();
+  await page.click('#requestBtn');
+  await page.click('#shareCreate');
+  await expect(page.locator('#shareLink')).toHaveValue(/\/s\//);
+  const url = await page.locator('#shareLink').inputValue();
+  await page.click('#shareClose');
+
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(url);
+  await expect(visitor.locator('#uploadTitle')).toHaveText('Send files to pam');
+  await visitor.locator('#picker').setInputFiles([{ name: 'invoice.pdf', mimeType: 'application/pdf', buffer: Buffer.from('INVOICE') }]);
+  await expect(visitor.locator('.upload.done')).toContainText('invoice.pdf uploaded');
+  await visitor.locator('#picker').setInputFiles([{ name: 'invoice.pdf', mimeType: 'application/pdf', buffer: Buffer.from('SECOND') }]);
+  await expect(visitor.locator('.upload.done').first()).toContainText('invoice (1).pdf uploaded');
+  await visitor.context().close();
+
+  expect(fs.readFileSync(path.join(home, 'docs', 'invoice.pdf'), 'utf8')).toBe('INVOICE');
+  expect(fs.readFileSync(path.join(home, 'docs', 'invoice (1).pdf'), 'utf8')).toBe('SECOND');
+  await page.reload();
+  await expect(row('invoice.pdf')).toBeVisible();
+  await page.locator('#crumbs button', { hasText: 'My files' }).click();
+});
+
+test('My links lists links and revoking one disables it', async ({ browser }) => {
+  await page.click('#mySharesBtn');
+  const items = page.locator('#sharesList .item');
+  await expect(items).toHaveCount(2);
+  await expect(items.first()).toContainText('/docs');
+  await expect(items.first()).toContainText('Upload link');
+  await expect(items.nth(1)).toContainText('/welcome.txt');
+  await expect(items.nth(1)).toContainText('1 download of 3');
+
+  const uploadUrl = (await page.request.get('/portal/api/shares').then(r => r.json()))[0].url;
+  await items.first().getByRole('button', { name: 'Revoke' }).click();
+  await expect(items.first()).toContainText('revoked');
+  await page.click('#sharesClose');
+
+  const visitor = await (await browser.newContext()).newPage();
+  await visitor.goto(uploadUrl);
+  await expect(visitor.locator('#errorTitle')).toHaveText('Link unavailable');
+  await visitor.context().close();
+});
+
 test('works at phone width', async () => {
   await page.setViewportSize({ width: 375, height: 740 });
   await expect(row('welcome.txt').getByRole('button', { name: 'Download' })).toBeVisible();

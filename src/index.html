@@ -473,6 +473,7 @@
       <div class="sidebar-item" data-panel="sessions">Active Sessions</div>
       <div class="sidebar-item" data-panel="users">Users</div>
       <div class="sidebar-item" data-panel="files">Files</div>
+      <div class="sidebar-item" data-panel="shares">Shared Links</div>
       <div class="sidebar-item" data-panel="activity">Activity Log</div>
     </div>
 
@@ -611,6 +612,19 @@
         </div>
 
         <!-- Active Sessions Panel -->
+        <div id="shares" class="panel">
+          <div class="card">
+            <h2>Shared Links</h2>
+            <p style="color: #666; margin-top: 0;">Links created by users in the web file portal (<code>/files</code>). Revoking a link disables it immediately.</p>
+            <table class="table">
+              <thead>
+                <tr><th>Owner</th><th>Path</th><th>Type</th><th>Status</th><th>Downloads</th><th>Expires</th><th></th></tr>
+              </thead>
+              <tbody id="shares-table"></tbody>
+            </table>
+          </div>
+        </div>
+
         <div id="sessions" class="panel">
           <div class="card">
             <h2>Active Sessions</h2>

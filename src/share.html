@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex">
+<title>Shared with you · SLightSFTP</title>
+<style>
+  :root {
+    --bg: #f4f6fb; --panel: #ffffff; --text: #1f2933; --muted: #6b7280; --border: #e5e7eb;
+    --accent: #5b5fe0; --accent-text: #ffffff; --danger: #d64545; --hover: #f1f3fa; --drop: rgba(91, 95, 224, 0.10);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12141a; --panel: #1b1e27; --text: #e6e8ee; --muted: #9aa1b1; --border: #2c303c;
+      --accent: #8b8ff5; --accent-text: #0f1016; --danger: #f07070; --hover: #232734; --drop: rgba(139, 143, 245, 0.14);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; font: 15px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, sans-serif; background: var(--bg); color: var(--text); display: flex; align-items: flex-start; justify-content: center; padding: 48px 16px; }
+  [hidden] { display: none !important; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 26px; width: 100%; max-width: 560px; box-shadow: 0 10px 30px rgba(0,0,0,.06); }
+  h1 { margin: 0 0 6px; font-size: 21px; overflow-wrap: anywhere; }
+  .meta { color: var(--muted); font-size: 14px; margin-bottom: 18px; }
+  button, input { font: inherit; }
+  button { cursor: pointer; border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 8px; padding: 8px 14px; }
+  button:hover { background: var(--hover); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  input[type=password] { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); margin-bottom: 12px; }
+  .error { background: rgba(214, 69, 69, .1); color: var(--danger); border-radius: 8px; padding: 9px 12px; margin-bottom: 12px; font-size: 14px; }
+  .big-icon { font-size: 44px; line-height: 1; margin-bottom: 10px; }
+  .list { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .item { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-top: 1px solid var(--border); }
+  .item:first-child { border-top: none; }
+  .item .n { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .n button { border: none; background: none; padding: 0; color: var(--accent); max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .item .s { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .item button.dl { padding: 4px 10px; font-size: 13px; }
+  .crumbs { margin-bottom: 10px; font-size: 14px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .crumbs button { border: none; background: none; padding: 2px 4px; color: var(--accent); }
+  .drop { border: 2px dashed var(--border); border-radius: 12px; padding: 34px 16px; text-align: center; color: var(--muted); transition: background .15s, border-color .15s; }
+  .drop.over { background: var(--drop); border-color: var(--accent); color: var(--accent); }
+  .uploads { margin-top: 12px; display: grid; gap: 6px; }
+  .upload { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; font-size: 13px; overflow-wrap: anywhere; }
+  .upload .bar { height: 4px; background: var(--border); border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .upload .bar > div { height: 100%; width: 0; background: var(--accent); }
+  .upload.done { color: #2f9e5b; }
+  .upload.failed { color: var(--danger); }
+  footer { margin-top: 18px; color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div id="loading">Loading…</div>
+
+  <div id="errorView" hidden>
+    <div class="big-icon">🔗</div>
+    <h1 id="errorTitle">Link unavailable</h1>
+    <p class="meta" id="errorText"></p>
+  </div>
+
+  <form id="lockView" hidden>
+    <div class="big-icon">🔒</div>
+    <h1>This link is password protected</h1>
+    <p class="meta">Enter the password you were given.</p>
+    <div class="error" id="lockError" hidden></div>
+    <input type="password" id="sharePassword" autocomplete="off" required autofocus>
+    <button class="primary" type="submit">Unlock</button>
+  </form>
+
+  <div id="fileView" hidden>
+    <div class="big-icon">📄</div>
+    <h1 id="fileName"></h1>
+    <p class="meta" id="fileMeta"></p>
+    <button class="primary" type="button" id="fileDownload">Download</button>
+  </div>
+
+  <div id="folderView" hidden>
+    <h1 id="folderName"></h1>
+    <p class="meta" id="folderMeta"></p>
+    <nav class="crumbs" id="crumbs"></nav>
+    <div class="list" id="folderList"></div>
+  </div>
+
+  <div id="uploadView" hidden>
+    <div class="big-icon">📥</div>
+    <h1 id="uploadTitle"></h1>
+    <p class="meta" id="uploadMeta"></p>
+    <div class="drop" id="drop">
+      <p>Drag files here, or</p>
+      <button class="primary" type="button" id="pick">Choose files</button>
+      <input type="file" id="picker" multiple hidden>
+    </div>
+    <div class="uploads" id="uploads"></div>
+  </div>
+
+  <footer>Shared securely with SLightSFTP</footer>
+</div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const base = location.pathname.replace(/\/+$/, '');
+  const el = (tag, props = {}, ...children) => { const n = document.createElement(tag); Object.assign(n, props); n.append(...children); return n; };
+  const views = ['loading', 'errorView', 'lockView', 'fileView', 'folderView', 'uploadView'];
+  const show = id => views.forEach(v => { $(v).hidden = v !== id; });
+  const size = b => { if (!b) return '0 B'; const u = ['B', 'KB', 'MB', 'GB', 'TB']; const i = Math.min(Math.floor(Math.log(b) / Math.log(1024)), 4); return `${(b / 1024 ** i).toFixed(i ? 1 : 0)} ${u[i]}`; };
+  let info;
+
+  async function call(method, url, body) {
+    const res = await fetch(url, { method, credentials: 'same-origin', headers: body ? { 'Content-Type': 'application/json' } : undefined, body: body ? JSON.stringify(body) : undefined });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { const e = new Error(data.error || 'Request failed'); e.status = res.status; throw e; }
+    return data;
+  }
+
+  function fail(err) {
+    $('errorTitle').textContent = err.status === 410 ? 'Link expired' : 'Link unavailable';
+    $('errorText').textContent = err.message;
+    show('errorView');
+  }
+
+  function details() {
+    const bits = [`Shared by ${info.owner}`];
+    if (info.expiresAt) bits.push(`expires ${new Date(info.expiresAt).toLocaleDateString()}`);
+    if (info.remainingDownloads !== null && info.remainingDownloads !== undefined) bits.push(`${info.remainingDownloads} download${info.remainingDownloads === 1 ? '' : 's'} left`);
+    return bits.join(' · ');
+  }
+
+  function download(rel) {
+    const a = el('a', { href: `${base}/download${rel ? '?path=' + encodeURIComponent(rel) : ''}` });
+    document.body.append(a); a.click(); a.remove();
+  }
+
+  async function openFolder(rel) {
+    const data = await call('GET', `${base}/list?path=${encodeURIComponent(rel)}`).catch(fail);
+    if (!data) return;
+    const crumbs = $('crumbs');
+    crumbs.replaceChildren(el('button', { type: 'button', textContent: info.name, onclick: () => openFolder('/') }));
+    const parts = data.path.split('/').filter(Boolean);
+    parts.forEach((p, i) => crumbs.append('/', el('button', { type: 'button', textContent: p, onclick: () => openFolder('/' + parts.slice(0, i + 1).join('/')) })));
+    const list = $('folderList');
+    list.replaceChildren();
+    if (!data.files.length) list.append(el('div', { className: 'item', textContent: 'This folder is empty.' }));
+    for (const f of data.files) {
+      const rp = (data.path === '/' ? '' : data.path) + '/' + f.name;
+      const isDir = f.type === 'directory';
+      list.append(el('div', { className: 'item' },
+        el('span', { textContent: isDir ? '📁' : '📄' }),
+        el('span', { className: 'n' }, el('button', { type: 'button', title: f.name, textContent: f.name, onclick: () => (isDir ? openFolder(rp) : download(rp)) })),
+        el('span', { className: 's', textContent: isDir ? '' : size(f.size) }),
+        isDir ? '' : el('button', { type: 'button', className: 'dl', textContent: 'Download', onclick: () => download(rp) })));
+    }
+  }
+
+  function uploadOne(file) {
+    const row = el('div', { className: 'upload', textContent: `${file.name} — ${size(file.size)}` });
+    const bar = el('div');
+    row.append(el('div', { className: 'bar' }, bar));
+    $('uploads').prepend(row);
+    return new Promise(resolve => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', `${base}/upload?name=${encodeURIComponent(file.name)}`);
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.upload.onprogress = e => { if (e.lengthComputable) bar.style.width = `${(e.loaded / e.total) * 100}%`; };
+      xhr.onload = () => {
+        let body = {};
+        try { body = JSON.parse(xhr.responseText); } catch { /* ignore */ }
+        if (xhr.status === 201) { row.classList.add('done'); row.firstChild.textContent = `✓ ${body.name || file.name} uploaded`; bar.style.width = '100%'; }
+        else { row.classList.add('failed'); row.firstChild.textContent = `${file.name} — ${body.error || 'upload failed'}`; }
+        resolve();
+      };
+      xhr.onerror = () => { row.classList.add('failed'); row.firstChild.textContent = `${file.name} — network error`; resolve(); };
+      xhr.send(file);
+    });
+  }
+  async function uploadAll(files) { for (const f of files) await uploadOne(f); }
+
+  $('pick').addEventListener('click', () => $('picker').click());
+  $('picker').addEventListener('change', e => { uploadAll(Array.from(e.target.files)); e.target.value = ''; });
+  const drop = $('drop');
+  drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('over'); uploadAll(Array.from(e.dataTransfer.files || [])); });
+
+  $('lockView').addEventListener('submit', async e => {
+    e.preventDefault();
+    try {
+      await call('POST', `${base}/unlock`, { password: $('sharePassword').value });
+      await start();
+    } catch (err) {
+      $('lockError').textContent = err.message;
+      $('lockError').hidden = false;
+    }
+  });
+  $('fileDownload').addEventListener('click', () => download(''));
+
+  async function start() {
+    try {
+      info = await call('GET', `${base}/info`);
+    } catch (err) { return fail(err); }
+    document.title = `${info.name} · SLightSFTP`;
+    if (info.locked) return show('lockView');
+    if (info.type === 'upload') {
+      $('uploadTitle').textContent = `Send files to ${info.owner}`;
+      $('uploadMeta').textContent = `Files go to “${info.name}”. ${info.expiresAt ? 'This link expires ' + new Date(info.expiresAt).toLocaleDateString() + '.' : ''}`;
+      return show('uploadView');
+    }
+    if (info.isDirectory) {
+      $('folderName').textContent = info.name;
+      $('folderMeta').textContent = details();
+      show('folderView');
+      return openFolder('/');
+    }
+    $('fileName').textContent = info.name;
+    $('fileMeta').textContent = `${size(info.size)} · ${details()}`;
+    show('fileView');
+  }
+  start();
+})();
+</script>
+</body>
+</html>
