@@ -26,7 +26,7 @@ Items are implemented in order. Each ships with tests and is marked here when do
 - [x] **Brute-force protection** — automatic temporary IP bans after repeated failed logins across all protocols; ban list in the GUI.
 - [x] **Per-user IP allow-list** (CIDR).
 - [x] **Two-factor authentication (TOTP)** for GUI / portal logins.
-- [ ] **OpenSSH public keys** — paste `ssh-ed25519 …` / `ssh-rsa …` lines, multiple keys per user.
+- [x] **OpenSSH public keys** — paste `ssh-ed25519 …` / `ssh-rsa …` lines, multiple keys per user.
 - [ ] **Audit export** — syslog forwarding; SHA-256 checksum recorded for every upload.
 
 ## Phase 4 — Storage & administration

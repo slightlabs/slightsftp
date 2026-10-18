@@ -12,6 +12,7 @@ import { describeShare } from './shares';
 import { WebhookDispatcher, describeWebhook, validateWebhookInput } from './webhooks';
 import { cleanAllowedIps, getLoginGuard, saveGuardSettings } from './login-guard';
 import { beginTotpSetup, checkSecondFactor, confirmTotpSetup, disableTotp, publicUser } from './two-factor';
+import { cleanAuthorizedKeys } from './authorized-keys';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -692,7 +693,7 @@ function setupIpcHandlers(): void {
 
   // User operations
   ipcMain.handle('create-user', async (event, user) => {
-    const userId = db.createUser({ ...user, allowedIps: cleanAllowedIps(user?.allowedIps) });
+    const userId = db.createUser({ ...user, allowedIps: cleanAllowedIps(user?.allowedIps), publicKey: cleanAuthorizedKeys(user?.publicKey) });
     
     // Log user creation
     db.logActivity({
@@ -724,6 +725,9 @@ function setupIpcHandlers(): void {
     // Update user
     if (updates && updates.allowedIps !== undefined) {
       updates = { ...updates, allowedIps: cleanAllowedIps(updates.allowedIps) };
+    }
+    if (updates && updates.publicKey !== undefined) {
+      updates = { ...updates, publicKey: cleanAuthorizedKeys(updates.publicKey) };
     }
     if (updates) {
       // Admins may reset (turn off) two-factor sign-in, never set secrets or turn it on

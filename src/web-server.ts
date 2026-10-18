@@ -18,6 +18,7 @@ import { cleanAllowedIps, getLoginGuard, saveGuardSettings, TOO_MANY_ATTEMPTS, u
 import { describeShare, registerShareRoutes, shareUrl } from './shares';
 import { WebhookDispatcher, describeWebhook, validateWebhookInput } from './webhooks';
 import { beginTotpSetup, checkSecondFactor, confirmTotpSetup, disableTotp, publicUser } from './two-factor';
+import { cleanAuthorizedKeys } from './authorized-keys';
 
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
@@ -650,7 +651,7 @@ export class WebServer {
           username,
           password: password || '',
           passwordEnabled,
-          publicKey: publicKey || '',
+          publicKey: cleanAuthorizedKeys(publicKey),
           guiEnabled,
           mustChangePassword: !!mustChangePassword,
           portalEnabled: !!portalEnabled,
@@ -683,6 +684,7 @@ export class WebServer {
         
         const updates: any = { passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled };
         if (allowedIps !== undefined) updates.allowedIps = cleanAllowedIps(allowedIps);
+        if (publicKey !== undefined) updates.publicKey = cleanAuthorizedKeys(publicKey);
         // Admins can reset (turn off) a user's two-factor sign-in, never turn it on for them
         if (req.body.totpEnabled === false) updates.totpEnabled = false;
         if (password) {

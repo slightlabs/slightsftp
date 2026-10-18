@@ -6,6 +6,7 @@ import { Listener, User, Permission } from './types';
 import { EventEmitter } from 'events';import logger from './logger';
 import { loadOrCreateHostKey } from './tls';
 import { getLoginGuard, userIpAllowed } from './login-guard';
+import { findAuthorizedKey, parseAuthorizedKeys } from './authorized-keys';
 import { SessionTransferStats, TransferHandle, TransferTracker } from './transfers';
 // SFTP constants (from ssh2-streams)
 const SFTP_STATUS_CODE = {
@@ -166,38 +167,32 @@ export class SFTPServer extends EventEmitter {
               return ctx.reject();
             }
           } else if (ctx.method === 'publickey' && user.publicKey) {
-            // Simple public key verification
-            if (ctx.key.algo === 'ssh-rsa' || ctx.key.algo === 'ssh-ed25519') {
-              const providedKey = ctx.key.data.toString('base64');
-              const storedKey = user.publicKey;
-              
-              if (providedKey === storedKey || storedKey.includes(providedKey)) {
-                if (ctx.signature) {
-                  // Track active session
-                  this.activeSessions.set(sessionId, {
-                    client,
-                    username: username,
-                    ipAddress,
-                    connectedAt: new Date()
-                  });
-                  console.log(`[SESSION] Added active session: ${sessionId} for user ${username} from ${ipAddress}`);
-                  console.log(`[SESSION] Total active sessions: ${this.activeSessions.size}`);
-                  
-                  authenticatedUser = user;
-                  userPermissions = this.db.getPermission(user.id!, this.listener.id!);
-                  this.emit('activity', {
-                    listenerId: this.listener.id!,
-                    username: username,
-                    action: `LOGIN (publickey) [${ipAddress}:${remotePort}]`,
-                    path: '/',
-                    success: true
-                  });
-                  guard.recordSuccess(ipAddress);
-              return ctx.accept();
-                } else {
-                  guard.recordSuccess(ipAddress);
-              return ctx.accept();
-                }
+            const key = findAuthorizedKey(parseAuthorizedKeys(user.publicKey), ctx.key.data);
+            if (key) {
+              if (!ctx.signature) {
+                // Key probe: tell the client this key would be accepted, so it signs
+                return ctx.accept();
+              }
+              // The signature proves the client holds the private key - always verify it
+              if (key.verify(ctx.blob!, ctx.signature, (ctx as any).hashAlgo)) {
+                this.activeSessions.set(sessionId, {
+                  client,
+                  username: username,
+                  ipAddress,
+                  connectedAt: new Date()
+                });
+
+                authenticatedUser = user;
+                userPermissions = this.db.getPermission(user.id!, this.listener.id!);
+                this.emit('activity', {
+                  listenerId: this.listener.id!,
+                  username: username,
+                  action: `LOGIN (publickey ${key.fingerprint}${key.comment ? ' ' + key.comment : ''}) [${ipAddress}:${remotePort}]`,
+                  path: '/',
+                  success: true
+                });
+                guard.recordSuccess(ipAddress);
+                return ctx.accept();
               }
             }
           }

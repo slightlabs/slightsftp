@@ -851,8 +851,8 @@
           <label>Enable Password Authentication</label>
         </div>
         <div class="form-group">
-          <label>Public Key (Base64)</label>
-          <textarea name="publicKey" placeholder="Optional SSH public key in base64 format"></textarea>
+          <label>SSH public keys (one per line)</label>
+          <textarea name="publicKey" rows="3" placeholder="ssh-ed25519 AAAAC3Nza... user@laptop"></textarea>
         </div>
         <div class="form-group checkbox-group">
           <input type="checkbox" name="guiEnabled">
@@ -893,8 +893,8 @@
           <label>Enable Password Authentication</label>
         </div>
         <div class="form-group">
-          <label>Public Key (Base64)</label>
-          <textarea name="publicKey"></textarea>
+          <label>SSH public keys (one per line, like authorized_keys)</label>
+          <textarea name="publicKey" rows="3" placeholder="ssh-ed25519 AAAAC3Nza... user@laptop"></textarea>
         </div>
         <div class="form-group checkbox-group">
           <input type="checkbox" name="guiEnabled">
