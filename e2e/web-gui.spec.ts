@@ -164,7 +164,8 @@ test('Active Sessions shows a live connection and Disconnect drops it', async ()
     dialogs.length = 0;
     await row.getByRole('button', { name: 'Disconnect' }).click();
     await closed;
-    expect(dialogs).toEqual(expect.arrayContaining([expect.stringContaining('disconnect user "webuser"'), 'User "webuser" has been disconnected.']));
+    // the confirmation alert is shown after the API call returns, which can trail the socket close
+    await expect.poll(() => dialogs).toEqual(expect.arrayContaining([expect.stringContaining('disconnect user "webuser"'), 'User "webuser" has been disconnected.']));
     await expect(page.locator('#sessions-table')).toContainText('No active sessions');
   } finally {
     await client.end().catch(() => undefined);
