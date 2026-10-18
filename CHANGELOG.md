@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.6.0 — 2026-10-19
+
+### New
+- **LDAP / Active Directory sign-in**: users can sign in with their directory password over
+  SFTP, FTP, the web GUI, the file portal and the desktop app (Security → Directory Sign-in).
+- **macOS installer** (`.dmg`, Intel and Apple Silicon). It is not signed: the first time,
+  right-click the app and choose *Open*.
+- **First-run setup wizard**: share a first folder with a user in one step on a new install.
+- **Dark mode** for the dashboard (follows the system, or pick with the 🌓 button).
+- **Update notifications**: the dashboard shows when a newer release is available.
+
+### Fixes
+- Release builds no longer fail on extra build-record artifacts.
+
 ## v1.5.0 — 2026-10-19
 
 ### New
