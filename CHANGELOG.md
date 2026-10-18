@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.7.0 — 2026-10-19
+
+### New
+- **Cloud storage folders**: point a user's virtual path at an Amazon S3 bucket (or an
+  S3-compatible service such as MinIO, Wasabi, Cloudflare R2 or Backblaze B2) or an Azure
+  Blob container. SFTP, FTP, the file portal, share links and the admin file browser all
+  work there. Add connections in the new *Cloud Storage* panel (with *Test connection*),
+  then choose the bucket as the *Storage* of a virtual path. Quotas, speed limits,
+  checksums and webhooks work as for local folders.
+- REST API: `/api/storage`. The API documentation now also covers API tokens, the recycle
+  bin, audit export, backup / restore, update checks and directory sign-in.
+
+### Security
+- **FTP permissions for relative paths**: after changing into a read-only folder, FTP
+  checked file names relative to that folder against the *root* folder's permissions, so
+  uploads, deletes and renames there could be allowed. Upgrade is recommended if you give
+  FTP users folders with different permissions.
+- The desktop app now runs on **Electron 44** (was Electron 28, which no longer receives
+  security fixes).
+
+### Fixes
+- FTP now maps nested virtual paths (e.g. `/reports` inside `/`) to the right folder.
+- SFTP file handles are closed when a client disconnects without closing them.
+- The features page no longer describes the old password hashing.
+
+### Upgrade notes
+- Running from source or with `npm` needs Node.js 22.12 or newer (installers and the
+  Docker image include their own runtime).
+- In a cloud folder, deletes are permanent (the recycle bin covers local folders), and
+  files cannot be moved between a bucket and a local folder with a single rename.
+- Configuration backups include cloud storage access keys: store them safely.
+
 ## v1.6.0 — 2026-10-19
 
 ### New
