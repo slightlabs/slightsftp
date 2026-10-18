@@ -66,10 +66,21 @@ test('a wrong password shows an error and keeps the user on the login page', asy
   await expect(page).toHaveURL(/\/login$/);
 });
 
-test('the default admin can sign in and lands on the dashboard', async () => {
+test('the default admin must choose a new password, then lands on the dashboard', async () => {
   await page.fill('#username', 'admin');
   await page.fill('#password', 'admin123');
   await page.click('#loginBtn');
+  await expect(page.locator('#changePasswordForm')).toBeVisible();
+  await expect(page.locator('#loginForm')).toBeHidden();
+
+  await page.fill('#newPassword', 'admin123');
+  await page.fill('#confirmPassword', 'admin123');
+  await page.click('#changePasswordBtn');
+  await expect(page.locator('#errorMessage')).toContainText('other than the default');
+
+  await page.fill('#newPassword', 'Br0wser-Admin!');
+  await page.fill('#confirmPassword', 'Br0wser-Admin!');
+  await page.click('#changePasswordBtn');
   await expect(page).toHaveURL(`http://127.0.0.1:${webPort}/`);
   await expect(page.locator('#currentUser')).toHaveText('admin');
   await expect(page.locator('#totalUsersCount')).toHaveText('1');

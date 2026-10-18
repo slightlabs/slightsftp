@@ -18,6 +18,7 @@ let webPort: number;
 let login: Page;
 let dashboard: Page;
 const dialogs: string[] = [];
+const ADMIN_PW = 'Desk-Admin-2026';
 
 const autoAcceptDialogs = (page: Page) => page.on('dialog', async d => { dialogs.push(d.message()); await d.accept(); });
 const windowFor = async (file: string) => {
@@ -27,11 +28,17 @@ const windowFor = async (file: string) => {
 const nav = (panel: string) => dashboard.locator(`.sidebar-item[data-panel="${panel}"]`).click();
 const card = (name: string) => dashboard.locator('#listeners-list .listener-card', { has: dashboard.locator('h3', { hasText: new RegExp(`^${name}$`) }) });
 
-async function signIn(user: string, password: string): Promise<Page> {
+async function signIn(user: string, password: string, newPassword?: string): Promise<Page> {
   login = await windowFor('login.html');
   await login.fill('#username', user);
   await login.fill('#password', password);
   await login.click('#loginBtn');
+  if (newPassword) {
+    await expect(login.locator('#changePasswordForm')).toBeVisible();
+    await login.fill('#newPassword', newPassword);
+    await login.fill('#confirmPassword', newPassword);
+    await login.click('#changePasswordBtn');
+  }
   const page = await windowFor('index.html');
   autoAcceptDialogs(page);
   return page;
@@ -68,8 +75,8 @@ test('rejects bad credentials in the login window', async () => {
   await expect(login.locator('#loginBtn')).toBeEnabled();
 });
 
-test('admin login opens the dashboard window', async () => {
-  dashboard = await signIn('admin', 'admin123');
+test('first admin login forces a new password, then opens the dashboard window', async () => {
+  dashboard = await signIn('admin', 'admin123', ADMIN_PW);
   await expect(dashboard.locator('#currentUser')).toHaveText('admin');
   await expect(dashboard.locator('#totalUsersCount')).toHaveText('1');
   await expect(dashboard.locator('#server-overview')).toContainText('3');
@@ -162,7 +169,7 @@ test('non-GUI users are refused at the login window; admin can sign back in', as
   await login.click('#loginBtn');
   await expect(login.locator('#errorMessage')).toHaveText('Invalid username or password');
 
-  dashboard = await signIn('admin', 'admin123');
+  dashboard = await signIn('admin', ADMIN_PW);
   await expect(dashboard.locator('#currentUser')).toHaveText('admin');
   await expect(dashboard.locator('#totalUsersCount')).toHaveText('2');
 });

@@ -113,7 +113,7 @@ describe('Electron Main Process Lifecycle', () => {
       if (!admin) {
         db.createUser({
           username: 'admin',
-          password: 'admin123',
+          password: 'Admin#2026',
           passwordEnabled: true,
           publicKey: '',
           guiEnabled: true

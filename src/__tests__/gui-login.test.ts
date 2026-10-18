@@ -123,4 +123,50 @@ describe('Login window GUI (login.html)', () => {
     $('closeButton').click();
     expect(window.close).toHaveBeenCalled();
   });
+
+  describe('forced password change', () => {
+    const changeForm = () => $<HTMLFormElement>('changePasswordForm');
+    const submitChange = async (pw: string, confirm = pw) => {
+      $<HTMLInputElement>('newPassword').value = pw;
+      $<HTMLInputElement>('confirmPassword').value = confirm;
+      changeForm().dispatchEvent(new Event('submit', { cancelable: true }));
+      await flush();
+    };
+
+    test('is hidden until the backend requires it', () => {
+      expect(changeForm().hidden).toBe(true);
+    });
+
+    test('a login that requires a password change swaps in the change form', async () => {
+      ipcRenderer.invoke.mockResolvedValue({ success: true, requirePasswordChange: true });
+      await submitWith('admin', 'admin123');
+      expect(window.close).not.toHaveBeenCalled();
+      expect($('loginForm').hidden).toBe(true);
+      expect(changeForm().hidden).toBe(false);
+    });
+
+    test('validates length and confirmation locally', async () => {
+      await submitChange('short');
+      expect(error().textContent).toMatch(/at least 8 characters/);
+      await submitChange('LongEnough1', 'Different1');
+      expect(error().textContent).toBe('The passwords do not match');
+      expect(ipcRenderer.invoke).not.toHaveBeenCalled();
+    });
+
+    test('shows the backend error when the new password is refused', async () => {
+      ipcRenderer.invoke.mockResolvedValue({ success: false, error: 'Choose a password other than the default one' });
+      await submitChange('admin123x');
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('set-first-login-password', 'admin123x');
+      expect(error().textContent).toBe('Choose a password other than the default one');
+      expect($<HTMLButtonElement>('changePasswordBtn').disabled).toBe(false);
+      expect(window.close).not.toHaveBeenCalled();
+    });
+
+    test('an accepted new password continues to the dashboard', async () => {
+      ipcRenderer.invoke.mockResolvedValue({ success: true });
+      await submitChange('Brand-New-Pass1');
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('set-first-login-password', 'Brand-New-Pass1');
+      expect(window.close).toHaveBeenCalled();
+    });
+  });
 });

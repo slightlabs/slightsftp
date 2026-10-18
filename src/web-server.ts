@@ -10,6 +10,7 @@ import { ServerManager } from './server-manager';
 import { User, Listener } from './types';
 import logger from './logger';
 import { resolveUserPath } from './path-utils';
+import { requiresPasswordChange, validateNewPassword } from './password';
 
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
@@ -17,7 +18,18 @@ declare const __dirname: string;
 interface WebSession {
   username: string;
   loginTime: Date;
+  /** set until the user replaces the default / admin-reset password */
+  mustChangePassword?: boolean;
 }
+
+/** Never send password hashes to a client. */
+function withoutPassword(user: User): Omit<User, 'password'> {
+  const { password: _hash, ...rest } = user;
+  return rest;
+}
+
+// API paths a session may use while a password change is still required
+const PASSWORD_CHANGE_ALLOWED = new Set(['/change-password', '/user', '/logout']);
 
 export class WebServer {
   private app: express.Application;
@@ -86,6 +98,10 @@ export class WebServer {
       res.status(401).json({ error: 'Unauthorized' });
       return;
     }
+    if (session.mustChangePassword && !PASSWORD_CHANGE_ALLOWED.has(req.path)) {
+      res.status(403).json({ error: 'Password change required', requirePasswordChange: true });
+      return;
+    }
     (req as any).session = session;
     next();
   }
@@ -133,7 +149,7 @@ export class WebServer {
     // Main GUI page
     this.app.get('/', (req: Request, res: Response) => {
       const session = this.authenticateSession(req);
-      if (!session) {
+      if (!session || session.mustChangePassword) {
         res.redirect('/login');
         return;
       }
@@ -174,9 +190,11 @@ export class WebServer {
 
         // Create session
         const sessionId = this.generateSessionId();
+        const mustChangePassword = requiresPasswordChange(user, password);
         this.sessions.set(sessionId, {
           username: user.username,
-          loginTime: new Date()
+          loginTime: new Date(),
+          mustChangePassword
         });
 
         res.cookie('sessionId', sessionId, {
@@ -187,7 +205,9 @@ export class WebServer {
 
         this.logActivity(username, 'WEB_LOGIN_SUCCESS', 'User logged in via web interface', true);
         logger.info('Login successful for user:', username);
-        res.json({ success: true, username: user.username });
+        res.json(mustChangePassword
+          ? { success: true, username: user.username, requirePasswordChange: true }
+          : { success: true, username: user.username });
       } catch (error: any) {
         logger.error('Login error:', error);
         this.logActivity(username || 'unknown', 'WEB_LOGIN_ERROR', error.message, false);
@@ -210,6 +230,32 @@ export class WebServer {
 
     // API endpoints (all require authentication)
     this.app.use('/api', (req: Request, res: Response, next: NextFunction) => this.requireAuth(req, res, next));
+
+    // Change the signed-in user's password. While a change is forced the current
+    // password was just verified at login; otherwise it must be supplied.
+    this.app.post('/api/change-password', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      const { newPassword, currentPassword } = req.body || {};
+
+      if (!session.mustChangePassword && !this.db.checkPassword(session.username, currentPassword || '')) {
+        res.status(401).json({ error: 'Current password is incorrect' });
+        return;
+      }
+      const problem = validateNewPassword(newPassword);
+      if (problem) {
+        res.status(400).json({ error: problem });
+        return;
+      }
+      if (this.db.checkPassword(session.username, newPassword)) {
+        res.status(400).json({ error: 'The new password must be different from the current one' });
+        return;
+      }
+
+      this.db.updateUser(session.username, { password: newPassword, mustChangePassword: false });
+      session.mustChangePassword = false;
+      this.logActivity(session.username, 'WEB_PASSWORD_CHANGED', 'Password changed via web interface', true);
+      res.json({ success: true });
+    });
 
     // Get authenticated user
     this.app.get('/api/user', (req: Request, res: Response) => {
@@ -384,8 +430,7 @@ export class WebServer {
 
     // Users
     this.app.get('/api/users', (req: Request, res: Response) => {
-      const users = this.db.getAllUsers();
-      res.json(users);
+      res.json(this.db.getAllUsers().map(withoutPassword));
     });
 
     this.app.get('/api/users/:username', (req: Request, res: Response) => {
@@ -395,7 +440,7 @@ export class WebServer {
         res.status(404).json({ error: 'User not found' });
         return;
       }
-      res.json(user);
+      res.json(withoutPassword(user));
     });
 
     this.app.get('/api/users/id/:userId/listeners', (req: Request, res: Response) => {
@@ -407,7 +452,7 @@ export class WebServer {
     this.app.post('/api/users', (req: Request, res: Response) => {
       try {
         const session = (req as any).session as WebSession;
-        const { username, password, passwordEnabled, publicKey, guiEnabled } = req.body;
+        const { username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword } = req.body;
 
         // DatabaseManager.createUser hashes the password itself
         const user: User = {
@@ -415,7 +460,8 @@ export class WebServer {
           password: password || '',
           passwordEnabled,
           publicKey: publicKey || '',
-          guiEnabled
+          guiEnabled,
+          mustChangePassword: !!mustChangePassword
         };
         
         const id = this.db.createUser(user);
@@ -434,7 +480,7 @@ export class WebServer {
       try {
         const session = (req as any).session as WebSession;
         const username = req.params.username;
-        const { password, passwordEnabled, publicKey, guiEnabled, listeners, virtualPaths, permissions } = req.body;
+        const { password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, listeners, virtualPaths, permissions } = req.body;
 
         const user = this.db.getUser(username);
         if (!user || !user.id) {
@@ -442,7 +488,7 @@ export class WebServer {
           return;
         }
         
-        const updates: any = { passwordEnabled, publicKey, guiEnabled };
+        const updates: any = { passwordEnabled, publicKey, guiEnabled, mustChangePassword };
         if (password) {
           // DatabaseManager.updateUser hashes the password itself
           updates.password = password;
@@ -840,6 +886,16 @@ export class WebServer {
               // Electron closes the window on logout; in a browser go back to the login page
               window.location.href = '/login';
               return result;
+            },
+            'set-first-login-password': async (newPassword) => {
+              const response = await fetch('/api/change-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ newPassword }),
+                credentials: 'same-origin'
+              });
+              const result = await response.json().catch(() => ({}));
+              return response.ok ? { success: true } : { success: false, error: result.error || 'Password change failed' };
             },
             'get-authenticated-user': async () => {
               const response = await fetch('/api/user');

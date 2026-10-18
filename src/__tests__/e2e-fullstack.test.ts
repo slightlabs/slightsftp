@@ -60,7 +60,7 @@ describe('Full-stack E2E: web admin API → live SFTP/FTP listeners → real cli
 
     db = new DatabaseManager(path.join(testDir, 'config.db'));
     await db.init();
-    db.createUser({ username: 'admin', password: 'admin123', passwordEnabled: true, guiEnabled: true });
+    db.createUser({ username: 'admin', password: 'Admin#2026', passwordEnabled: true, guiEnabled: true });
 
     [webPort, sftpPort, ftpPort] = await Promise.all([getFreePort(), getFreePort(), getFreePort()]);
     serverManager = new ServerManager(db);
@@ -96,7 +96,7 @@ describe('Full-stack E2E: web admin API → live SFTP/FTP listeners → real cli
     });
 
     test('admin can log in and receives an httpOnly session cookie', async () => {
-      const res = await admin.post('/api/login').send({ username: 'admin', password: 'admin123' }).expect(200);
+      const res = await admin.post('/api/login').send({ username: 'admin', password: 'Admin#2026' }).expect(200);
       expect(res.body).toEqual({ success: true, username: 'admin' });
       expect(String(res.headers['set-cookie'])).toMatch(/sessionId=.*HttpOnly/i);
 
@@ -421,7 +421,7 @@ describe('Full-stack E2E: web admin API → live SFTP/FTP listeners → real cli
   describe('listener lifecycle through the API', () => {
     test('stop → connection refused, start → accepting again', async () => {
       await admin.post(`/api/listeners/${sftpListenerId}/stop`).expect(200);
-      await expect(sftpConnect('admin', 'admin123')).rejects.toThrow();
+      await expect(sftpConnect('admin', 'Admin#2026')).rejects.toThrow();
 
       await admin.post(`/api/listeners/${sftpListenerId}/start`).expect(200);
       const statuses = await admin.get('/api/listener-statuses');
@@ -470,6 +470,65 @@ describe('Full-stack E2E: web admin API → live SFTP/FTP listeners → real cli
       expect(settings.body.logRetentionDays).toBe('45');
       const stats = await admin.get('/api/activity/old-stats').query({ retentionDays: 45 }).expect(200);
       expect(stats.body).toHaveProperty('count');
+    });
+  });
+
+  describe('forced password change (web)', () => {
+    let fresh: ReturnType<typeof request.agent>;
+
+    beforeAll(async () => {
+      await admin.post('/api/users')
+        .send({ username: 'fresh', password: 'Temp-Pass1', passwordEnabled: true, guiEnabled: true, mustChangePassword: true })
+        .expect(200);
+      fresh = request.agent(baseUrl);
+    });
+
+    test('user listings never include password hashes', async () => {
+      const all = await admin.get('/api/users').expect(200);
+      expect(all.body.every((u: any) => !('password' in u))).toBe(true);
+      const one = await admin.get('/api/users/fresh').expect(200);
+      expect(one.body).not.toHaveProperty('password');
+      expect(one.body.mustChangePassword).toBe(true);
+    });
+
+    test('a flagged user is told to change password and locked out of the API and dashboard', async () => {
+      const res = await fresh.post('/api/login').send({ username: 'fresh', password: 'Temp-Pass1' }).expect(200);
+      expect(res.body).toEqual({ success: true, username: 'fresh', requirePasswordChange: true });
+
+      const blocked = await fresh.get('/api/users').expect(403);
+      expect(blocked.body.requirePasswordChange).toBe(true);
+      const page = await fresh.get('/').expect(302);
+      expect(page.headers.location).toBe('/login');
+      await fresh.get('/api/user').expect(200);
+    });
+
+    test('weak or default new passwords are refused', async () => {
+      expect((await fresh.post('/api/change-password').send({ newPassword: 'short' }).expect(400)).body.error).toMatch(/at least 8/);
+      expect((await fresh.post('/api/change-password').send({ newPassword: 'admin123' }).expect(400)).body.error).toMatch(/default/);
+      expect((await fresh.post('/api/change-password').send({ newPassword: 'Temp-Pass1' }).expect(400)).body.error).toMatch(/different/);
+    });
+
+    test('a valid change unlocks the session and clears the flag', async () => {
+      await fresh.post('/api/change-password').send({ newPassword: 'Fresh-Pass-2026' }).expect(200);
+      await fresh.get('/api/users').expect(200);
+      await fresh.get('/').expect(200);
+      expect(db.getUser('fresh')!.mustChangePassword).toBe(false);
+
+      const again = await request(baseUrl).post('/api/login').send({ username: 'fresh', password: 'Fresh-Pass-2026' }).expect(200);
+      expect(again.body.requirePasswordChange).toBeUndefined();
+      await request(baseUrl).post('/api/login').send({ username: 'fresh', password: 'Temp-Pass1' }).expect(401);
+    });
+
+    test('a voluntary change requires the current password', async () => {
+      await fresh.post('/api/change-password').send({ currentPassword: 'wrong', newPassword: 'Another-Pass-1' }).expect(401);
+      await fresh.post('/api/change-password').send({ currentPassword: 'Fresh-Pass-2026', newPassword: 'Another-Pass-1' }).expect(200);
+      expect(db.checkPassword('fresh', 'Another-Pass-1')).toBe(true);
+    });
+
+    test('signing in with the published default password always forces a change', async () => {
+      await admin.post('/api/users').send({ username: 'lazy', password: 'admin123', passwordEnabled: true, guiEnabled: true }).expect(200);
+      const res = await request(baseUrl).post('/api/login').send({ username: 'lazy', password: 'admin123' }).expect(200);
+      expect(res.body.requirePasswordChange).toBe(true);
     });
   });
 

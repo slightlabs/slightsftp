@@ -110,6 +110,8 @@ const invoke = (channel: string, ...args: any[]) => {
 };
 
 /** Windows that still exist (open or hidden) for a given page. */
+const ADMIN_PW = 'N3w-Admin-Pass';
+
 const visibleWindows = (file: string) => windows.filter(w => !w.destroyed && w.loadedFile.endsWith(file));
 
 describe('Electron main process (main.ts) with real backend', () => {
@@ -190,10 +192,28 @@ describe('Electron main process (main.ts) with real backend', () => {
       expect((await invoke('authenticate-user', 'nogui', 'pw')).success).toBe(false);
     });
 
-    test('admin login closes the login window and opens the dashboard and tray', async () => {
+    test('the default admin password forces a new password before the dashboard opens', async () => {
+      expect(await invoke('set-first-login-password', 'Whatever123')).toEqual({ success: false, error: 'No password change is pending' });
+
       const result = await invoke('authenticate-user', 'admin', 'admin123');
-      expect(result).toMatchObject({ success: true, user: { username: 'admin' } });
+      expect(result).toEqual({ success: true, requirePasswordChange: true });
+      expect(await invoke('get-authenticated-user')).toBeNull();
+      expect(visibleWindows('login.html')).toHaveLength(1);
+      expect(visibleWindows('index.html')).toHaveLength(0);
+
+      expect(await invoke('set-first-login-password', 'short')).toMatchObject({ success: false, error: expect.stringMatching(/at least 8/) });
+      expect(await invoke('set-first-login-password', 'admin123')).toMatchObject({ success: false, error: expect.stringMatching(/other than the default/) });
+      expect(visibleWindows('index.html')).toHaveLength(0);
+    });
+
+    test('choosing a valid new password signs in and opens the dashboard and tray', async () => {
+      expect(await invoke('set-first-login-password', ADMIN_PW)).toEqual({ success: true });
       expect(await invoke('get-authenticated-user')).toMatchObject({ username: 'admin' });
+      expect((await invoke('get-user', 'admin')).mustChangePassword).toBe(false);
+      expect((await invoke('get-user', 'admin')).password).toBeUndefined();
+
+      // the old default password no longer works
+      expect((await invoke('authenticate-user', 'admin', 'admin123')).success).toBe(false);
 
       expect(visibleWindows('login.html')).toHaveLength(0);
       const main = visibleWindows('index.html');
@@ -231,16 +251,15 @@ describe('Electron main process (main.ts) with real backend', () => {
       listenerIds = (await invoke('get-all-listeners')).map((l: any) => l.id);
     });
 
-    test('create-user stores a salted scrypt hash, never the password', async () => {
+    test('create-user creates a user that can sign in; the hash is never exposed', async () => {
       const id = await invoke('create-user', { username: 'bob', password: 'bob-pass', passwordEnabled: true, guiEnabled: true });
       expect(typeof id).toBe('number');
       const bob = await invoke('get-user', 'bob');
-      expect(bob.password).toMatch(/^scrypt\$16384\$8\$1\$/);
-      expect(bob.password).not.toContain('bob-pass');
+      expect(bob.password).toBeUndefined(); // hashes never reach the renderer
       expect((await invoke('authenticate-user', 'bob', 'bob-pass')).success).toBe(true);
       // re-login as admin for the rest of the suite
       await invoke('logout');
-      await invoke('authenticate-user', 'admin', 'admin123');
+      await invoke('authenticate-user', 'admin', ADMIN_PW);
     });
 
     test('update-user replaces subscriptions, permissions and virtual paths', async () => {
@@ -269,7 +288,7 @@ describe('Electron main process (main.ts) with real backend', () => {
       await invoke('update-user', 'bob', { password: 'changed', guiEnabled: true }, [], [], []);
       expect((await invoke('authenticate-user', 'bob', 'changed')).success).toBe(true);
       await invoke('logout');
-      await invoke('authenticate-user', 'admin', 'admin123');
+      await invoke('authenticate-user', 'admin', ADMIN_PW);
     });
 
     test('update-user for an unknown user throws', async () => {
@@ -305,7 +324,7 @@ describe('Electron main process (main.ts) with real backend', () => {
       expect((await invoke('get-listener-status', sftpId)).running).toBe(true);
 
       const client = new SftpClient();
-      await client.connect({ host: '127.0.0.1', port, username: 'admin', password: 'admin123', readyTimeout: 5000 });
+      await client.connect({ host: '127.0.0.1', port, username: 'admin', password: ADMIN_PW, readyTimeout: 5000 });
       try {
         const sessions = await waitFor(async () => {
           const s = await invoke('get-active-sessions');
@@ -465,7 +484,7 @@ describe('Electron main process (main.ts) with real backend', () => {
       expect(visibleWindows('index.html')).toHaveLength(0);
       expect(visibleWindows('login.html')).toHaveLength(1);
 
-      await invoke('authenticate-user', 'admin', 'admin123');
+      await invoke('authenticate-user', 'admin', ADMIN_PW);
       expect(trays).toHaveLength(1);
       const recent = await invoke('get-recent-activities', undefined, 20);
       expect(recent.some((a: any) => a.action === 'GUI_LOGOUT')).toBe(true);

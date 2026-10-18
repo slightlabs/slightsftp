@@ -186,11 +186,14 @@
             75% { transform: translateX(5px); }
         }
 
-        .version {
-            text-align: center;
-            color: #999;
-            font-size: 12px;
-            margin-top: 20px;
+        .change-note {
+            background: #eef2ff;
+            color: #3730a3;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-size: 13px;
+            border-left: 4px solid #667eea;
         }
     </style>
 </head>
@@ -236,7 +239,18 @@
             </button>
         </form>
 
-        <div class="version">Version 1.0.0</div>
+        <form id="changePasswordForm" hidden>
+            <p class="change-note" id="changeNote">You must choose a new password before continuing.</p>
+            <div class="form-group">
+                <label for="newPassword">New password</label>
+                <input type="password" id="newPassword" name="newPassword" placeholder="At least 8 characters" autocomplete="new-password" required>
+            </div>
+            <div class="form-group">
+                <label for="confirmPassword">Confirm new password</label>
+                <input type="password" id="confirmPassword" name="confirmPassword" placeholder="Repeat the new password" autocomplete="new-password" required>
+            </div>
+            <button type="submit" class="btn-login" id="changePasswordBtn">Set Password &amp; Continue</button>
+        </form>
     </div>
 
     <script>
@@ -281,7 +295,9 @@
             try {
                 const result = await ipcRenderer.invoke('authenticate-user', username, password);
 
-                if (result.success) {
+                if (result.success && result.requirePasswordChange) {
+                    showChangePassword();
+                } else if (result.success) {
                     // Login successful, main window will open
                     window.close();
                 } else {
@@ -305,6 +321,46 @@
                 usernameInput.disabled = false;
                 passwordInput.disabled = false;
             }
+        });
+
+        // Forced password change (first login with the default password, or flagged by an admin)
+        const changeForm = document.getElementById('changePasswordForm');
+        const newPasswordInput = document.getElementById('newPassword');
+        const confirmPasswordInput = document.getElementById('confirmPassword');
+        const changeBtn = document.getElementById('changePasswordBtn');
+
+        function showChangePassword() {
+            loginForm.hidden = true;
+            changeForm.hidden = false;
+            newPasswordInput.focus();
+        }
+
+        changeForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const newPassword = newPasswordInput.value;
+
+            if (newPassword.length < 8) {
+                showError('The new password must be at least 8 characters');
+                return;
+            }
+            if (newPassword !== confirmPasswordInput.value) {
+                showError('The passwords do not match');
+                return;
+            }
+
+            changeBtn.disabled = true;
+            try {
+                const result = await ipcRenderer.invoke('set-first-login-password', newPassword);
+                if (result && result.success) {
+                    window.close();
+                    return;
+                }
+                showError((result && result.error) || 'Could not change the password');
+            } catch (error) {
+                showError('An error occurred. Please try again.');
+                console.error('Password change error:', error);
+            }
+            changeBtn.disabled = false;
         });
 
         // Handle Enter key

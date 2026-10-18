@@ -30,7 +30,7 @@ describe('Complete User Workflow Tests', () => {
     // Create initial admin user
     db.createUser({
       username: 'admin',
-      password: 'admin123',
+      password: 'Admin#2026',
       passwordEnabled: true,
       publicKey: '',
       guiEnabled: true
@@ -68,7 +68,7 @@ describe('Complete User Workflow Tests', () => {
       // Step 1: Login with default credentials
       const loginResponse = await request(app)
         .post('/api/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: 'Admin#2026' });
 
       expect(loginResponse.status).toBe(200);
       const setCookie = loginResponse.headers['set-cookie'];
@@ -106,7 +106,7 @@ describe('Complete User Workflow Tests', () => {
       // Step 1: Admin login
       const loginResponse = await request(app)
         .post('/api/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: 'Admin#2026' });
 
       const setCookie = loginResponse.headers['set-cookie'];
       sessionId = setCookie![0].split(';')[0].split('=')[1];
@@ -194,7 +194,7 @@ describe('Complete User Workflow Tests', () => {
       // Step 1: Admin login
       const loginResponse = await request(app)
         .post('/api/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: 'Admin#2026' });
 
       const setCookie = loginResponse.headers['set-cookie'];
       sessionId = setCookie![0].split(';')[0].split('=')[1];
@@ -246,7 +246,7 @@ describe('Complete User Workflow Tests', () => {
       // Step 1: Admin login
       const loginResponse = await request(app)
         .post('/api/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: 'Admin#2026' });
 
       const setCookie = loginResponse.headers['set-cookie'];
       sessionId = setCookie![0].split(';')[0].split('=')[1];
@@ -290,7 +290,7 @@ describe('Complete User Workflow Tests', () => {
       // Step 1: Admin login
       const loginResponse = await request(app)
         .post('/api/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: 'Admin#2026' });
 
       const setCookie = loginResponse.headers['set-cookie'];
       sessionId = setCookie![0].split(';')[0].split('=')[1];
@@ -331,7 +331,7 @@ describe('Complete User Workflow Tests', () => {
       // Step 1: Admin login
       const loginResponse = await request(app)
         .post('/api/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: 'Admin#2026' });
 
       const setCookie = loginResponse.headers['set-cookie'];
       sessionId = setCookie![0].split(';')[0].split('=')[1];
@@ -367,7 +367,7 @@ describe('Complete User Workflow Tests', () => {
     test('should persist and update listener permissions for a subscribed user', async () => {
       const loginResponse = await request(app)
         .post('/api/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: 'Admin#2026' });
 
       expect(loginResponse.status).toBe(200);
       const setCookie = loginResponse.headers['set-cookie'];

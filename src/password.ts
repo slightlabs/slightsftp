@@ -57,3 +57,26 @@ export function verifyPasswordHash(stored: string | null | undefined, password: 
   const outdated = params.N !== DEFAULT_PARAMS.N || params.r !== DEFAULT_PARAMS.r || params.p !== DEFAULT_PARAMS.p;
   return { valid, needsRehash: valid && outdated };
 }
+
+/** The well-known password of the seeded `admin` account. */
+export const DEFAULT_ADMIN_PASSWORD = 'admin123';
+export const MIN_PASSWORD_LENGTH = 8;
+
+/** Returns an error message when `password` is not acceptable as a new password. */
+export function validateNewPassword(password: unknown): string | null {
+  if (typeof password !== 'string' || password.length < MIN_PASSWORD_LENGTH) {
+    return `The new password must be at least ${MIN_PASSWORD_LENGTH} characters`;
+  }
+  if (password === DEFAULT_ADMIN_PASSWORD) {
+    return 'Choose a password other than the default one';
+  }
+  return null;
+}
+
+/**
+ * A user must choose a new password when an admin flagged the account, or when
+ * they just signed in with the published default password.
+ */
+export function requiresPasswordChange(user: { mustChangePassword?: boolean }, passwordUsed: string): boolean {
+  return !!user.mustChangePassword || passwordUsed === DEFAULT_ADMIN_PASSWORD;
+}

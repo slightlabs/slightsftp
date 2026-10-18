@@ -30,7 +30,7 @@ describe('Web GUI End-to-End Workflows', () => {
     // Create initial admin user
     db.createUser({
       username: 'admin',
-      password: 'admin123',
+      password: 'Admin#2026',
       passwordEnabled: true,
       publicKey: '',
       guiEnabled: true
@@ -67,7 +67,7 @@ describe('Web GUI End-to-End Workflows', () => {
     test('should login with valid credentials', async () => {
       const response = await request(app)
         .post('/api/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: 'Admin#2026' });
 
       expect(response.status).toBe(200);
       expect(response.body.success).toBe(true);
@@ -118,7 +118,7 @@ describe('Web GUI End-to-End Workflows', () => {
     beforeAll(async () => {
       const loginResponse = await request(app)
         .post('/api/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: 'Admin#2026' });
 
       const setCookie = loginResponse.headers['set-cookie'];
       sessionId = setCookie![0].split(';')[0].split('=')[1];
@@ -195,7 +195,7 @@ describe('Web GUI End-to-End Workflows', () => {
     beforeAll(async () => {
       const loginResponse = await request(app)
         .post('/api/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: 'Admin#2026' });
 
       const setCookie = loginResponse.headers['set-cookie'];
       sessionId = setCookie![0].split(';')[0].split('=')[1];
@@ -300,7 +300,7 @@ describe('Web GUI End-to-End Workflows', () => {
 
       const loginResponse = await request(app)
         .post('/api/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: 'Admin#2026' });
 
       const setCookie = loginResponse.headers['set-cookie'];
       sessionId = setCookie![0].split(';')[0].split('=')[1];
@@ -361,7 +361,7 @@ describe('Web GUI End-to-End Workflows', () => {
     beforeAll(async () => {
       const loginResponse = await request(app)
         .post('/api/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: 'Admin#2026' });
 
       const setCookie = loginResponse.headers['set-cookie'];
       sessionId = setCookie![0].split(';')[0].split('=')[1];
@@ -404,7 +404,7 @@ describe('Web GUI End-to-End Workflows', () => {
     beforeAll(async () => {
       const loginResponse = await request(app)
         .post('/api/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: 'Admin#2026' });
 
       const setCookie = loginResponse.headers['set-cookie'];
       sessionId = setCookie![0].split(';')[0].split('=')[1];
@@ -458,7 +458,7 @@ describe('Web GUI End-to-End Workflows', () => {
 
       const loginResponse = await request(app)
         .post('/api/login')
-        .send({ username: 'admin', password: 'admin123' });
+        .send({ username: 'admin', password: 'Admin#2026' });
 
       const setCookie = loginResponse.headers['set-cookie'];
       sessionId = setCookie![0].split(';')[0].split('=')[1];

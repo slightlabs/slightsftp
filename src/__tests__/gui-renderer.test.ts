@@ -323,8 +323,9 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       setField(form, 'username', 'dave');
       setField(form, 'password', 'p@ss');
       setField(form, 'guiEnabled', true);
+      setField(form, 'mustChangePassword', true);
       await submit(form);
-      expect(lastCall('create-user')).toEqual([{ username: 'dave', password: 'p@ss', passwordEnabled: true, publicKey: undefined, guiEnabled: true }]);
+      expect(lastCall('create-user')).toEqual([{ username: 'dave', password: 'p@ss', passwordEnabled: true, publicKey: undefined, guiEnabled: true, mustChangePassword: true }]);
       expect(row('dave')).toBeTruthy();
     });
 
@@ -398,7 +399,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
 
         const [username, updates, listeners, vps, perms] = lastCall('update-user')!;
         expect(username).toBe('carol');
-        expect(updates).toEqual({ password: 'n3w', passwordEnabled: true, publicKey: 'AAAAB3Nza', guiEnabled: false });
+        expect(updates).toEqual({ password: 'n3w', passwordEnabled: true, publicKey: 'AAAAB3Nza', guiEnabled: false, mustChangePassword: false });
         expect(listeners).toEqual([1, 2]);
 
         const p1 = perms.find((p: any) => p.listenerId === 1);

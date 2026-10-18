@@ -42,7 +42,7 @@ describe('IPC Communication Integration Tests', () => {
     // Create test data
     db.createUser({
       username: 'admin',
-      password: 'admin123',
+      password: 'Admin#2026',
       passwordEnabled: true,
       guiEnabled: true
     });
@@ -167,9 +167,9 @@ describe('IPC Communication Integration Tests', () => {
         user: { username: 'admin', guiEnabled: true }
       });
 
-      const result = await mockIpcRenderer.invoke('authenticate-user', 'admin', 'admin123');
+      const result = await mockIpcRenderer.invoke('authenticate-user', 'admin', 'Admin#2026');
       
-      expect(mockIpcRenderer.invoke).toHaveBeenCalledWith('authenticate-user', 'admin', 'admin123');
+      expect(mockIpcRenderer.invoke).toHaveBeenCalledWith('authenticate-user', 'admin', 'Admin#2026');
       expect(result.success).toBe(true);
       expect(result.user.username).toBe('admin');
     });

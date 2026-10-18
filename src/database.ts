@@ -127,10 +127,25 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_activities_timestamp ON server_activities(timestamp);
     `);
 
+    this.migrate();
+
     // Set default settings
     this.db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('logRetentionDays', '30')`);
 
     this.db.run('PRAGMA foreign_keys = ON');
+  }
+
+  /** Add columns introduced after a table was first created. */
+  private migrate(): void {
+    if (!this.db) return;
+    const addColumn = (table: string, column: string, definition: string) => {
+      const info = this.db!.exec(`PRAGMA table_info(${table})`);
+      const columns = info.length ? info[0].values.map(row => row[1]) : [];
+      if (!columns.includes(column)) {
+        this.db!.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      }
+    };
+    addColumn('users', 'mustChangePassword', 'INTEGER NOT NULL DEFAULT 0');
   }
 
   // User operations
@@ -139,14 +154,15 @@ export class DatabaseManager {
     
     const hashedPassword = user.password ? this.hashPassword(user.password) : null;
     this.db.run(`
-      INSERT INTO users (username, password, passwordEnabled, publicKey, guiEnabled)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO users (username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword)
+      VALUES (?, ?, ?, ?, ?, ?)
     `, [
       user.username,
       hashedPassword,
       user.passwordEnabled ? 1 : 0,
       user.publicKey || null,
-      user.guiEnabled ? 1 : 0
+      user.guiEnabled ? 1 : 0,
+      user.mustChangePassword ? 1 : 0
     ]);
     
     const result = this.db.exec('SELECT last_insert_rowid() as id');
@@ -193,6 +209,10 @@ export class DatabaseManager {
     if (user.guiEnabled !== undefined) {
       updates.push('guiEnabled = ?');
       values.push(user.guiEnabled ? 1 : 0);
+    }
+    if (user.mustChangePassword !== undefined) {
+      updates.push('mustChangePassword = ?');
+      values.push(user.mustChangePassword ? 1 : 0);
     }
 
     if (updates.length === 0) return;
@@ -701,6 +721,7 @@ export class DatabaseManager {
       passwordEnabled: obj.passwordEnabled === 1,
       publicKey: obj.publicKey,
       guiEnabled: obj.guiEnabled === 1,
+      mustChangePassword: obj.mustChangePassword === 1,
       createdAt: obj.createdAt
     };
   }

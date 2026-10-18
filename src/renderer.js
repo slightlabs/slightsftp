@@ -547,6 +547,7 @@ async function editUser(username) {
   fields.namedItem('passwordEnabled').checked = user.passwordEnabled;
   fields.namedItem('publicKey').value = user.publicKey || '';
   fields.namedItem('guiEnabled').checked = user.guiEnabled;
+  fields.namedItem('mustChangePassword').checked = !!user.mustChangePassword;
   
   // Populate listeners with permissions
   let listenersHtml = '';
@@ -1152,7 +1153,8 @@ document.getElementById('addUserForm').addEventListener('submit', async (e) => {
     password: formData.get('password') || undefined,
     passwordEnabled: formData.get('passwordEnabled') === 'on',
     publicKey: formData.get('publicKey') || undefined,
-    guiEnabled: formData.get('guiEnabled') === 'on'
+    guiEnabled: formData.get('guiEnabled') === 'on',
+    mustChangePassword: formData.get('mustChangePassword') === 'on'
   };
   
   try {
@@ -1201,7 +1203,8 @@ document.getElementById('editUserForm').addEventListener('submit', async (e) => 
     password: formData.get('password') || undefined,
     passwordEnabled: formData.get('passwordEnabled') === 'on',
     publicKey: formData.get('publicKey') || undefined,
-    guiEnabled: formData.get('guiEnabled') === 'on'
+    guiEnabled: formData.get('guiEnabled') === 'on',
+    mustChangePassword: formData.get('mustChangePassword') === 'on'
   };
   
   // Get selected listeners and their permissions

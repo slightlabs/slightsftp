@@ -6,6 +6,7 @@ import { ServerManager } from './server-manager';
 import { WebServer } from './web-server';
 import logger from './logger';
 import { resolveUserPath } from './path-utils';
+import { requiresPasswordChange, validateNewPassword } from './password';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -16,6 +17,7 @@ let webServer: WebServer | null = null;
 let isQuitting = false;
 let isLoggingOut = false;
 let authenticatedUser: any = null;
+let pendingPasswordChangeUser: any = null;
 
 // Get application directories
 function getAppDirectories() {
@@ -292,7 +294,8 @@ async function initializeDatabase(): Promise<void> {
       username: 'admin',
       password: 'admin123',
       passwordEnabled: true,
-      guiEnabled: true
+      guiEnabled: true,
+      mustChangePassword: true
     });
     
     // Create default SFTP listener
@@ -412,6 +415,41 @@ function setupServerManager(): void {
   serverManager.startAllEnabledListeners();
 }
 
+/** Successful GUI sign-in: swap the login window for the dashboard. */
+function completeLogin(user: any): void {
+  authenticatedUser = user;
+  pendingPasswordChangeUser = null;
+  logger.info('Authentication successful! User:', { username: user.username });
+
+  db.logActivity({
+    listenerId: null,
+    username: user.username,
+    action: 'GUI_LOGIN',
+    path: '/',
+    success: true
+  });
+
+  // destroy() rather than close(): the login window's close handler only hides it,
+  // which would leak a hidden window
+  if (loginWindow) {
+    loginWindow.destroy();
+    loginWindow = null;
+  }
+
+  // Never stack a second dashboard on top of an existing one
+  if (mainWindow) {
+    mainWindow.destroy();
+    mainWindow = null;
+  }
+
+  logger.info('Creating main window...');
+  createWindow();
+  if (!tray) {
+    createTray();
+  }
+  updateTrayMenu();
+}
+
 function setupIpcHandlers(): void {
   // Authentication handler
   ipcMain.handle('authenticate-user', async (event, username, password) => {
@@ -427,47 +465,53 @@ function setupIpcHandlers(): void {
         return { success: false, error: 'Invalid username or password' };
       }
 
-      // Authentication successful
-      authenticatedUser = user;
-      logger.info('Authentication successful! User:', { username: authenticatedUser.username });
-      
-      // Update tray menu to enable dashboard option
-      updateTrayMenu();
-      
-      // Log successful login
-      db.logActivity({
-        listenerId: null,
-        username: user.username,
-        action: 'GUI_LOGIN',
-        path: '/',
-        success: true
-      });
-      
-      // Close login window and open main window. destroy() rather than close():
-      // the login window's close handler only hides it, which would leak a hidden window.
-      if (loginWindow) {
-        loginWindow.destroy();
-        loginWindow = null;
+      // First login with the default password, or the account was flagged by an admin
+      if (requiresPasswordChange(user, password)) {
+        pendingPasswordChangeUser = user;
+        db.logActivity({
+          listenerId: null,
+          username: user.username,
+          action: 'GUI_PASSWORD_CHANGE_REQUIRED',
+          path: '/',
+          success: true
+        });
+        return { success: true, requirePasswordChange: true };
       }
-      
-      // Never stack a second dashboard on top of an existing one
-      if (mainWindow) {
-        mainWindow.destroy();
-        mainWindow = null;
-      }
-      
-      logger.info('Creating main window...');
-      createWindow();
-      if (!tray) {
-        createTray();
-      }
-      updateTrayMenu();
-      
+
+      completeLogin(user);
       return { success: true, user: { username: user.username, id: user.id } };
     } catch (error) {
       logger.error('Authentication error:', error);
       return { success: false, error: 'An error occurred during authentication' };
     }
+  });
+
+  // Forced password change after authenticate-user returned requirePasswordChange
+  ipcMain.handle('set-first-login-password', async (event, newPassword) => {
+    const user = pendingPasswordChangeUser;
+    if (!user) {
+      return { success: false, error: 'No password change is pending' };
+    }
+
+    const problem = validateNewPassword(newPassword);
+    if (problem) {
+      return { success: false, error: problem };
+    }
+    if (db.checkPassword(user.username, newPassword)) {
+      return { success: false, error: 'The new password must be different from the current one' };
+    }
+
+    db.updateUser(user.username, { password: newPassword, mustChangePassword: false });
+    db.logActivity({
+      listenerId: null,
+      username: user.username,
+      action: 'GUI_PASSWORD_CHANGED',
+      path: '/',
+      success: true
+    });
+
+    completeLogin(db.getUser(user.username));
+    return { success: true };
   });
 
   // Get authenticated user info
@@ -496,6 +540,7 @@ function setupIpcHandlers(): void {
     });
     
     authenticatedUser = null;
+    pendingPasswordChangeUser = null;
     isLoggingOut = true;
     
     // Update tray menu to disable dashboard option
@@ -532,12 +577,19 @@ function setupIpcHandlers(): void {
     return userId;
   });
   
+  // Password hashes never leave the main process
+  const withoutPassword = (user: any) => {
+    if (!user) return user;
+    const { password: _hash, ...rest } = user;
+    return rest;
+  };
+
   ipcMain.handle('get-user', async (event, username) => {
-    return db.getUser(username);
+    return withoutPassword(db.getUser(username));
   });
   
   ipcMain.handle('get-all-users', async () => {
-    return db.getAllUsers();
+    return db.getAllUsers().map(withoutPassword);
   });
   
   ipcMain.handle('update-user', async (event, username, updates, listeners, virtualPaths, permissions) => {

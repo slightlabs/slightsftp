@@ -27,7 +27,8 @@ console.log('🚀 Starting SLightSFTP Server with Web GUI...\n');
         password: 'admin123',
         passwordEnabled: true,
         publicKey: '',
-        guiEnabled: true
+        guiEnabled: true,
+        mustChangePassword: true
       });
       logger.info('👤 Created default admin user (username: admin, password: admin123)');
     } else {
