@@ -892,6 +892,11 @@
           <label>Allowed IP addresses (optional)</label>
           <input type="text" name="allowedIps" placeholder="anywhere — or e.g. 203.0.113.7, 10.0.0.0/8">
         </div>
+        <div class="form-group">
+          <label>Storage quota in MB (optional)</label>
+          <input type="number" name="quotaMb" min="1" step="any" placeholder="unlimited">
+          <small class="quota-usage" style="color: #666;"></small>
+        </div>
         <button type="submit" class="btn btn-primary">Create User</button>
       </form>
     </div>
@@ -933,6 +938,11 @@
         <div class="form-group">
           <label>Allowed IP addresses (optional)</label>
           <input type="text" name="allowedIps" placeholder="anywhere — or e.g. 203.0.113.7, 10.0.0.0/8">
+        </div>
+        <div class="form-group">
+          <label>Storage quota in MB (optional)</label>
+          <input type="number" name="quotaMb" min="1" step="any" placeholder="unlimited">
+          <small class="quota-usage" style="color: #666;"></small>
         </div>
         <div class="form-group checkbox-group">
           <input type="checkbox" name="totpEnabled" disabled>

@@ -859,6 +859,12 @@ async function editUser(username) {
   fields.namedItem('mustChangePassword').checked = !!user.mustChangePassword;
   fields.namedItem('portalEnabled').checked = !!user.portalEnabled;
   fields.namedItem('allowedIps').value = user.allowedIps || '';
+  fields.namedItem('quotaMb').value = user.quotaBytes ? Math.round(user.quotaBytes / 1048576 * 100) / 100 : '';
+  const usageLabel = document.querySelector('#editUserForm .quota-usage');
+  usageLabel.textContent = 'Checking usage…';
+  ipcRenderer.invoke('get-user-usage', username)
+    .then(u => { usageLabel.textContent = `Currently using ${formatBytes(u.usedBytes)}${u.quotaBytes ? ` of ${formatBytes(u.quotaBytes)}` : ''}`; })
+    .catch(() => { usageLabel.textContent = ''; });
   // 2FA can only be reset by an admin, never switched on for someone
   fields.namedItem('totpEnabled').checked = !!user.totpEnabled;
   fields.namedItem('totpEnabled').disabled = !user.totpEnabled;
@@ -1479,7 +1485,8 @@ document.getElementById('addUserForm').addEventListener('submit', async (e) => {
     guiEnabled: formData.get('guiEnabled') === 'on',
     mustChangePassword: formData.get('mustChangePassword') === 'on',
     portalEnabled: formData.get('portalEnabled') === 'on',
-    allowedIps: (formData.get('allowedIps') || '').trim()
+    allowedIps: (formData.get('allowedIps') || '').trim(),
+    quotaMb: (formData.get('quotaMb') || '').trim()
   };
   
   try {
@@ -1531,7 +1538,8 @@ document.getElementById('editUserForm').addEventListener('submit', async (e) => 
     guiEnabled: formData.get('guiEnabled') === 'on',
     mustChangePassword: formData.get('mustChangePassword') === 'on',
     portalEnabled: formData.get('portalEnabled') === 'on',
-    allowedIps: (formData.get('allowedIps') || '').trim()
+    allowedIps: (formData.get('allowedIps') || '').trim(),
+    quotaMb: (formData.get('quotaMb') || '').trim()
   };
   
   if (currentEditingUser && currentEditingUser.totpEnabled && !e.target.elements.namedItem('totpEnabled').checked) {

@@ -17,6 +17,7 @@ import { hashPassword, verifyPasswordHash } from './password';
 import { Share, ShareType, User } from './types';
 import logger from './logger';
 import { uploadChecksum } from './checksum';
+import { QuotaExceededError, getQuotaManager, quotaLimiter } from './quota';
 import { getLoginGuard, TOO_MANY_ATTEMPTS } from './login-guard';
 
 const UNLOCK_TTL_MS = 60 * 60 * 1000;
@@ -243,11 +244,29 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
 
     const finalPath = path.join(ctx.resolved.localPath, finalName);
     const temp = path.join(ctx.resolved.localPath, `.${finalName}.${crypto.randomBytes(6).toString('hex')}.part`);
+    // Uploads count against the link owner's storage quota
+    const quota = getQuotaManager(db);
+    if (ctx.owner.quotaBytes) {
+      try {
+        await quota.assertRoom(ctx.owner, Number(req.headers['content-length'] || 0));
+      } catch (err) {
+        if (err instanceof QuotaExceededError) throw new ShareError(413, 'This folder is full');
+        throw err;
+      }
+    }
     try {
-      await pipeline(req, fs.createWriteStream(temp, { flags: 'wx' }));
+      if (ctx.owner.quotaBytes) {
+        await pipeline(req, quotaLimiter(quota, ctx.owner), fs.createWriteStream(temp, { flags: 'wx' }));
+      } else {
+        await pipeline(req, fs.createWriteStream(temp, { flags: 'wx' }));
+      }
       await fs.promises.rename(temp, finalPath);
     } catch (err) {
       await fs.promises.rm(temp, { force: true });
+      if (err instanceof QuotaExceededError) {
+        quota.invalidate(ctx.owner.username);
+        throw new ShareError(413, 'This folder is full');
+      }
       throw err;
     }
     options.logActivity(ctx.share.owner, 'SHARE_UPLOAD', path.posix.join(ctx.share.virtualPath, finalName), true, {

@@ -15,6 +15,7 @@ import { beginTotpSetup, checkSecondFactor, confirmTotpSetup, disableTotp, publi
 import { cleanAuthorizedKeys } from './authorized-keys';
 import { SyslogForwarder, formatSyslog, readSyslogSettings, saveSyslogSettings } from './syslog';
 import { checksumsEnabled } from './checksum';
+import { getQuotaManager, quotaFromMegabytes } from './quota';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -714,7 +715,8 @@ function setupIpcHandlers(): void {
 
   // User operations
   ipcMain.handle('create-user', async (event, user) => {
-    const userId = db.createUser({ ...user, allowedIps: cleanAllowedIps(user?.allowedIps), publicKey: cleanAuthorizedKeys(user?.publicKey) });
+    const { quotaMb, ...fields } = user || {};
+    const userId = db.createUser({ ...fields, allowedIps: cleanAllowedIps(fields.allowedIps), publicKey: cleanAuthorizedKeys(fields.publicKey), quotaBytes: quotaFromMegabytes(quotaMb) });
     
     // Log user creation
     db.logActivity({
@@ -749,6 +751,11 @@ function setupIpcHandlers(): void {
     }
     if (updates && updates.publicKey !== undefined) {
       updates = { ...updates, publicKey: cleanAuthorizedKeys(updates.publicKey) };
+    }
+    if (updates && updates.quotaMb !== undefined) {
+      const { quotaMb, ...rest } = updates;
+      updates = { ...rest, quotaBytes: quotaFromMegabytes(quotaMb) };
+      getQuotaManager(db).invalidate(username);
     }
     if (updates) {
       // Admins may reset (turn off) two-factor sign-in, never set secrets or turn it on
@@ -785,6 +792,12 @@ function setupIpcHandlers(): void {
     });
   });
   
+  ipcMain.handle('get-user-usage', async (event, username) => {
+    const user = db.getUser(username);
+    if (!user) throw new Error('User not found');
+    return getQuotaManager(db).usage(user);
+  });
+
   ipcMain.handle('get-user-listeners', async (event, userId) => {
     return db.getUserListeners(userId);
   });

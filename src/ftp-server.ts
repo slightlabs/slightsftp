@@ -7,6 +7,7 @@ import { EventEmitter } from 'events';
 import logger from './logger';
 import { getServerCertificate } from './tls';
 import { uploadChecksum } from './checksum';
+import { QuotaExceededError, QuotaManager, getQuotaManager } from './quota';
 import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { SessionTransferStats, TransferDirection, TransferHandle, TransferTracker } from './transfers';
 
@@ -253,6 +254,21 @@ function countBytes(stream: any, handle: TransferHandle | undefined, method: 'wr
   stream.once('error', end);
 }
 
+/** Abort an upload stream once it would take the user over their storage quota. */
+function enforceQuota(stream: any, user: User, quota: QuotaManager, onExceeded: () => void): void {
+  const original = stream.write.bind(stream);
+  stream.write = (chunk: any, ...rest: any[]) => {
+    const size = chunk && typeof chunk.length === 'number' ? chunk.length : 0;
+    if (quota.wouldExceed(user, size)) {
+      onExceeded();
+      stream.destroy(new QuotaExceededError(user.quotaBytes!));
+      return false;
+    }
+    quota.adjust(user.username, size);
+    return original(chunk, ...rest);
+  };
+}
+
 /** Map a local file path back to the user's virtual path (for activity entries). */
 export function toVirtualPath(virtualPaths: Array<{ virtualPath: string; localPath: string }>, localPath: string): string {
   const resolved = path.resolve(localPath);
@@ -474,9 +490,18 @@ export class CustomFileSystem extends FileSystem {
     const realPath = this.mapPath(fileName);
     this.logCallback('WRITE', fileName, true);
 
-    return new Promise((resolve, reject) => {
+    const quota = getQuotaManager(this.db);
+    const hasQuota = !!this.user.quotaBytes;
+    const prepare = hasQuota ? quota.usage(this.user).catch(() => undefined) : Promise.resolve();
+
+    return prepare.then(() => new Promise((resolve, reject) => {
+      // an overwrite (not append) frees the old file's space
+      if (hasQuota && !options?.append && fs.existsSync(realPath)) {
+        quota.adjust(this.user.username, -fs.statSync(realPath).size);
+      }
       const writeStream = fs.createWriteStream(realPath, options);
       countBytes(writeStream, this.track?.(fileName, 'upload'), 'write');
+      if (hasQuota) enforceQuota(writeStream, this.user, quota, () => this.logCallback('WRITE_DENIED (quota exceeded)', fileName, false));
       writeStream.on('error', (err) => {
         this.logCallback('WRITE_FAILED', fileName, false);
         reject(err);
@@ -485,7 +510,7 @@ export class CustomFileSystem extends FileSystem {
         resolve({ stream: writeStream });
       });
       resolve({ stream: writeStream });
-    });
+    }));
   }
 
   read(fileName: string, options?: any): Promise<any> {
@@ -509,6 +534,7 @@ export class CustomFileSystem extends FileSystem {
   }
 
   delete(fileName: string): Promise<any> {
+    getQuotaManager(this.db).invalidate(this.user.username);
     if (!this.checkVpPermission('canDelete', fileName)) {
       this.logCallback('DELETE_DENIED', fileName, false);
       return Promise.reject(new Error('Permission denied'));

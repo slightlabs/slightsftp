@@ -16,6 +16,8 @@ export interface User {
   totpSecret?: string | null;
   /** secret being set up, until the first code is confirmed */
   totpPendingSecret?: string | null;
+  /** storage limit in bytes across the user's folders (null = unlimited) */
+  quotaBytes?: number | null;
   createdAt?: string;
 }
 

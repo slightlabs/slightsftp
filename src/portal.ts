@@ -19,6 +19,7 @@ import QRCode from 'qrcode';
 import { createShare, describeShare, shareUrl, ShareError } from './shares';
 import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { beginTotpSetup, checkSecondFactor, confirmTotpSetup, disableTotp } from './two-factor';
+import { QuotaExceededError, getQuotaManager, quotaLimiter } from './quota';
 
 export const PORTAL_COOKIE = 'portalSession';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -159,15 +160,17 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
 
   router.use(requireUser);
 
-  router.get('/me', (req, res) => {
+  router.get('/me', handle(async (req, res) => {
     const user: User = (req as any).portalUser;
+    const usage = user.quotaBytes ? await getQuotaManager(db).usage(user) : null;
     res.json({
       username: user.username,
       requirePasswordChange: (req as any).portalSession.mustChangePassword,
       totpEnabled: !!user.totpEnabled,
       roots: db.getVirtualPaths(user.id!).map(vp => vp.virtualPath),
+      ...(usage ? { usedBytes: usage.usedBytes, quotaBytes: usage.quotaBytes } : {}),
     });
-  });
+  }));
 
   router.post('/change-password', handle((req, res) => {
     const user: User = (req as any).portalUser;
@@ -251,13 +254,35 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     if (!(await fs.promises.stat(parent).catch(() => null))?.isDirectory()) throw new HttpError(404, 'Folder not found');
     if ((await fs.promises.stat(target.localPath).catch(() => null))?.isDirectory()) throw new HttpError(409, 'A folder with that name exists');
 
+    // Storage quota: check the declared size first, then enforce while streaming
+    const quota = getQuotaManager(db);
+    const replaced = (await fs.promises.stat(target.localPath).catch(() => null))?.size || 0;
+    const declared = Number(req.headers['content-length'] || 0);
+    if (user.quotaBytes) {
+      try {
+        await quota.assertRoom(user, declared - replaced);
+      } catch (err) {
+        if (err instanceof QuotaExceededError) throw new HttpError(413, err.message);
+        throw err;
+      }
+    }
+
     // Write to a temp file first so an aborted upload never leaves a truncated file
     const temp = path.join(parent, `.${path.basename(target.localPath)}.${crypto.randomBytes(6).toString('hex')}.part`);
     try {
-      await pipeline(req, fs.createWriteStream(temp, { flags: 'wx' }));
+      if (user.quotaBytes) {
+        await pipeline(req, quotaLimiter(quota, user, replaced), fs.createWriteStream(temp, { flags: 'wx' }));
+      } else {
+        await pipeline(req, fs.createWriteStream(temp, { flags: 'wx' }));
+      }
       await fs.promises.rename(temp, target.localPath);
     } catch (err) {
       await fs.promises.rm(temp, { force: true });
+      if (err instanceof QuotaExceededError) {
+        quota.invalidate(user.username);
+        options.logActivity(user.username, 'PORTAL_UPLOAD_DENIED (quota exceeded)', target.virtual, false);
+        throw new HttpError(413, err.message);
+      }
       throw err;
     }
     const size = (await fs.promises.stat(target.localPath)).size;
@@ -293,6 +318,7 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     } else {
       await fs.promises.unlink(target.localPath);
     }
+    getQuotaManager(db).invalidate(user.username);
     options.logActivity(user.username, 'PORTAL_DELETE', target.virtual, true);
     res.json({ success: true });
   }));

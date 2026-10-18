@@ -195,6 +195,7 @@ export class DatabaseManager {
     addColumn('users', 'totpSecret', 'TEXT');
     addColumn('users', 'totpPendingSecret', 'TEXT');
     addColumn('server_activities', 'checksum', 'TEXT');
+    addColumn('users', 'quotaBytes', 'INTEGER');
   }
 
   // User operations
@@ -203,8 +204,8 @@ export class DatabaseManager {
     
     const hashedPassword = user.password ? this.hashPassword(user.password) : null;
     this.db.run(`
-      INSERT INTO users (username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps, quotaBytes)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       user.username,
       hashedPassword,
@@ -213,7 +214,8 @@ export class DatabaseManager {
       user.guiEnabled ? 1 : 0,
       user.mustChangePassword ? 1 : 0,
       user.portalEnabled ? 1 : 0,
-      user.allowedIps || null
+      user.allowedIps || null,
+      user.quotaBytes || null
     ]);
     
     const result = this.db.exec('SELECT last_insert_rowid() as id');
@@ -272,6 +274,10 @@ export class DatabaseManager {
     if (user.allowedIps !== undefined) {
       updates.push('allowedIps = ?');
       values.push(user.allowedIps || null);
+    }
+    if (user.quotaBytes !== undefined) {
+      updates.push('quotaBytes = ?');
+      values.push(user.quotaBytes || null);
     }
     if (user.totpPendingSecret !== undefined) {
       updates.push('totpPendingSecret = ?');
@@ -957,6 +963,7 @@ export class DatabaseManager {
       totpEnabled: obj.totpEnabled === 1,
       totpSecret: obj.totpSecret || null,
       totpPendingSecret: obj.totpPendingSecret || null,
+      quotaBytes: obj.quotaBytes || null,
       createdAt: obj.createdAt
     };
   }

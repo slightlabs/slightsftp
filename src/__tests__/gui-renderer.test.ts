@@ -105,6 +105,7 @@ const backend: Record<string, Handler> = {
   'update-user': () => undefined,
   'delete-user': (u: string) => { model.users = model.users.filter(x => x.username !== u); },
   'get-user-listeners': (id: number) => model.userListeners[id] || [],
+  'get-user-usage': () => ({ usedBytes: 5 * 1024 * 1024, quotaBytes: 10 * 1024 * 1024 }),
   'get-virtual-paths': (id: number) => (model.virtualPaths[id] || []).map(v => ({ ...v })),
   'get-permission': (u: number, l: number) => model.permissions[`${u}:${l}`],
   'select-directory': () => '/picked/folder',
@@ -396,7 +397,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       setField(form, 'guiEnabled', true);
       setField(form, 'mustChangePassword', true);
       await submit(form);
-      expect(lastCall('create-user')).toEqual([{ username: 'dave', password: 'p@ss', passwordEnabled: true, publicKey: undefined, guiEnabled: true, mustChangePassword: true, portalEnabled: false, allowedIps: '' }]);
+      expect(lastCall('create-user')).toEqual([{ username: 'dave', password: 'p@ss', passwordEnabled: true, publicKey: undefined, guiEnabled: true, mustChangePassword: true, portalEnabled: false, allowedIps: '', quotaMb: '' }]);
       expect(row('dave')).toBeTruthy();
     });
 
@@ -427,6 +428,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
         expect($<HTMLInputElement>('#perm-1-canCreate').checked).toBe(true);
         expect($<HTMLInputElement>('#perm-1-canDelete').checked).toBe(false);
         expect($('#virtualPathsList').textContent).toContain('/srv/carol');
+        expect($('#editUserForm .quota-usage').textContent).toBe('Currently using 5 MB of 10 MB');
       });
 
       test('ticking a listener reveals its permission grid', () => {
@@ -470,7 +472,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
 
         const [username, updates, listeners, vps, perms] = lastCall('update-user')!;
         expect(username).toBe('carol');
-        expect(updates).toEqual({ password: 'n3w', passwordEnabled: true, publicKey: 'AAAAB3Nza', guiEnabled: false, mustChangePassword: false, portalEnabled: false, allowedIps: '' });
+        expect(updates).toEqual({ password: 'n3w', passwordEnabled: true, publicKey: 'AAAAB3Nza', guiEnabled: false, mustChangePassword: false, portalEnabled: false, allowedIps: '', quotaMb: '' });
         expect(listeners).toEqual([1, 2]);
 
         const p1 = perms.find((p: any) => p.listenerId === 1);

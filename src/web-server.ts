@@ -21,6 +21,7 @@ import { beginTotpSetup, checkSecondFactor, confirmTotpSetup, disableTotp, publi
 import { cleanAuthorizedKeys } from './authorized-keys';
 import { SyslogForwarder, formatSyslog, readSyslogSettings, saveSyslogSettings } from './syslog';
 import { checksumsEnabled } from './checksum';
+import { getQuotaManager, quotaFromMegabytes } from './quota';
 
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
@@ -673,6 +674,15 @@ export class WebServer {
       res.json(publicUser(user));
     });
 
+    this.app.get('/api/users/:username/usage', async (req: Request, res: Response) => {
+      const user = this.db.getUser(req.params.username);
+      if (!user) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+      res.json(await getQuotaManager(this.db).usage(user));
+    });
+
     this.app.get('/api/users/id/:userId/listeners', (req: Request, res: Response) => {
       const userId = parseInt(req.params.userId);
       const listenerIds = this.db.getUserListeners(userId);
@@ -682,7 +692,7 @@ export class WebServer {
     this.app.post('/api/users', (req: Request, res: Response) => {
       try {
         const session = (req as any).session as WebSession;
-        const { username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps } = req.body;
+        const { username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps, quotaMb } = req.body;
 
         // DatabaseManager.createUser hashes the password itself
         const user: User = {
@@ -693,7 +703,8 @@ export class WebServer {
           guiEnabled,
           mustChangePassword: !!mustChangePassword,
           portalEnabled: !!portalEnabled,
-          allowedIps: cleanAllowedIps(allowedIps)
+          allowedIps: cleanAllowedIps(allowedIps),
+          quotaBytes: quotaFromMegabytes(quotaMb)
         };
         
         const id = this.db.createUser(user);
@@ -723,6 +734,10 @@ export class WebServer {
         const updates: any = { passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled };
         if (allowedIps !== undefined) updates.allowedIps = cleanAllowedIps(allowedIps);
         if (publicKey !== undefined) updates.publicKey = cleanAuthorizedKeys(publicKey);
+        if (req.body.quotaMb !== undefined) {
+          updates.quotaBytes = quotaFromMegabytes(req.body.quotaMb);
+          getQuotaManager(this.db).invalidate(username);
+        }
         // Admins can reset (turn off) a user's two-factor sign-in, never turn it on for them
         if (req.body.totpEnabled === false) updates.totpEnabled = false;
         if (password) {
@@ -1368,6 +1383,7 @@ export class WebServer {
               if (!response.ok) throw new Error('Failed to get listener');
               return response.json();
             },
+            'get-user-usage': (username) => api('GET', \`/api/users/\${encodeURIComponent(username)}/usage\`),
             'get-user': async (username) => {
               const response = await fetch(\`/api/users/\${username}\`);
               if (!response.ok) throw new Error('Failed to get user');

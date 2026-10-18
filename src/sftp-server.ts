@@ -8,6 +8,7 @@ import { loadOrCreateHostKey } from './tls';
 import { getLoginGuard, userIpAllowed } from './login-guard';
 import { findAuthorizedKey, parseAuthorizedKeys } from './authorized-keys';
 import { uploadChecksum } from './checksum';
+import { getQuotaManager } from './quota';
 import { SessionTransferStats, TransferHandle, TransferTracker } from './transfers';
 // SFTP constants (from ssh2-streams)
 const SFTP_STATUS_CODE = {
@@ -225,7 +226,8 @@ export class SFTPServer extends EventEmitter {
               // File handles opened with write access (checked in OPEN)
               const writableHandles = new Set<number>();
               // Open files: logged as one UPLOAD / DOWNLOAD (with size) when closed
-              const openFiles = new Map<number, { path: string; localPath: string; write: boolean; bytes: number; live: TransferHandle }>();
+              const openFiles = new Map<number, { path: string; localPath: string; write: boolean; bytes: number; end: number; live: TransferHandle }>();
+              const quota = getQuotaManager(this.db);
 
               // Map virtual paths to real paths
               const pathMapper = (virtualPath: string): string => {
@@ -420,17 +422,23 @@ export class SFTPServer extends EventEmitter {
                   return sftp.status(reqId, SFTP_STATUS_CODE.PERMISSION_DENIED);
                 }
 
+                const doOpen = () => {
                 try {
                   const openFlags = this.convertSFTPFlags(flags);
+                  // a truncating overwrite frees the old file's space for the quota
+                  const previousSize = writeFlag && (flags & SFTP_OPEN_MODE.TRUNC) && authenticatedUser?.quotaBytes
+                    ? (fs.existsSync(realPath) ? fs.statSync(realPath).size : 0) : 0;
                   const handle = fs.openSync(realPath, openFlags);
                   if (writeFlag) {
                     writableHandles.add(handle);
+                    if (previousSize) quota.adjust(username!, -previousSize);
                   }
                   openFiles.set(handle, {
                     path: filename,
                     localPath: realPath,
                     write: !!writeFlag,
                     bytes: 0,
+                    end: writeFlag ? fs.fstatSync(handle).size : 0,
                     live: this.transfers.start(sessionId, filename, writeFlag ? 'upload' : 'download')
                   });
                   const handleBuffer = Buffer.alloc(4);
@@ -449,6 +457,14 @@ export class SFTPServer extends EventEmitter {
                   } else {
                     sftp.status(reqId, SFTP_STATUS_CODE.FAILURE);
                   }
+                }
+                };
+
+                // Users with a storage quota: measure current usage before writing
+                if (writeFlag && authenticatedUser?.quotaBytes) {
+                  quota.usage(authenticatedUser).catch(() => undefined).then(doOpen);
+                } else {
+                  doOpen();
                 }
               });
 
@@ -487,12 +503,24 @@ export class SFTPServer extends EventEmitter {
                   return sftp.status(reqId, SFTP_STATUS_CODE.PERMISSION_DENIED);
                 }
 
+                // Storage quota: only growth of the file counts
+                const open = openFiles.get(handleNum);
+                const growth = open ? Math.max(0, offset + data.length - open.end) : 0;
+                if (growth && authenticatedUser?.quotaBytes && quota.wouldExceed(authenticatedUser, growth)) {
+                  logActivity('WRITE_DENIED (quota exceeded)', open!.path, false);
+                  return sftp.status(reqId, SFTP_STATUS_CODE.FAILURE, 'Storage quota exceeded');
+                }
+
                 try {
                   fs.writeSync(handleNum, data, 0, data.length, offset);
                   const transfer = openFiles.get(handleNum);
                   if (transfer) {
                     transfer.bytes += data.length;
                     transfer.live.add(data.length);
+                    if (growth) {
+                      transfer.end += growth;
+                      quota.adjust(username!, growth);
+                    }
                   }
                   sftp.status(reqId, SFTP_STATUS_CODE.OK);
                 } catch (err) {
@@ -687,6 +715,7 @@ export class SFTPServer extends EventEmitter {
                 try {
                   fs.unlinkSync(realPath);
                   logActivity('REMOVE', filePath, true);
+                  quota.invalidate(username!);
                   sftp.status(reqId, SFTP_STATUS_CODE.OK);
                 } catch (err) {
                   logActivity('REMOVE_FAILED', filePath, false);

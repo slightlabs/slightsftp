@@ -121,6 +121,7 @@
   <header>
     <span class="brand">📁 SLightSFTP Files</span>
     <span class="spacer"></span>
+    <span class="who" id="usage" title="Storage used"></span>
     <span class="who" id="who"></span>
     <button type="button" id="twoFactorBtn" title="Two-factor sign-in">🔐 2FA</button>
     <button type="button" id="logoutBtn">Sign out</button>
@@ -428,6 +429,12 @@
     if (!state.permissions.canWrite) return toast('You cannot upload to this folder');
     for (const file of files) await uploadFile(file);
     await open(state.path);
+    refreshUsage();
+  }
+
+  async function refreshUsage() {
+    const me = await api('GET', '/portal/api/me').catch(() => null);
+    if (me) $('usage').textContent = me.quotaBytes ? `${formatSize(me.usedBytes)} of ${formatSize(me.quotaBytes)} used` : '';
   }
 
   $('uploadBtn').addEventListener('click', () => $('fileInput').click());
@@ -556,6 +563,7 @@
     if (me.requirePasswordChange) return show('changeView');
     state.username = me.username;
     $('who').textContent = me.username;
+    $('usage').textContent = me.quotaBytes ? `${formatSize(me.usedBytes)} of ${formatSize(me.quotaBytes)} used` : '';
     show('filesView');
     const initial = decodeURI(location.hash.slice(1) || '/');
     await open(initial.startsWith('/') ? initial : '/');

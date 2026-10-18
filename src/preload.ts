@@ -3,7 +3,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 const INVOKE_CHANNELS = [
   'authenticate-user', 'get-authenticated-user', 'logout',
   'create-user', 'get-user', 'get-all-users', 'update-user', 'delete-user',
-  'get-user-listeners', 'get-virtual-paths', 'get-permission',
+  'get-user-listeners', 'get-virtual-paths', 'get-permission', 'get-user-usage',
   'get-user-subscriptions', 'add-user-subscription', 'remove-user-subscription',
   'get-user-virtual-paths', 'add-user-virtual-path', 'remove-user-virtual-path',
   'create-listener', 'get-listener', 'get-all-listeners', 'update-listener', 'delete-listener',
