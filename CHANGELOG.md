@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.5.0 — 2026-10-19
+
+### New
+- **Docker image**: `ghcr.io/slightlabs/slightsftp` runs the headless server with the web
+  admin GUI; data lives in the `/data` volume (see `docker-compose.yml`). FTP passive mode
+  can be set with `FTP_PASV_URL`, `FTP_PASV_MIN`, `FTP_PASV_MAX`.
+- **Storage quotas** per user, enforced over SFTP, FTP, the portal and share links.
+- **Speed limits** per user (upload / download KB/s), shared across all their sessions.
+- **Recycle bin**: deleted files can be restored by the user (portal) or an admin, and
+  are purged after a retention period (default 30 days).
+- **API tokens**: personal access tokens (`Authorization: Bearer sst_…`) for scripts.
+- **Backup & restore** of the whole configuration, including the SFTP host key and TLS
+  certificate.
+- **Audit export**: forward activity to syslog / SIEM (RFC 5424, UDP or TCP) and record a
+  SHA-256 checksum of every uploaded file.
+
+### Upgrade notes
+- The recycle bin is on by default; deleted files now go there. Turn it off or change the
+  retention in *Recycle Bin*.
+
 ## v1.4.0 — 2026-10-19
 
 ### Security
