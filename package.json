@@ -1,6 +1,6 @@
 {
   "name": "slightsftp",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Multi-user FTP/SFTP server with GUI management",
   "main": "dist/main.js",
   "scripts": {
@@ -12,6 +12,10 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "test:e2e": "npm run build && playwright test",
+    "test:e2e:web": "npm run build && playwright test --project=web-gui",
+    "test:e2e:electron": "npm run build && playwright test --project=electron-gui",
+    "test:all": "npm test -- --runInBand --forceExit && npm run test:e2e",
     "test:client": "npm run build && node dist/test-client.js",
     "setup:testusers": "npm run build && node dist/setup-test-users.js",
     "test:comprehensive": "npm run setup:testusers && npm run test:client",
@@ -107,6 +111,7 @@
     "ws": "^8.18.3"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",
     "@types/ftp": "^0.3.36",
