@@ -1,5 +1,34 @@
 # Changelog
 
+## v1.3.0 — 2026-10-19
+
+### New
+- **Browser file portal** at `/files`: users with portal access browse, upload
+  (button or drag and drop, with progress), download, create folders, rename and
+  delete — limited by the same virtual-path permissions as SFTP/FTP.
+- **Share links**: expiring, optionally password-protected download links for files
+  and folders, upload-only "request files" links, download limits, QR codes,
+  "My links" with revoke, and a Shared Links panel for admins.
+- **HTTPS for the web GUI** with an automatically generated certificate (or your own).
+- **FTPS (explicit TLS)** per FTP listener: off, optional or required.
+- **Forced password change** when signing in with the default password or when an
+  admin requires it ("Require password change at next GUI login").
+- SFTP **host key fingerprint** shown on each SFTP listener.
+- Real **REST API documentation** on the website.
+
+### Security
+- Passwords are stored as **salted scrypt** hashes; existing SHA-256 hashes are
+  upgraded automatically at the next successful login.
+- The SFTP host key is now persistent. Previously every restart created a new key,
+  so clients warned that the server identity had changed.
+- User APIs no longer return password hashes.
+
+### Upgrade notes
+- The first sign-in with `admin` / `admin123` now asks for a new password.
+- SFTP clients will see a new host key once after upgrading; it stays stable from
+  then on (compare it with the fingerprint shown on the listener).
+- The web portal is off for existing users; enable it per user in Edit User.
+
 ## v1.2.0 — 2026-10-19
 
 ### Security

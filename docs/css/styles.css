@@ -744,3 +744,14 @@ footer {
         min-width: auto;
     }
 }
+.new-badge {
+    display: inline-block;
+    font-size: 0.65em;
+    font-weight: 600;
+    vertical-align: middle;
+    padding: 2px 8px;
+    margin-left: 6px;
+    border-radius: 999px;
+    background: #5b5fe0;
+    color: #fff;
+}
