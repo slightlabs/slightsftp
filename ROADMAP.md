@@ -35,7 +35,7 @@ Items are implemented in order. Each ships with tests and is marked here when do
 - [x] **Bandwidth limits** — per-user upload/download rate limits.
 - [x] **Recycle bin** — deleted files are moved to a restorable trash with retention.
 - [x] **REST API tokens** — personal access tokens for automation.
-- [ ] **Config backup / restore** from the GUI.
+- [x] **Config backup / restore** from the GUI.
 - [ ] **Docker image** for headless deployments.
 
 ## Phase 5 — Polish & reach

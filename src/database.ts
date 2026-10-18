@@ -1115,6 +1115,31 @@ export class DatabaseManager {
     };
   }
 
+  /** The whole configuration database as SQLite bytes (for backups). */
+  exportBytes(): Buffer {
+    if (!this.db) throw new Error('Database not initialized');
+    return Buffer.from(this.db.export());
+  }
+
+  /** Replace the configuration with a backup (validated first). */
+  async restoreFrom(bytes: Buffer): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+    const SQL = await initSqlJs();
+    let candidate: Database;
+    try {
+      candidate = new SQL.Database(bytes);
+      const tables = candidate.exec("SELECT name FROM sqlite_master WHERE type = 'table'");
+      const names = tables.length ? tables[0].values.map(r => r[0]) : [];
+      if (!['users', 'listeners', 'virtual_paths'].every(t => names.includes(t))) throw new Error('missing tables');
+    } catch {
+      throw new Error('This is not a SLightSFTP configuration backup');
+    }
+    this.db.close();
+    this.db = candidate;
+    this.initialize(); // bring older backups up to the current schema
+    this.save();
+  }
+
   close(): void {
     if (this.db && this.initialized) {
       try {

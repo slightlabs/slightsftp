@@ -33,6 +33,7 @@ export function setCertificateDir(dir: string): void {
   certificateDir = dir;
   cached = null;
   pending = null;
+  hostKeyCache.clear();
 }
 
 export function getCertificateDir(): string {

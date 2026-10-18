@@ -60,7 +60,8 @@ describe('Web GUI IPC shim (WebServer.injectWebAPI)', () => {
     const unmapped: string[] = [];
     for (const channel of guiChannels()) {
       try {
-        await ipc().invoke(channel, 1, {}, [], [], []);
+        // interactive channels (file pickers) never settle here; still pending = mapped
+        await Promise.race([ipc().invoke(channel, 1, {}, [], [], []), new Promise(r => setTimeout(r, 200))]);
       } catch (err: any) {
         if (/Unknown IPC channel/.test(err.message)) unmapped.push(channel);
       }

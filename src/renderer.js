@@ -596,6 +596,27 @@ async function loadSecurity() {
   `).join('') : '<tr><td colspan="5" class="empty-state">No banned addresses</td></tr>';
 }
 
+async function exportBackup() {
+  try {
+    const result = await ipcRenderer.invoke('export-backup');
+    if (result.path) alert(`Backup saved to ${result.path}`);
+  } catch (err) {
+    alert(`Backup failed: ${errorText(err)}`);
+  }
+}
+
+async function importBackup() {
+  if (!confirm('Restoring replaces ALL users, listeners and settings with the backup. Listeners restart. Continue?')) return;
+  try {
+    const result = await ipcRenderer.invoke('import-backup');
+    if (result.cancelled) return;
+    alert(`Restored ${result.users} user(s) and ${result.listeners} listener(s).`);
+    loadDashboard();
+  } catch (err) {
+    alert(`Restore failed: ${errorText(err)}`);
+  }
+}
+
 async function loadApiTokens() {
   const tokens = await ipcRenderer.invoke('get-api-tokens');
   const fmt = (d) => (d ? new Date(d).toLocaleString() : '—');

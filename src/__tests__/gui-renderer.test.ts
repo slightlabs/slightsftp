@@ -82,6 +82,8 @@ const backend: Record<string, Handler> = {
   'set-security-settings': (u: any) => { Object.assign(model.security, u); return model.security; },
   'get-ip-bans': () => model.bans,
   'get-api-tokens': () => model.tokens,
+  'export-backup': () => ({ success: true, path: '/home/admin/slightsftp-backup.json' }),
+  'import-backup': () => ({ success: true, users: 3, listeners: 2, restoredFiles: [] }),
   'create-api-token': (name: string) => { const t = { id: model.tokens.length + 1, name, hint: 'sst_abc123', createdAt: new Date().toISOString(), lastUsedAt: null, expiresAt: null }; model.tokens.push(t); return { ...t, token: 'sst_abc123SECRET' }; },
   'revoke-api-token': (id: number) => { model.tokens = model.tokens.filter(t => t.id !== id); return { success: true }; },
   'get-trash': () => ({ settings: model.trashSettings, items: model.trash }),
@@ -521,6 +523,22 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       const row = $$('#bans-table tr')[0];
       expect(row.textContent).toContain('203.0.113.9');
       expect(row.querySelector('img')).toBeNull();
+    });
+
+    test('backup and restore buttons', async () => {
+      buttonByText($('#security'), 'Download backup').click();
+      await flush();
+      expect(calls('export-backup')).toHaveLength(1);
+      expect((window.alert as jest.Mock).mock.calls.at(-1)[0]).toBe('Backup saved to /home/admin/slightsftp-backup.json');
+
+      (window.confirm as jest.Mock).mockReturnValueOnce(false);
+      buttonByText($('#security'), 'Restore from backup…').click();
+      await flush();
+      expect(calls('import-backup')).toHaveLength(0);
+      buttonByText($('#security'), 'Restore from backup…').click();
+      await flush();
+      expect(calls('import-backup')).toHaveLength(1);
+      expect((window.alert as jest.Mock).mock.calls.at(-1)[0]).toBe('Restored 3 user(s) and 2 listener(s).');
     });
 
     test('API tokens: create shows the token once; revoke removes it', async () => {

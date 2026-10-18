@@ -25,6 +25,9 @@ import { getQuotaManager, quotaFromMegabytes } from './quota';
 import { limitFromForm } from './bandwidth';
 import { purgeItem, recycleSettings, restoreItem, saveRecycleSettings } from './recycle-bin';
 import { authenticateToken, createApiToken } from './api-tokens';
+import { createBackup, restoreBackup } from './backup';
+
+const APP_VERSION: string = require('../package.json').version;
 
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
@@ -98,6 +101,8 @@ export class WebServer {
   }
 
   private setupMiddleware(): void {
+    // backups can be large; everything else keeps the default 100 kB limit
+    this.app.use('/api/backup/restore', express.json({ limit: '500mb' }));
     this.app.use(express.json());
     this.app.use(express.urlencoded({ extended: true }));
     this.app.use(cookieParser());
@@ -372,6 +377,30 @@ export class WebServer {
         this.logActivity(session.username, 'WEB_SECURITY_SETTINGS_UPDATED', 'brute-force protection', true);
         res.json(getLoginGuard(this.db).settings());
       } catch (error: any) {
+        res.status(400).json({ error: error.message });
+      }
+    });
+
+    // Configuration backup / restore
+    this.app.get('/api/backup', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      const bundle = createBackup(this.db, APP_VERSION);
+      this.logActivity(session.username, 'WEB_BACKUP_DOWNLOADED', 'configuration backup', true);
+      res.attachment(`slightsftp-backup-${bundle.createdAt.slice(0, 10)}.json`);
+      res.json(bundle);
+    });
+
+    this.app.post('/api/backup/restore', async (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      try {
+        await this.serverManager.stopAllListeners();
+        const summary = await restoreBackup(this.db, req.body);
+        getQuotaManager(this.db).invalidate();
+        await this.serverManager.startAllEnabledListeners();
+        this.logActivity(session.username, 'WEB_BACKUP_RESTORED', `${summary.users} users, ${summary.listeners} listeners`, true);
+        res.json({ success: true, ...summary });
+      } catch (error: any) {
+        await this.serverManager.startAllEnabledListeners().catch(() => undefined);
         res.status(400).json({ error: error.message });
       }
     });
@@ -1555,6 +1584,27 @@ export class WebServer {
             'get-api-tokens': () => api('GET', '/api/tokens'),
             'create-api-token': (name, expiresInDays) => api('POST', '/api/tokens', { name, expiresInDays }),
             'revoke-api-token': (id) => api('DELETE', \`/api/tokens/\${id}\`),
+            'export-backup': async () => {
+              const link = document.createElement('a');
+              link.href = '/api/backup';
+              document.body.appendChild(link);
+              link.click();
+              link.remove();
+              return { success: true };
+            },
+            'import-backup': () => new Promise((resolve, reject) => {
+              const input = document.createElement('input');
+              input.type = 'file';
+              input.accept = '.json,application/json';
+              input.onchange = async () => {
+                const file = input.files && input.files[0];
+                if (!file) return resolve({ cancelled: true });
+                try {
+                  resolve(await api('POST', '/api/backup/restore', JSON.parse(await file.text())));
+                } catch (err) { reject(err); }
+              };
+              input.click();
+            }),
             'get-webhooks': () => api('GET', '/api/webhooks'),
             'create-webhook': (hook) => api('POST', '/api/webhooks', hook),
             'update-webhook': (id, hook) => api('PUT', \`/api/webhooks/\${id}\`, hook),

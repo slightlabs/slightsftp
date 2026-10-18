@@ -19,6 +19,7 @@ import { getQuotaManager, quotaFromMegabytes } from './quota';
 import { limitFromForm } from './bandwidth';
 import { purgeExpired, purgeItem, recycleSettings, restoreItem, saveRecycleSettings } from './recycle-bin';
 import { createApiToken } from './api-tokens';
+import { createBackup, restoreBackup } from './backup';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -591,6 +592,44 @@ function setupIpcHandlers(): void {
   ipcMain.handle('set-security-settings', async (event, settings) => {
     saveGuardSettings(db, settings || {});
     return getLoginGuard(db).settings();
+  });
+
+  // Configuration backup / restore
+  ipcMain.handle('export-backup', async () => {
+    const bundle = createBackup(db, app.getVersion());
+    const result = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Save configuration backup',
+      defaultPath: `slightsftp-backup-${bundle.createdAt.slice(0, 10)}.json`,
+      filters: [{ name: 'SLightSFTP backup', extensions: ['json'] }]
+    });
+    if (result.canceled || !result.filePath) return { cancelled: true };
+    fs.writeFileSync(result.filePath, JSON.stringify(bundle), { mode: 0o600 });
+    db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'BACKUP_SAVED', path: result.filePath, success: true });
+    return { success: true, path: result.filePath };
+  });
+
+  ipcMain.handle('import-backup', async () => {
+    const result = await dialog.showOpenDialog(mainWindow!, {
+      title: 'Restore configuration backup',
+      properties: ['openFile'],
+      filters: [{ name: 'SLightSFTP backup', extensions: ['json'] }]
+    });
+    if (result.canceled || !result.filePaths[0]) return { cancelled: true };
+    let bundle: any;
+    try {
+      bundle = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf8'));
+    } catch {
+      throw new Error('This is not a SLightSFTP configuration backup');
+    }
+    await serverManager.stopAllListeners();
+    try {
+      const summary = await restoreBackup(db, bundle);
+      getQuotaManager(db).invalidate();
+      db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'BACKUP_RESTORED', path: result.filePaths[0], success: true });
+      return { success: true, ...summary };
+    } finally {
+      await serverManager.startAllEnabledListeners();
+    }
   });
 
   // Personal access tokens for the REST API (signed-in user)

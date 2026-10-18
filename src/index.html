@@ -661,6 +661,13 @@
             </form>
           </div>
           <div class="card">
+            <h2>Backup &amp; Restore</h2>
+            <p style="color: #666; margin-top: 0;">Save all users, listeners, permissions, settings, the SFTP host key and the TLS certificate to one file, or restore from one. ⚠️ The backup contains password hashes, two-factor secrets and keys — store it safely.</p>
+            <button type="button" class="btn btn-primary" onclick="exportBackup()">Download backup</button>
+            <button type="button" class="btn btn-warning" onclick="importBackup()">Restore from backup…</button>
+          </div>
+
+          <div class="card">
             <h2>API Tokens</h2>
             <p style="color: #666; margin-top: 0;">Personal access tokens let scripts use the REST API as you: <code>Authorization: Bearer sst_…</code>. They do not need your second factor, so keep them secret and give them an expiry.</p>
             <form id="apiTokenForm" style="display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end;">
