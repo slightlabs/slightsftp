@@ -139,6 +139,8 @@ jobs:
             type=raw,value=latest
 
       - uses: docker/build-push-action@v6
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: false
         with:
           context: .
           push: true
@@ -151,8 +153,10 @@ jobs:
     if: success() && startsWith(github.ref, 'refs/tags/')
 
     steps:
-      - name: Download all artifacts
+      - name: Download installers
         uses: actions/download-artifact@v5
+        with:
+          pattern: '*-installer*'
 
       - name: List downloaded artifacts
         run: ls -R
