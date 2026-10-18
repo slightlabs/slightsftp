@@ -8,13 +8,14 @@ const crypto = require('crypto');
 const cookieParser = require('cookie-parser');
 import { DatabaseManager } from './database';
 import { ServerManager } from './server-manager';
-import { User, Listener } from './types';
+import { User, Listener, Webhook } from './types';
 import logger from './logger';
 import { resolveUserPath } from './path-utils';
 import { requiresPasswordChange, validateNewPassword } from './password';
 import { hostKeyFingerprint } from './tls';
 import { registerPortalRoutes } from './portal';
 import { describeShare, registerShareRoutes, shareUrl } from './shares';
+import { WebhookDispatcher, describeWebhook, validateWebhookInput } from './webhooks';
 
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
@@ -38,6 +39,8 @@ const PASSWORD_CHANGE_ALLOWED = new Set(['/change-password', '/user', '/logout']
 export interface WebServerOptions {
   /** serve the GUI over HTTPS with this key / certificate (PEM) */
   tls?: { key: string; cert: string };
+  /** the app's webhook dispatcher (used for "send test event") */
+  webhooks?: WebhookDispatcher;
 }
 
 export class WebServer {
@@ -49,12 +52,14 @@ export class WebServer {
   private sessions: Map<string, WebSession> = new Map();
   private port: number;
   private tls?: { key: string; cert: string };
+  private webhooks?: WebhookDispatcher;
 
   constructor(db: DatabaseManager, serverManager: ServerManager, port: number = 3000, options: WebServerOptions = {}) {
     this.db = db;
     this.serverManager = serverManager;
     this.port = port;
     this.tls = options.tls;
+    this.webhooks = options.webhooks;
     this.app = express();
     this.server = this.tls
       ? https.createServer({ key: this.tls.key, cert: this.tls.cert }, this.app)
@@ -282,6 +287,64 @@ export class WebServer {
       session.mustChangePassword = false;
       this.logActivity(session.username, 'WEB_PASSWORD_CHANGED', 'Password changed via web interface', true);
       res.json({ success: true });
+    });
+
+    // Webhooks
+    this.app.get('/api/webhooks', (req: Request, res: Response) => {
+      res.json(this.db.listWebhooks().map(describeWebhook));
+    });
+
+    this.app.post('/api/webhooks', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      try {
+        const input = validateWebhookInput(req.body || {});
+        const id = this.db.createWebhook({ format: 'json', enabled: true, ...input } as Webhook);
+        this.logActivity(session.username, 'WEB_WEBHOOK_CREATED', input.name!, true);
+        res.status(201).json(describeWebhook(this.db.getWebhook(id)!));
+      } catch (error: any) {
+        res.status(400).json({ error: error.message });
+      }
+    });
+
+    this.app.put('/api/webhooks/:id', (req: Request, res: Response) => {
+      const id = parseInt(req.params.id);
+      if (!this.db.getWebhook(id)) {
+        res.status(404).json({ error: 'Webhook not found' });
+        return;
+      }
+      try {
+        this.db.updateWebhook(id, validateWebhookInput(req.body || {}, true));
+        res.json(describeWebhook(this.db.getWebhook(id)!));
+      } catch (error: any) {
+        res.status(400).json({ error: error.message });
+      }
+    });
+
+    this.app.delete('/api/webhooks/:id', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      const hook = this.db.getWebhook(parseInt(req.params.id));
+      if (!hook) {
+        res.status(404).json({ error: 'Webhook not found' });
+        return;
+      }
+      this.db.deleteWebhook(hook.id!);
+      this.logActivity(session.username, 'WEB_WEBHOOK_DELETED', hook.name, true);
+      res.json({ success: true });
+    });
+
+    this.app.post('/api/webhooks/:id/test', async (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      const hook = this.db.getWebhook(parseInt(req.params.id));
+      if (!hook) {
+        res.status(404).json({ error: 'Webhook not found' });
+        return;
+      }
+      const dispatcher = this.webhooks ?? new WebhookDispatcher(this.db);
+      try {
+        res.json(await dispatcher.test(hook, session.username));
+      } finally {
+        if (!this.webhooks) dispatcher.stop();
+      }
     });
 
     // Share links (admins see and can revoke everyone's)
@@ -1226,6 +1289,11 @@ export class WebServer {
             },
             'get-server-identity': () => api('GET', '/api/server-identity'),
             'get-shares': () => api('GET', '/api/shares'),
+            'get-webhooks': () => api('GET', '/api/webhooks'),
+            'create-webhook': (hook) => api('POST', '/api/webhooks', hook),
+            'update-webhook': (id, hook) => api('PUT', \`/api/webhooks/\${id}\`, hook),
+            'delete-webhook': (id) => api('DELETE', \`/api/webhooks/\${id}\`),
+            'test-webhook': (id) => api('POST', \`/api/webhooks/\${id}/test\`),
             'revoke-share': (id) => api('DELETE', \`/api/shares/\${id}\`),
             'get-virtual-paths': (userId) => api('GET', \`/api/users/id/\${userId}/virtual-paths\`),
             'get-permission': (userId, listenerId) => api('GET', \`/api/users/id/\${userId}/permissions/\${listenerId}\`),

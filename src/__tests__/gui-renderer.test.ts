@@ -43,6 +43,7 @@ const model = {
     { id: 3, listenerId: null, username: 'admin', action: 'GUI_LOGIN', path: '/', success: true, timestamp: nowSql() },
   ],
   settings: { logRetentionDays: '30' } as Record<string, string>,
+  webhooks: [] as any[],
   shares: [
     { id: 7, owner: 'carol', virtualPath: `/${XSS}.pdf`, type: 'download', status: 'active', downloadCount: 1, maxDownloads: 5, expiresAt: null, hasPassword: true },
     { id: 8, owner: 'carol', virtualPath: '/inbox', type: 'upload', status: 'expired', downloadCount: 0, maxDownloads: null, expiresAt: '2026-01-01T00:00:00.000Z', hasPassword: false },
@@ -61,6 +62,11 @@ const backend: Record<string, Handler> = {
   'get-authenticated-user': () => ({ username: 'admin', id: 1 }),
   'get-server-identity': () => ({ sshHostKeyFingerprint: 'SHA256:abcDEF123' }),
   'get-shares': () => model.shares,
+  'get-webhooks': () => model.webhooks,
+  'create-webhook': (h: any) => { const hook = { id: model.webhooks.length + 1, enabled: true, lastStatus: null, hasSecret: !!h.secret, ...h }; model.webhooks.push(hook); return hook; },
+  'update-webhook': (id: number, u: any) => { Object.assign(model.webhooks.find(h => h.id === id)!, u); return model.webhooks.find(h => h.id === id); },
+  'delete-webhook': (id: number) => { model.webhooks = model.webhooks.filter(h => h.id !== id); return { success: true }; },
+  'test-webhook': () => ({ ok: true, status: 200, attempts: 1 }),
   'revoke-share': (id: number) => { model.shares.find(x => x.id === id)!.status = 'revoked'; return { success: true }; },
   'logout': () => ({ success: true }),
   'get-all-listener-statuses': () => [
@@ -225,7 +231,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
   });
 
   describe('navigation', () => {
-    test.each(['listeners', 'sessions', 'users', 'files', 'shares', 'activity', 'dashboard'])('sidebar switches to the %s panel', async panel => {
+    test.each(['listeners', 'sessions', 'users', 'files', 'shares', 'webhooks', 'activity', 'dashboard'])('sidebar switches to the %s panel', async panel => {
       await openPanel(panel);
       expect($$('.panel.active').map(p => p.id)).toEqual([panel]);
       expect($$('.sidebar-item.active').map(i => i.dataset.panel)).toEqual([panel]);
@@ -462,6 +468,47 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       expect((window.confirm as jest.Mock).mock.calls[0][0]).toContain('dave');
       expect(lastCall('delete-user')).toEqual(['dave']);
       expect(row('dave')).toBeUndefined();
+    });
+  });
+
+  describe('webhooks panel', () => {
+    beforeAll(() => openPanel('webhooks'));
+
+    test('starts empty and Add Webhook creates one from the form', async () => {
+      expect($('#webhooks-table').textContent).toContain('No webhooks yet');
+      buttonByText($('#webhooks'), 'Add Webhook').click();
+      const form = $<HTMLFormElement>('#addWebhookForm');
+      setField(form, 'name', `Notify ${XSS}`);
+      setField(form, 'url', 'https://hooks.example.com/abc');
+      $<HTMLInputElement>('#wh-delete').checked = true;
+      setField(form, 'pathPrefix', '/incoming');
+      (form.querySelector('[name=format]') as HTMLSelectElement).value = 'json';
+      setField(form, 'secret', 'shh');
+      await submit(form);
+
+      expect(lastCall('create-webhook')).toEqual([{ name: `Notify ${XSS}`, url: 'https://hooks.example.com/abc', events: ['upload', 'delete'], usernameFilter: '', pathPrefix: '/incoming', format: 'json', secret: 'shh' }]);
+      const row = $$('#webhooks-table tr')[0];
+      expect(row.textContent).toContain('Upload, Delete');
+      expect(row.textContent).toContain('under /incoming');
+      expect(row.querySelector('img')).toBeNull();
+    });
+
+    test('Test, enable/disable and Delete', async () => {
+      buttonByText($$('#webhooks-table tr')[0], 'Test').click();
+      await flush();
+      expect(lastCall('test-webhook')).toEqual([1]);
+      expect((window.alert as jest.Mock).mock.calls[0][0]).toBe('Test event delivered (HTTP 200).');
+
+      const toggle = $$('#webhooks-table tr')[0].querySelector('input[type=checkbox]') as HTMLInputElement;
+      toggle.checked = false;
+      toggle.dispatchEvent(new Event('change'));
+      await flush();
+      expect(lastCall('update-webhook')).toEqual([1, { enabled: false }]);
+
+      buttonByText($$('#webhooks-table tr')[0], 'Delete').click();
+      await flush();
+      expect(lastCall('delete-webhook')).toEqual([1]);
+      expect($('#webhooks-table').textContent).toContain('No webhooks yet');
     });
   });
 

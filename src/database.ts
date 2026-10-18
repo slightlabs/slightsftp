@@ -1,7 +1,7 @@
 import initSqlJs, { Database } from 'sql.js';
 import * as path from 'path';
 import * as fs from 'fs';
-import { User, VirtualPath, Permission, Listener, UserListener, ServerActivity, FtpTlsMode, Share } from './types';
+import { User, VirtualPath, Permission, Listener, UserListener, ServerActivity, FtpTlsMode, Share, Webhook } from './types';
 import { hashPassword, verifyPasswordHash } from './password';
 
 function normalizeTlsMode(mode: unknown): FtpTlsMode {
@@ -139,6 +139,21 @@ export class DatabaseManager {
         maxDownloads INTEGER,
         downloadCount INTEGER NOT NULL DEFAULT 0,
         revoked INTEGER NOT NULL DEFAULT 0,
+        createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS webhooks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        url TEXT NOT NULL,
+        events TEXT NOT NULL,
+        format TEXT NOT NULL DEFAULT 'json',
+        usernameFilter TEXT,
+        pathPrefix TEXT,
+        secret TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        lastStatus TEXT,
+        lastDeliveredAt TEXT,
         createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
@@ -592,6 +607,62 @@ export class DatabaseManager {
         applyToSubdirs: vp.applyToSubdirs
       } as VirtualPath);
     }
+  }
+
+  // Webhooks
+  createWebhook(hook: Webhook): number {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run(`
+      INSERT INTO webhooks (name, url, events, format, usernameFilter, pathPrefix, secret, enabled)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `, [hook.name, hook.url, hook.events.join(','), hook.format || 'json', hook.usernameFilter ?? null, hook.pathPrefix ?? null, hook.secret ?? null, hook.enabled === false ? 0 : 1]);
+    const result = this.db.exec('SELECT last_insert_rowid() as id');
+    this.save();
+    return result[0].values[0][0] as number;
+  }
+
+  updateWebhook(id: number, hook: Partial<Webhook>): void {
+    if (!this.db) throw new Error('Database not initialized');
+    const fields: Record<string, any> = {
+      name: hook.name, url: hook.url, events: hook.events?.join(','), format: hook.format,
+      usernameFilter: hook.usernameFilter, pathPrefix: hook.pathPrefix, secret: hook.secret,
+      enabled: hook.enabled === undefined ? undefined : (hook.enabled ? 1 : 0),
+    };
+    const keys = Object.keys(fields).filter(k => fields[k] !== undefined);
+    if (!keys.length) return;
+    this.db.run(`UPDATE webhooks SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`, [...keys.map(k => fields[k]), id]);
+    this.save();
+  }
+
+  deleteWebhook(id: number): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('DELETE FROM webhooks WHERE id = ?', [id]);
+    this.save();
+  }
+
+  getWebhook(id: number): Webhook | undefined {
+    return this.queryWebhooks('SELECT * FROM webhooks WHERE id = ?', [id])[0];
+  }
+
+  listWebhooks(): Webhook[] {
+    return this.queryWebhooks('SELECT * FROM webhooks ORDER BY id', []);
+  }
+
+  recordWebhookDelivery(id: number, status: string): void {
+    if (!this.db) return;
+    this.db.run('UPDATE webhooks SET lastStatus = ?, lastDeliveredAt = ? WHERE id = ?', [status, new Date().toISOString(), id]);
+    this.save();
+  }
+
+  private queryWebhooks(sql: string, params: any[]): Webhook[] {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = this.db.exec(sql, params);
+    if (result.length === 0) return [];
+    return result[0].values.map(row => {
+      const obj: any = {};
+      result[0].columns.forEach((col, i) => { obj[col] = row[i]; });
+      return { ...obj, events: String(obj.events || '').split(',').filter(Boolean), enabled: obj.enabled === 1 } as Webhook;
+    });
   }
 
   // Share links

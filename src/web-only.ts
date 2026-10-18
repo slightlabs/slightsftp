@@ -3,6 +3,7 @@ import { ServerManager } from './server-manager';
 import { WebServer } from './web-server';
 import logger from './logger';
 import { getServerCertificate, setCertificateDir } from './tls';
+import { WebhookDispatcher } from './webhooks';
 
 // Initialize database and server manager
 const db = new DatabaseManager();  // Use default config.db
@@ -56,7 +57,8 @@ console.log('🚀 Starting SLightSFTP Server with Web GUI...\n');
       setCertificateDir(process.cwd());
       tls = await getServerCertificate({ certPath: db.getSetting('tlsCertPath'), keyPath: db.getSetting('tlsKeyPath') });
     }
-    const webServer = new WebServer(db, serverManager, WEB_PORT, { tls });
+    const webhooks = new WebhookDispatcher(db);
+    const webServer = new WebServer(db, serverManager, WEB_PORT, { tls, webhooks });
     await webServer.start();
     
     logger.info('🎯 Server is ready!');

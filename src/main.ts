@@ -9,6 +9,7 @@ import { resolveUserPath } from './path-utils';
 import { requiresPasswordChange, validateNewPassword } from './password';
 import { getServerCertificate, hostKeyFingerprint, setCertificateDir } from './tls';
 import { describeShare } from './shares';
+import { WebhookDispatcher, describeWebhook, validateWebhookInput } from './webhooks';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -20,6 +21,7 @@ let isQuitting = false;
 let isLoggingOut = false;
 let authenticatedUser: any = null;
 let pendingPasswordChangeUser: any = null;
+let webhooks: WebhookDispatcher;
 
 // Get application directories
 function getAppDirectories() {
@@ -429,7 +431,7 @@ async function createWebServer(port: number): Promise<WebServer> {
       keyPath: db.getSetting('tlsKeyPath')
     });
   }
-  const server = new WebServer(db, serverManager, port, { tls });
+  const server = new WebServer(db, serverManager, port, { tls, webhooks });
   await server.start();
   return server;
 }
@@ -550,6 +552,36 @@ function setupIpcHandlers(): void {
       success: true
     });
     return { success: true };
+  });
+
+  // Webhooks
+  ipcMain.handle('get-webhooks', async () => db.listWebhooks().map(describeWebhook));
+
+  ipcMain.handle('create-webhook', async (event, input) => {
+    const clean = validateWebhookInput(input || {});
+    const id = db.createWebhook({ format: 'json', enabled: true, ...clean } as any);
+    db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'WEBHOOK_CREATED', path: clean.name!, success: true });
+    return describeWebhook(db.getWebhook(id)!);
+  });
+
+  ipcMain.handle('update-webhook', async (event, id, input) => {
+    if (!db.getWebhook(id)) throw new Error('Webhook not found');
+    db.updateWebhook(id, validateWebhookInput(input || {}, true));
+    return describeWebhook(db.getWebhook(id)!);
+  });
+
+  ipcMain.handle('delete-webhook', async (event, id) => {
+    const hook = db.getWebhook(id);
+    if (!hook) throw new Error('Webhook not found');
+    db.deleteWebhook(id);
+    db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'WEBHOOK_DELETED', path: hook.name, success: true });
+    return { success: true };
+  });
+
+  ipcMain.handle('test-webhook', async (event, id) => {
+    const hook = db.getWebhook(id);
+    if (!hook) throw new Error('Webhook not found');
+    return webhooks.test(hook, authenticatedUser?.username || 'admin');
   });
 
   // Server identity that admins can hand to users for verification
@@ -1075,6 +1107,7 @@ app.whenReady().then(async () => {
   setCertificateDir(getAppDirectories().config);
   
   await initializeDatabase();
+  webhooks = new WebhookDispatcher(db);
   
   // Cleanup old activity logs based on retention settings
   const deletedCount = db.cleanupOldActivities();

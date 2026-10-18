@@ -17,6 +17,7 @@ const INVOKE_CHANNELS = [
   'browse-files', 'download-file', 'select-directory',
   'start-web-server', 'stop-web-server', 'get-web-server-status',
   'set-first-login-password', 'get-server-identity', 'get-shares', 'revoke-share',
+  'get-webhooks', 'create-webhook', 'update-webhook', 'delete-webhook', 'test-webhook',
 ];
 
 const EVENT_CHANNELS = ['activity', 'activity-update', 'listener-started', 'listener-stopped'];

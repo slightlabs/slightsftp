@@ -164,6 +164,9 @@ function loadPanelData(panelId) {
     case 'shares':
       loadShares();
       break;
+    case 'webhooks':
+      loadWebhooks();
+      break;
   }
 }
 
@@ -462,6 +465,86 @@ async function editListener(id) {
   }
 }
 
+
+// Webhooks
+const WEBHOOK_EVENT_LABELS = { upload: 'Upload', download: 'Download', delete: 'Delete', login: 'Sign-in', login_failed: 'Failed sign-in', share: 'Share links' };
+
+async function loadWebhooks() {
+  const hooks = await ipcRenderer.invoke('get-webhooks');
+  const tbody = document.getElementById('webhooks-table');
+  if (!hooks.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">No webhooks yet</td></tr>';
+    return;
+  }
+  tbody.innerHTML = hooks.map(h => `
+    <tr>
+      <td><strong>${escapeHtml(h.name)}</strong><div style="font-size: 11px; color: #888; word-break: break-all;">${escapeHtml(h.url)}</div></td>
+      <td>${h.events.map(e => escapeHtml(WEBHOOK_EVENT_LABELS[e] || e)).join(', ')}</td>
+      <td>${[h.usernameFilter ? 'user ' + escapeHtml(h.usernameFilter) : '', h.pathPrefix ? 'under ' + escapeHtml(h.pathPrefix) : ''].filter(Boolean).join(', ') || 'all'}</td>
+      <td>${h.lastStatus ? `${escapeHtml(h.lastStatus)}<div style="font-size: 11px; color: #888;">${new Date(h.lastDeliveredAt).toLocaleString()}</div>` : '—'}</td>
+      <td><input type="checkbox" ${h.enabled ? 'checked' : ''} onchange="toggleWebhook(${Number(h.id)}, this.checked)"></td>
+      <td>
+        <button class="btn" onclick="testWebhook(${Number(h.id)})">Test</button>
+        <button class="btn btn-danger" onclick="deleteWebhook(${Number(h.id)})">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function showAddWebhookModal() {
+  showModal('addWebhookModal');
+}
+
+async function toggleWebhook(id, enabled) {
+  try {
+    await ipcRenderer.invoke('update-webhook', id, { enabled });
+  } catch (err) {
+    alert(`Failed to update webhook: ${err.message}`);
+  }
+  loadWebhooks();
+}
+
+async function testWebhook(id) {
+  try {
+    const result = await ipcRenderer.invoke('test-webhook', id);
+    alert(result.ok ? `Test event delivered (HTTP ${result.status}).` : `Test event failed: ${result.error}`);
+  } catch (err) {
+    alert(`Failed to test webhook: ${err.message}`);
+  }
+  loadWebhooks();
+}
+
+async function deleteWebhook(id) {
+  if (!confirm('Delete this webhook?')) return;
+  try {
+    await ipcRenderer.invoke('delete-webhook', id);
+  } catch (err) {
+    alert(`Failed to delete webhook: ${err.message}`);
+  }
+  loadWebhooks();
+}
+
+document.getElementById('addWebhookForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const formData = new FormData(e.target);
+  const data = {
+    name: formData.get('name'),
+    url: formData.get('url'),
+    events: formData.getAll('events'),
+    usernameFilter: formData.get('usernameFilter') || '',
+    pathPrefix: formData.get('pathPrefix') || '',
+    format: formData.get('format'),
+    secret: formData.get('secret') || ''
+  };
+  try {
+    await ipcRenderer.invoke('create-webhook', data);
+    closeModal('addWebhookModal');
+    e.target.reset();
+    loadWebhooks();
+  } catch (err) {
+    alert(`Failed to create webhook: ${err.message}`);
+  }
+});
 
 // Shared links
 async function loadShares() {

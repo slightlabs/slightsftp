@@ -474,6 +474,7 @@
       <div class="sidebar-item" data-panel="users">Users</div>
       <div class="sidebar-item" data-panel="files">Files</div>
       <div class="sidebar-item" data-panel="shares">Shared Links</div>
+      <div class="sidebar-item" data-panel="webhooks">Webhooks</div>
       <div class="sidebar-item" data-panel="activity">Activity Log</div>
     </div>
 
@@ -612,6 +613,22 @@
         </div>
 
         <!-- Active Sessions Panel -->
+        <div id="webhooks" class="panel">
+          <div class="card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+              <h2>Webhooks</h2>
+              <button class="btn btn-primary" onclick="showAddWebhookModal()">Add Webhook</button>
+            </div>
+            <p style="color: #666; margin-top: 0;">Notify Slack, Teams or any URL when files are uploaded, downloaded or deleted, users sign in, or links are shared.</p>
+            <table class="table">
+              <thead>
+                <tr><th>Name</th><th>Events</th><th>Filter</th><th>Last delivery</th><th>Enabled</th><th></th></tr>
+              </thead>
+              <tbody id="webhooks-table"></tbody>
+            </table>
+          </div>
+        </div>
+
         <div id="shares" class="panel">
           <div class="card">
             <h2>Shared Links</h2>
@@ -915,6 +932,57 @@
         </div>
         <button type="submit" class="btn btn-primary">OK</button>
         <button type="button" class="btn" onclick="closeModal('virtualPathModal')">Cancel</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add Webhook Modal -->
+  <div id="addWebhookModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Add Webhook</h2>
+        <button class="close-btn" onclick="closeModal('addWebhookModal')">&times;</button>
+      </div>
+      <form id="addWebhookForm">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" name="name" placeholder="e.g. Notify #uploads" required>
+        </div>
+        <div class="form-group">
+          <label>URL</label>
+          <input type="url" name="url" placeholder="https://hooks.slack.com/services/..." required>
+        </div>
+        <div class="form-group">
+          <label>Events</label>
+          <div class="permissions-grid">
+            <div class="checkbox-group"><input type="checkbox" name="events" value="upload" id="wh-upload" checked><label for="wh-upload">Upload</label></div>
+            <div class="checkbox-group"><input type="checkbox" name="events" value="download" id="wh-download"><label for="wh-download">Download</label></div>
+            <div class="checkbox-group"><input type="checkbox" name="events" value="delete" id="wh-delete"><label for="wh-delete">Delete</label></div>
+            <div class="checkbox-group"><input type="checkbox" name="events" value="login" id="wh-login"><label for="wh-login">Sign-in</label></div>
+            <div class="checkbox-group"><input type="checkbox" name="events" value="login_failed" id="wh-login_failed"><label for="wh-login_failed">Failed sign-in</label></div>
+            <div class="checkbox-group"><input type="checkbox" name="events" value="share" id="wh-share"><label for="wh-share">Share links</label></div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Only for user (optional)</label>
+          <input type="text" name="usernameFilter" placeholder="any user">
+        </div>
+        <div class="form-group">
+          <label>Only for paths under (optional)</label>
+          <input type="text" name="pathPrefix" placeholder="/incoming">
+        </div>
+        <div class="form-group">
+          <label>Format</label>
+          <select name="format">
+            <option value="slack">Slack / Teams message</option>
+            <option value="json">JSON (for your own service)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Signing secret (optional)</label>
+          <input type="text" name="secret" placeholder="adds an X-SLightSFTP-Signature header">
+        </div>
+        <button type="submit" class="btn btn-primary">Create Webhook</button>
       </form>
     </div>
   </div>

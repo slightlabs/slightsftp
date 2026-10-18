@@ -91,3 +91,23 @@ export interface Share {
   revoked?: boolean;
   createdAt?: string;
 }
+
+export type WebhookEvent = 'upload' | 'download' | 'delete' | 'login' | 'login_failed' | 'share';
+
+export interface Webhook {
+  id?: number;
+  name: string;
+  url: string;
+  events: WebhookEvent[];
+  format: 'json' | 'slack';
+  /** only fire for this user (null = everyone) */
+  usernameFilter?: string | null;
+  /** only fire for paths at or below this virtual path */
+  pathPrefix?: string | null;
+  /** HMAC-SHA256 signing secret (X-SLightSFTP-Signature) */
+  secret?: string | null;
+  enabled: boolean;
+  lastStatus?: string | null;
+  lastDeliveredAt?: string | null;
+  createdAt?: string;
+}

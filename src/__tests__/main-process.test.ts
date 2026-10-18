@@ -447,6 +447,39 @@ describe('Electron main process (main.ts) with real backend', () => {
     });
   });
 
+  describe('webhook handlers', () => {
+    test('create, test, fire on a desktop sign-in, toggle and delete', async () => {
+      const received: any[] = [];
+      const rx = http.createServer((req, res) => {
+        let body = '';
+        req.on('data', c => { body += c; });
+        req.on('end', () => { received.push(JSON.parse(body)); res.end('ok'); });
+      });
+      const port = await new Promise<number>(r => rx.listen(0, '127.0.0.1', () => r((rx.address() as any).port)));
+      try {
+        await expect(invoke('create-webhook', { name: 'x', url: 'bad', events: ['login'] })).rejects.toThrow(/URL/);
+        const hook = await invoke('create-webhook', { name: 'Logins', url: `http://127.0.0.1:${port}/`, events: ['login'], secret: 'abc' });
+        expect(hook).toMatchObject({ name: 'Logins', events: ['login'], hasSecret: true, enabled: true });
+        expect(hook).not.toHaveProperty('secret');
+
+        expect(await invoke('test-webhook', hook.id)).toMatchObject({ ok: true, status: 200 });
+        expect(received[0]).toMatchObject({ event: 'test' });
+
+        await invoke('logout');
+        await invoke('authenticate-user', 'admin', ADMIN_PW);
+        await waitFor(() => received.some(r => r.event === 'login' && r.action === 'GUI_LOGIN' && r.username === 'admin'));
+
+        expect((await invoke('update-webhook', hook.id, { enabled: false })).enabled).toBe(false);
+        expect((await invoke('get-webhooks'))[0].lastStatus).toBe('OK 200');
+        expect(await invoke('delete-webhook', hook.id)).toEqual({ success: true });
+        expect(await invoke('get-webhooks')).toEqual([]);
+        await expect(invoke('delete-webhook', hook.id)).rejects.toThrow('Webhook not found');
+      } finally {
+        rx.close();
+      }
+    });
+  });
+
   describe('share link handlers', () => {
     test('links created in the portal are listed (without secrets) and can be revoked from the desktop', async () => {
       const port = await getFreePort();
