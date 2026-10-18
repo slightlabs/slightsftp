@@ -2,6 +2,25 @@
 
 This document describes the unit test coverage for the SLightSFTP application.
 
+## Test layers (v1.2.0)
+
+| Layer | Command | What it proves |
+|-------|---------|----------------|
+| Unit / integration (Jest) | `npm test` | Database, path mapping, permissions, FTP/SFTP servers, web API |
+| Full-stack E2E (Jest) | `npx jest e2e-fullstack` | Admin provisions through the REST API; real SFTP/FTP clients then upload, download, rename, get disconnected, hit permission and traversal limits |
+| Electron main process (Jest) | `npx jest main-process` | Every IPC handler in `main.ts` against a real DB and real servers (Electron itself faked) |
+| GUI in jsdom (Jest) | `npx jest gui-` | The real `index.html` + `renderer.js` and `login.html`: every panel, modal and form, the exact IPC calls produced, HTML escaping |
+| Contract tests (Jest) | `npx jest web-shim-contract preload` | GUI channels ⇄ main-process handlers ⇄ preload whitelist ⇄ web-mode IPC shim |
+| Browser GUI (Playwright) | `npm run test:e2e:web` | Chromium drives the web GUI served by `dist/web-only.js`; results verified with real SFTP clients |
+| Desktop GUI (Playwright) | `npm run test:e2e:electron` | The real Electron app: login window, dashboard, web server control, logout |
+
+Run everything with `npm run test:all`. The Playwright suites need Chromium once
+(`npx playwright install chromium`) and, on a headless Linux machine, a virtual display:
+`xvfb-run -a npm run test:e2e`.
+
+Integration tests bind random free ports on 127.0.0.1 (see `src/__tests__/helpers/test-env.ts`),
+so they can run alongside a locally running SLightSFTP.
+
 ## Overview
 
 The test suite is built using **Jest** with **TypeScript** support via `ts-jest`. Tests verify type definitions, data structures, and business logic.
