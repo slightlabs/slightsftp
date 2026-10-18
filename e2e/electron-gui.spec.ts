@@ -1,0 +1,168 @@
+/**
+ * Desktop GUI end-to-end: launches the real Electron app (dist/main.js) with
+ * Playwright and drives the login window and dashboard window like a user.
+ * Linux CI: run under `xvfb-run`.
+ */
+import { test, expect, _electron as electron, ElectronApplication, Page } from '@playwright/test';
+import * as fs from 'fs';
+import * as path from 'path';
+import { DIST, getFreePort, httpStatus, makeTempDir } from './helpers';
+
+const SftpClient = require('ssh2-sftp-client');
+
+test.describe.configure({ mode: 'serial' });
+
+let app: ElectronApplication;
+let workDir: string;
+let webPort: number;
+let login: Page;
+let dashboard: Page;
+const dialogs: string[] = [];
+
+const autoAcceptDialogs = (page: Page) => page.on('dialog', async d => { dialogs.push(d.message()); await d.accept(); });
+const windowFor = async (file: string) => {
+  const existing = app.windows().find(w => w.url().endsWith(file));
+  return existing ?? app.waitForEvent('window', { predicate: w => w.url().endsWith(file) });
+};
+const nav = (panel: string) => dashboard.locator(`.sidebar-item[data-panel="${panel}"]`).click();
+const card = (name: string) => dashboard.locator('#listeners-list .listener-card', { has: dashboard.locator('h3', { hasText: new RegExp(`^${name}$`) }) });
+
+async function signIn(user: string, password: string): Promise<Page> {
+  login = await windowFor('login.html');
+  await login.fill('#username', user);
+  await login.fill('#password', password);
+  await login.click('#loginBtn');
+  const page = await windowFor('index.html');
+  autoAcceptDialogs(page);
+  return page;
+}
+
+test.beforeAll(async () => {
+  workDir = makeTempDir('electron');
+  webPort = await getFreePort();
+  app = await electron.launch({
+    args: ['--no-sandbox', path.join(DIST, 'main.js')],
+    cwd: workDir, // development layout: config.db + ftp-root live in the working directory
+    env: { ...process.env, WEB_PORT: String(webPort), ELECTRON_DISABLE_SECURITY_WARNINGS: 'true' },
+  });
+});
+
+test.afterAll(async () => {
+  await app?.close().catch(() => undefined);
+  fs.rmSync(workDir, { recursive: true, force: true });
+});
+
+test('starts with a frameless login window and no dashboard', async () => {
+  login = await windowFor('login.html');
+  await expect(login.locator('#loginForm')).toBeVisible();
+  await expect(login.locator('#loginBtn')).toHaveText('Sign In');
+  expect(app.windows().filter(w => w.url().endsWith('index.html'))).toHaveLength(0);
+  expect(fs.existsSync(path.join(workDir, 'config.db'))).toBe(true);
+});
+
+test('rejects bad credentials in the login window', async () => {
+  await login.fill('#username', 'admin');
+  await login.fill('#password', 'wrong');
+  await login.click('#loginBtn');
+  await expect(login.locator('#errorMessage')).toHaveText('Invalid username or password');
+  await expect(login.locator('#loginBtn')).toBeEnabled();
+});
+
+test('admin login opens the dashboard window', async () => {
+  dashboard = await signIn('admin', 'admin123');
+  await expect(dashboard.locator('#currentUser')).toHaveText('admin');
+  await expect(dashboard.locator('#totalUsersCount')).toHaveText('1');
+  await expect(dashboard.locator('#server-overview')).toContainText('3');
+  expect(await dashboard.title()).toBeTruthy();
+});
+
+test('default listeners use non-privileged ports', async () => {
+  await nav('listeners');
+  await expect(card('Default SFTP')).toContainText('0.0.0.0:2222');
+  await expect(card('Default FTP')).toContainText('0.0.0.0:2121');
+  await expect(card('Web GUI Server')).toContainText('Stopped');
+});
+
+test('the embedded web GUI server can be started and stopped from the desktop', async () => {
+  dialogs.length = 0;
+  await card('Web GUI Server').getByRole('button', { name: 'Start' }).click();
+  await expect(card('Web GUI Server')).toContainText('Running');
+  expect(dialogs.join('\n')).toContain(`started successfully on port ${webPort}`);
+  expect(await httpStatus(`http://127.0.0.1:${webPort}/login`)).toBe(200);
+
+  await card('Web GUI Server').getByRole('button', { name: 'Stop' }).click();
+  await expect(card('Web GUI Server')).toContainText('Stopped');
+  await expect(httpStatus(`http://127.0.0.1:${webPort}/login`)).rejects.toThrow();
+});
+
+test('a listener and user created in the desktop GUI serve real SFTP traffic', async () => {
+  const sftpPort = await getFreePort();
+  await dashboard.getByRole('button', { name: 'Add Listener' }).click();
+  const lf = dashboard.locator('#addListenerForm');
+  await lf.locator('[name=name]').fill('Desktop SFTP');
+  await lf.locator('[name=protocol]').selectOption('SFTP');
+  await lf.locator('[name=bindingIp]').fill('127.0.0.1');
+  await lf.locator('[name=port]').fill(String(sftpPort));
+  await lf.getByRole('button', { name: 'Create Listener' }).click();
+  await card('Desktop SFTP').getByRole('button', { name: 'Start' }).click();
+  await expect(card('Desktop SFTP')).toContainText('Running');
+
+  await nav('users');
+  await dashboard.getByRole('button', { name: 'Add User' }).click();
+  const uf = dashboard.locator('#addUserForm');
+  await uf.locator('[name=username]').fill('desk');
+  await uf.locator('[name=password]').fill('desk-pass');
+  await uf.getByRole('button', { name: 'Create User' }).click();
+
+  const row = dashboard.locator('#users-table tbody tr', { hasText: 'desk' });
+  await row.getByRole('button', { name: 'Edit' }).click();
+  const modal = dashboard.locator('#editUserModal');
+  await modal.locator('label', { hasText: 'Desktop SFTP' }).click();
+  const listenerId = await modal.locator('input[id^="listener-"]:checked').getAttribute('value');
+  await modal.locator(`#permissions-${listenerId}`).getByRole('button', { name: 'Select All' }).click();
+  await modal.getByRole('button', { name: 'Add Virtual Path' }).click();
+  const root = path.join(workDir, 'desk-root');
+  fs.mkdirSync(root);
+  await dashboard.fill('#vpVirtualPath', '/');
+  await dashboard.fill('#vpRealPath', root);
+  await dashboard.locator('#virtualPathForm').getByRole('button', { name: 'OK' }).click();
+  await modal.getByRole('button', { name: 'Update User' }).click();
+  await expect(modal).not.toHaveClass(/active/);
+
+  const client = new SftpClient();
+  await client.connect({ host: '127.0.0.1', port: sftpPort, username: 'desk', password: 'desk-pass', readyTimeout: 5000 });
+  try {
+    await client.put(Buffer.from('from the desktop test'), '/hello.txt');
+    expect(fs.readFileSync(path.join(root, 'hello.txt'), 'utf8')).toBe('from the desktop test');
+
+    await nav('sessions');
+    await expect(dashboard.locator('#sessions-table')).toContainText('desk');
+  } finally {
+    await client.end();
+  }
+
+  await nav('files');
+  await dashboard.selectOption('#fileBrowserUser', 'desk');
+  await expect(dashboard.locator('#fileList')).toContainText('hello.txt');
+});
+
+test('Logout returns to the login window; the dashboard is closed', async () => {
+  dialogs.length = 0;
+  const loginPromise = app.waitForEvent('window', { predicate: w => w.url().endsWith('login.html') });
+  await dashboard.getByRole('button', { name: 'Logout' }).click();
+  login = await loginPromise;
+  expect(dialogs).toContain('Are you sure you want to logout?');
+  await expect.poll(() => app.windows().filter(w => w.url().endsWith('index.html')).length).toBe(0);
+  await expect(login.locator('#loginForm')).toBeVisible();
+});
+
+test('non-GUI users are refused at the login window; admin can sign back in', async () => {
+  await login.fill('#username', 'desk');
+  await login.fill('#password', 'desk-pass');
+  await login.click('#loginBtn');
+  await expect(login.locator('#errorMessage')).toHaveText('Invalid username or password');
+
+  dashboard = await signIn('admin', 'admin123');
+  await expect(dashboard.locator('#currentUser')).toHaveText('admin');
+  await expect(dashboard.locator('#totalUsersCount')).toHaveText('2');
+});

@@ -28,3 +28,7 @@ website/downloads/*.msi
 website/downloads/*.AppImage
 website/downloads/*.deb
 release/
+
+# Playwright
+test-results/
+playwright-report/

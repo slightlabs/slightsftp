@@ -6,9 +6,17 @@ module.exports = {
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',
+    '!src/__tests__/**',
+    // standalone CLI / maintenance scripts, not part of the shipped app logic
     '!src/test-client.ts',
-    '!src/renderer.js',
-    '!src/main.ts' // Electron main process is hard to unit test
+    '!src/test-login.ts',
+    '!src/test-vp-permissions.ts',
+    '!src/setup-test-users.ts',
+    '!src/setup-admin-vpath.ts',
+    '!src/fix-admin-gui.ts',
+    '!src/fix-admin-permissions.ts',
+    '!src/server-only.ts',
+    '!src/web-only.ts' // covered by the Playwright web GUI suite (e2e/)
   ],
   coverageDirectory: 'coverage',
   coverageReporters: ['text', 'lcov', 'html'],
