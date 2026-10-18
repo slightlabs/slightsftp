@@ -21,11 +21,10 @@ console.log('🚀 Starting SLightSFTP Server with Web GUI...\n');
     // Ensure admin user exists
     const adminUser = db.getUser('admin');
     if (!adminUser) {
-      const crypto = require('crypto');
-      const hashedPassword = crypto.createHash('sha256').update('admin123').digest('hex');
+      // DatabaseManager.createUser hashes the password itself
       db.createUser({
         username: 'admin',
-        password: hashedPassword,
+        password: 'admin123',
         passwordEnabled: true,
         publicKey: '',
         guiEnabled: true

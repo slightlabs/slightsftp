@@ -194,6 +194,9 @@ export class SFTPServer extends EventEmitter {
               const sftp = accept();
               const virtualPaths = this.db.getVirtualPaths(authenticatedUser!.id!);
 
+              // File handles opened with write access (checked in OPEN)
+              const writableHandles = new Set<number>();
+
               // Map virtual paths to real paths
               const pathMapper = (virtualPath: string): string => {
                 // Normalize path and ensure it starts with /
@@ -216,6 +219,9 @@ export class SFTPServer extends EventEmitter {
                 if (!normalizedVPath.startsWith('/')) {
                   normalizedVPath = '/' + normalizedVPath;
                 }
+
+                // Resolve "." and ".." so clients can never climb above the virtual root
+                normalizedVPath = path.posix.normalize(normalizedVPath);
                 
                 // Find matching virtual path (try longest match first)
                 const sortedPaths = [...virtualPaths].sort((a, b) => b.virtualPath.length - a.virtualPath.length);
@@ -234,7 +240,14 @@ export class SFTPServer extends EventEmitter {
                       relativePath = relativePath.substring(1);
                     }
                     
-                    const realPath = path.join(vp.localPath, relativePath);
+                    let realPath = path.join(vp.localPath, relativePath);
+
+                    // Defence in depth: never resolve outside the virtual path's local root
+                    const root = path.resolve(vp.localPath);
+                    const resolved = path.resolve(realPath);
+                    if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+                      realPath = root;
+                    }
                     
                     console.log(`Path mapping: ${virtualPath} -> ${normalizedVPath} -> ${realPath}`);
                     
@@ -281,6 +294,7 @@ export class SFTPServer extends EventEmitter {
               const findVirtualPath = (virtualPath: string) => {
                 let normalizedVPath = virtualPath.replace(/\\/g, '/');
                 if (!normalizedVPath.startsWith('/')) normalizedVPath = '/' + normalizedVPath;
+                normalizedVPath = path.posix.normalize(normalizedVPath);
                 
                 const sortedPaths = [...virtualPaths].sort((a, b) => b.virtualPath.length - a.virtualPath.length);
                 for (const vp of sortedPaths) {
@@ -360,7 +374,10 @@ export class SFTPServer extends EventEmitter {
                 const writeFlag = flags & (SFTP_OPEN_MODE.WRITE | SFTP_OPEN_MODE.APPEND | SFTP_OPEN_MODE.CREAT);
                 const readFlag = flags & SFTP_OPEN_MODE.READ;
 
-                if (writeFlag && !checkPermission('canCreate', filename) && !checkPermission('canEdit', filename)) {
+                const appendOnly = (flags & SFTP_OPEN_MODE.APPEND) && !(flags & SFTP_OPEN_MODE.TRUNC);
+                const canWrite = checkPermission('canCreate', filename) || checkPermission('canEdit', filename) ||
+                  (appendOnly && checkPermission('canAppend', filename));
+                if (writeFlag && !canWrite) {
                   logActivity('OPEN_DENIED', filename, false);
                   return sftp.status(reqId, SFTP_STATUS_CODE.PERMISSION_DENIED);
                 }
@@ -374,6 +391,9 @@ export class SFTPServer extends EventEmitter {
                 try {
                   const openFlags = this.convertSFTPFlags(flags);
                   const handle = fs.openSync(realPath, openFlags);
+                  if (writeFlag) {
+                    writableHandles.add(handle);
+                  }
                   const handleBuffer = Buffer.alloc(4);
                   handleBuffer.writeUInt32BE(handle, 0);
                   logActivity('OPEN', filename, true);
@@ -416,13 +436,13 @@ export class SFTPServer extends EventEmitter {
                 // Reset idle timeout on activity
                 this.resetIdleTimeout(client, username!);
                 
-                // We don't have the filename in WRITE, so we skip path-level check here
-                // Permissions were already checked in OPEN
-                if (!userPermissions || (!userPermissions.canCreate && !userPermissions.canEdit && !userPermissions.canAppend)) {
+                // We don't have the filename in WRITE: write permission (listener AND
+                // virtual path) was checked in OPEN, which records writable handles
+                const handleNum = handle.readUInt32BE(0);
+                if (!writableHandles.has(handleNum)) {
                   return sftp.status(reqId, SFTP_STATUS_CODE.PERMISSION_DENIED);
                 }
 
-                const handleNum = handle.readUInt32BE(0);
                 try {
                   fs.writeSync(handleNum, data, 0, data.length, offset);
                   sftp.status(reqId, SFTP_STATUS_CODE.OK);
@@ -443,6 +463,7 @@ export class SFTPServer extends EventEmitter {
                 
                 // Otherwise treat as file handle
                 const handleNum = handle.readUInt32BE(0);
+                writableHandles.delete(handleNum);
                 try {
                   fs.closeSync(handleNum);
                   sftp.status(reqId, SFTP_STATUS_CODE.OK);

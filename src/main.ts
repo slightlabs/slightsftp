@@ -6,6 +6,7 @@ import { ServerManager } from './server-manager';
 import { WebServer } from './web-server';
 import * as crypto from 'crypto';
 import logger from './logger';
+import { resolveUserPath } from './path-utils';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -147,7 +148,7 @@ function createWindow(): void {
               type: 'info',
               title: 'About SLightSFTP',
               message: 'SLightSFTP Server Manager',
-              detail: 'Version 1.0.0\nMulti-user FTP/SFTP server with GUI management',
+              detail: `Version ${app.getVersion()}\nMulti-user FTP/SFTP server with GUI management`,
               icon: icon
             });
           }
@@ -300,7 +301,7 @@ async function initializeDatabase(): Promise<void> {
       name: 'Default SFTP',
       protocol: 'SFTP',
       bindingIp: '0.0.0.0',
-      port: 22,
+      port: 2222,
       enabled: true
     });
     
@@ -309,7 +310,7 @@ async function initializeDatabase(): Promise<void> {
       name: 'Default FTP',
       protocol: 'FTP',
       bindingIp: '0.0.0.0',
-      port: 21,
+      port: 2121,
       enabled: true
     });
     
@@ -360,6 +361,29 @@ async function initializeDatabase(): Promise<void> {
     });
 
     logger.info('Default configuration created');
+  }
+
+  // Development convenience: migrate legacy default ports to non-privileged values
+  // so local runs don't require sudo/root.
+  if (!app.isPackaged) {
+    for (const listener of db.getAllListeners()) {
+      if (!listener.id) continue;
+
+      const legacy =
+        (listener.name === 'Default SFTP' && listener.protocol === 'SFTP' && listener.port === 22) ? 2222 :
+        (listener.name === 'Default FTP' && listener.protocol === 'FTP' && listener.port === 21) ? 2121 :
+        null;
+
+      if (legacy) {
+        db.updateListener(listener.id, {
+          name: listener.name,
+          bindingIp: listener.bindingIp,
+          port: legacy,
+          enabled: listener.enabled
+        });
+        logger.info(`Migrated ${listener.name} port from ${listener.port} to ${legacy} for development`);
+      }
+    }
   }
 }
 
@@ -426,15 +450,25 @@ function setupIpcHandlers(): void {
         success: true
       });
       
-      // Close login window and open main window
+      // Close login window and open main window. destroy() rather than close():
+      // the login window's close handler only hides it, which would leak a hidden window.
       if (loginWindow) {
-        loginWindow.close();
+        loginWindow.destroy();
         loginWindow = null;
+      }
+      
+      // Never stack a second dashboard on top of an existing one
+      if (mainWindow) {
+        mainWindow.destroy();
+        mainWindow = null;
       }
       
       logger.info('Creating main window...');
       createWindow();
-      createTray();
+      if (!tray) {
+        createTray();
+      }
+      updateTrayMenu();
       
       return { success: true, user: { username: user.username, id: user.id } };
     } catch (error) {
@@ -520,49 +554,9 @@ function setupIpcHandlers(): void {
     // Update user
     db.updateUser(username, updates);
     
-    // Update listener subscriptions
-    const currentListeners = db.getUserListeners(user.id!);
-    
-    // Unsubscribe from removed listeners
-    for (const listenerId of currentListeners) {
-      if (!listeners.includes(listenerId)) {
-        db.unsubscribeUserFromListener(user.id!, listenerId);
-      }
-    }
-    
-    // Subscribe to new listeners
-    for (const listenerId of listeners) {
-      if (!currentListeners.includes(listenerId)) {
-        db.subscribeUserToListener(user.id!, listenerId);
-      }
-    }
-    
-    // Update permissions
-    if (permissions && permissions.length > 0) {
-      for (const perm of permissions) {
-        db.setPermission(perm);
-      }
-    }
-    
-    // Update virtual paths
-    const currentPaths = db.getVirtualPaths(user.id!);
-    for (const vp of currentPaths) {
-      db.deleteVirtualPath(vp.id!);
-    }
-    for (const vp of virtualPaths) {
-      db.addVirtualPath({
-        userId: user.id!,
-        virtualPath: vp.virtualPath,
-        localPath: vp.localPath,
-        canRead: vp.canRead,
-        canWrite: vp.canWrite,
-        canAppend: vp.canAppend,
-        canDelete: vp.canDelete,
-        canList: vp.canList,
-        canCreateDir: vp.canCreateDir,
-        canRename: vp.canRename,
-        applyToSubdirs: vp.applyToSubdirs
-      });
+    // Replace subscriptions / permissions / virtual paths as sent by the Edit User dialog
+    if (Array.isArray(listeners) && Array.isArray(virtualPaths)) {
+      db.replaceUserAccess(user.id!, listeners, virtualPaths, Array.isArray(permissions) ? permissions : []);
     }
     
     // Log user update
@@ -635,6 +629,15 @@ function setupIpcHandlers(): void {
     db.updateListener(id, updates);
     
     const listener = db.getListener(id);
+
+    // Apply the new settings (e.g. port) to a running listener
+    if (serverManager.isListenerRunning(id)) {
+      if (listener?.enabled) {
+        await serverManager.restartListener(id);
+      } else {
+        await serverManager.stopListener(id);
+      }
+    }
     
     // Log listener update
     db.logActivity({
@@ -708,7 +711,7 @@ function setupIpcHandlers(): void {
         id: -1,
         name: 'Web GUI Server',
         protocol: 'HTTP' as any,
-        port: webServer ? (webServer as any).port : parseInt(process.env.WEB_PORT || '3000'),
+        port: webServer ? webServer.getPort() : parseInt(process.env.WEB_PORT || '3000'),
         bindingIp: '0.0.0.0',
         enabled: true,
         maxConnections: 100
@@ -816,23 +819,12 @@ function setupIpcHandlers(): void {
       throw new Error('User has no virtual paths configured');
     }
     
-    // Map virtual path to real path
-    let realPath = '';
-    for (const vp of virtualPaths) {
-      if (path === vp.virtualPath || path.startsWith(vp.virtualPath + '/')) {
-        const relativePath = path.substring(vp.virtualPath.length);
-        realPath = pathModule.join(vp.localPath, relativePath);
-        break;
-      }
-    }
+    const resolved = resolveUserPath(virtualPaths, path);
+    if (!resolved) throw new Error('No access to this path');
+    const realPath = resolved.localPath;
     
-    if (!realPath && virtualPaths.length > 0) {
-      realPath = pathModule.join(virtualPaths[0].localPath, path);
-    }
-    
-    // Ensure directory exists
-    if (!fs.existsSync(realPath)) {
-      fs.mkdirSync(realPath, { recursive: true });
+    if (!fs.existsSync(realPath) || !fs.statSync(realPath).isDirectory()) {
+      throw new Error('Path not found');
     }
     
     const files = fs.readdirSync(realPath);
@@ -862,21 +854,11 @@ function setupIpcHandlers(): void {
       throw new Error('User has no virtual paths configured');
     }
     
-    // Map virtual path to real path
-    let realPath = '';
-    for (const vp of virtualPaths) {
-      if (filePath === vp.virtualPath || filePath.startsWith(vp.virtualPath + '/')) {
-        const relativePath = filePath.substring(vp.virtualPath.length);
-        realPath = pathModule.join(vp.localPath, relativePath);
-        break;
-      }
-    }
+    const resolved = resolveUserPath(virtualPaths, filePath);
+    if (!resolved) throw new Error('No access to this path');
+    const realPath = resolved.localPath;
     
-    if (!realPath && virtualPaths.length > 0) {
-      realPath = pathModule.join(virtualPaths[0].localPath, filePath);
-    }
-    
-    if (!fs.existsSync(realPath)) {
+    if (!fs.existsSync(realPath) || fs.statSync(realPath).isDirectory()) {
       throw new Error('File not found');
     }
     
@@ -904,8 +886,9 @@ function setupIpcHandlers(): void {
       }
       
       const webPort = port || parseInt(process.env.WEB_PORT || '3000');
-      webServer = new WebServer(db, serverManager, webPort);
-      await webServer.start();
+      const server = new WebServer(db, serverManager, webPort);
+      await server.start();
+      webServer = server;
       
       db.logActivity({
         listenerId: 0,
@@ -961,7 +944,7 @@ function setupIpcHandlers(): void {
   ipcMain.handle('get-web-server-status', async () => {
     return { 
       running: webServer !== null,
-      port: webServer ? (webServer as any).port : null
+      port: webServer ? webServer.getPort() : null
     };
   });
 
@@ -974,8 +957,9 @@ function setupIpcHandlers(): void {
       }
       
       // Start web server on new port
-      webServer = new WebServer(db, serverManager, newPort);
-      await webServer.start();
+      const server = new WebServer(db, serverManager, newPort);
+      await server.start();
+      webServer = server;
       
       db.logActivity({
         listenerId: 0,

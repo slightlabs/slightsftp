@@ -14,6 +14,22 @@ let activityChartInterval = null;
 const CHART_DATA_POINTS = 900; // 15 minutes at 1 second intervals
 const CHART_UPDATE_INTERVAL = 1000; // 1 second
 
+// Escape untrusted text (usernames, file names, paths from FTP/SFTP clients) before
+// it goes into innerHTML. With nodeIntegration enabled, injected markup would be code execution.
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Encode a value as a JS literal for use inside an inline onclick="..." attribute
+function jsArg(value) {
+  return escapeHtml(JSON.stringify(value));
+}
+
 // Load authenticated user on startup
 async function loadAuthenticatedUser() {
   try {
@@ -188,10 +204,10 @@ async function loadDashboard() {
   const activeListenersHtml = activeListeners.length > 0
     ? activeListeners.map(s => `
         <div class="listener-card">
-          <h3>${s.listener.name}</h3>
+          <h3>${escapeHtml(s.listener.name)}</h3>
           <div class="listener-info">
-            <div><strong>Protocol:</strong> ${s.listener.protocol}</div>
-            <div><strong>Address:</strong> ${s.listener.bindingIp}:${s.listener.port}</div>
+            <div><strong>Protocol:</strong> ${escapeHtml(s.listener.protocol)}</div>
+            <div><strong>Address:</strong> ${escapeHtml(s.listener.bindingIp)}:${escapeHtml(s.listener.port)}</div>
             <div><span class="status-indicator status-running"></span>Running</div>
           </div>
         </div>
@@ -308,10 +324,10 @@ async function loadListeners() {
     
     return `
       <div class="listener-card">
-        <h3>${s.listener.name}</h3>
+        <h3>${escapeHtml(s.listener.name)}</h3>
         <div class="listener-info">
-          <div><strong>Protocol:</strong> ${s.listener.protocol}</div>
-          <div><strong>Address:</strong> ${s.listener.bindingIp}:${s.listener.port}</div>
+          <div><strong>Protocol:</strong> ${escapeHtml(s.listener.protocol)}</div>
+          <div><strong>Address:</strong> ${escapeHtml(s.listener.bindingIp)}:${escapeHtml(s.listener.port)}</div>
           ${!isWebGUI ? `<div><strong>Enabled:</strong> ${s.listener.enabled ? 'Yes' : 'No'}</div>` : ''}
           <div>
             <span class="status-indicator ${s.running ? 'status-running' : 'status-stopped'}"></span>
@@ -404,13 +420,15 @@ async function deleteListener(id) {
 async function editListener(id) {
   try {
     const listener = await ipcRenderer.invoke('get-listener', id);
-    const form = document.getElementById('editListenerForm');
-    form.id.value = listener.id;
-    form.name.value = listener.name;
-    form.protocol.value = listener.protocol;
-    form.bindingIp.value = listener.bindingIp;
-    form.port.value = listener.port;
-    form.enabled.checked = listener.enabled;
+    // Use elements.namedItem: form.id / form.name are the form's own attributes,
+    // not the inputs called "id" / "name"
+    const fields = document.getElementById('editListenerForm').elements;
+    fields.namedItem('id').value = listener.id;
+    fields.namedItem('name').value = listener.name;
+    fields.namedItem('protocol').value = listener.protocol;
+    fields.namedItem('bindingIp').value = listener.bindingIp;
+    fields.namedItem('port').value = listener.port;
+    fields.namedItem('enabled').checked = listener.enabled;
     
     showModal('editListenerModal');
   } catch (err) {
@@ -436,14 +454,14 @@ async function loadActiveSessions() {
       
       return `
         <tr>
-          <td><strong>${session.username}</strong></td>
-          <td>${session.protocol}</td>
-          <td>${session.listenerName}</td>
-          <td>${session.ipAddress}</td>
+          <td><strong>${escapeHtml(session.username)}</strong></td>
+          <td>${escapeHtml(session.protocol)}</td>
+          <td>${escapeHtml(session.listenerName)}</td>
+          <td>${escapeHtml(session.ipAddress)}</td>
           <td>${connectedAt.toLocaleString()}</td>
           <td>${duration}</td>
           <td>
-            <button class="btn btn-danger" onclick="disconnectSession('${session.sessionId}', '${session.username}')">
+            <button class="btn btn-danger" onclick="disconnectSession(${jsArg(session.sessionId)}, ${jsArg(session.username)})">
               Disconnect
             </button>
           </td>
@@ -502,13 +520,13 @@ async function loadUsers() {
   const tbody = document.querySelector('#users-table tbody');
   tbody.innerHTML = users.map(user => `
     <tr>
-      <td>${user.username}</td>
+      <td>${escapeHtml(user.username)}</td>
       <td>${user.passwordEnabled ? '✓' : '✗'}</td>
       <td>${user.publicKey ? '✓' : '✗'}</td>
       <td>${user.guiEnabled ? '✓' : '✗'}</td>
       <td>
-        <button class="btn btn-primary" onclick="editUser('${user.username}')">Edit</button>
-        ${user.username !== 'admin' ? `<button class="btn btn-danger" onclick="deleteUser('${user.username}')">Delete</button>` : ''}
+        <button class="btn btn-primary" onclick="editUser(${jsArg(user.username)})">Edit</button>
+        ${user.username !== 'admin' ? `<button class="btn btn-danger" onclick="deleteUser(${jsArg(user.username)})">Delete</button>` : ''}
       </td>
     </tr>
   `).join('');
@@ -523,11 +541,12 @@ async function editUser(username) {
   currentEditingUser = user;
   currentUserVirtualPaths = virtualPaths;
   
-  const form = document.getElementById('editUserForm');
-  form.username.value = username;
-  form.passwordEnabled.checked = user.passwordEnabled;
-  form.publicKey.value = user.publicKey || '';
-  form.guiEnabled.checked = user.guiEnabled;
+  const fields = document.getElementById('editUserForm').elements;
+  fields.namedItem('username').value = username;
+  fields.namedItem('password').value = '';
+  fields.namedItem('passwordEnabled').checked = user.passwordEnabled;
+  fields.namedItem('publicKey').value = user.publicKey || '';
+  fields.namedItem('guiEnabled').checked = user.guiEnabled;
   
   // Populate listeners with permissions
   let listenersHtml = '';
@@ -539,11 +558,15 @@ async function editUser(username) {
       <div class="card" style="margin-bottom: 15px; background: ${isSubscribed ? '#f8f9fa' : '#fff'};">
         <div class="checkbox-group" style="margin-bottom: 10px;">
           <input type="checkbox" id="listener-${listener.id}" value="${listener.id}" ${isSubscribed ? 'checked' : ''} onchange="toggleListenerPermissions(${listener.id})">
-          <label for="listener-${listener.id}" style="font-weight: 600; font-size: 16px;">${listener.name} (${listener.protocol}:${listener.port})</label>
+          <label for="listener-${listener.id}" style="font-weight: 600; font-size: 16px;">${escapeHtml(listener.name)} (${escapeHtml(listener.protocol)}:${escapeHtml(listener.port)})</label>
         </div>
         <div id="permissions-${listener.id}" style="display: ${isSubscribed ? 'block' : 'none'}; margin-left: 25px;">
           <div style="font-weight: 500; margin-bottom: 8px; color: #555;">Permissions:</div>
           <div class="permissions-grid">
+            <div class="checkbox-group">
+              <input type="checkbox" id="perm-${listener.id}-canRead" ${permission?.canRead !== false ? 'checked' : ''}>
+              <label for="perm-${listener.id}-canRead">Read Files</label>
+            </div>
             <div class="checkbox-group">
               <input type="checkbox" id="perm-${listener.id}-canCreate" ${permission?.canCreate ? 'checked' : ''}>
               <label for="perm-${listener.id}-canCreate">Create Files</label>
@@ -598,16 +621,16 @@ function toggleListenerPermissions(listenerId) {
 }
 
 function setAllPermissions(listenerId, value) {
-  const permissions = ['canCreate', 'canEdit', 'canAppend', 'canDelete', 'canList', 'canCreateDir', 'canRename'];
+  const permissions = ['canRead', 'canCreate', 'canEdit', 'canAppend', 'canDelete', 'canList', 'canCreateDir', 'canRename'];
   permissions.forEach(perm => {
     document.getElementById(`perm-${listenerId}-${perm}`).checked = value;
   });
 }
 
 function setReadOnlyPermissions(listenerId) {
-  const permissions = ['canCreate', 'canEdit', 'canAppend', 'canDelete', 'canList', 'canCreateDir', 'canRename'];
+  const permissions = ['canRead', 'canCreate', 'canEdit', 'canAppend', 'canDelete', 'canList', 'canCreateDir', 'canRename'];
   permissions.forEach(perm => {
-    document.getElementById(`perm-${listenerId}-${perm}`).checked = (perm === 'canList');
+    document.getElementById(`perm-${listenerId}-${perm}`).checked = (perm === 'canList' || perm === 'canRead');
   });
 }
 
@@ -615,7 +638,7 @@ function renderVirtualPaths() {
   const html = currentUserVirtualPaths.map((vp, index) => `
     <div class="virtual-path-item">
       <div>
-        <strong>${vp.virtualPath}</strong> → ${vp.localPath}
+        <strong>${escapeHtml(vp.virtualPath)}</strong> → ${escapeHtml(vp.localPath)}
         <div style="font-size: 0.85em; color: #666; margin-top: 5px;">
           Permissions: ${[
             vp.canRead ? 'Read' : null,
@@ -1008,7 +1031,7 @@ function displayActivities(elementId, activities) {
       listenerName = listenerNamesCache[a.listenerId] || `Listener ${a.listenerId}`;
     }
     
-    return `<div class="activity-item ${cssClass}">[${timestamp}] [${listenerName}] ${a.username}: ${a.action} ${a.path}</div>`;
+    return `<div class="activity-item ${cssClass}">[${timestamp}] [${escapeHtml(listenerName)}] ${escapeHtml(a.username)}: ${escapeHtml(a.action)} ${escapeHtml(a.path)}</div>`;
   }).join('');
   
   document.getElementById(elementId).innerHTML = html || '<div class="empty-state">No activity yet</div>';
@@ -1195,11 +1218,12 @@ document.getElementById('editUserForm').addEventListener('submit', async (e) => 
       const permission = {
         userId: currentEditingUser.id,
         listenerId: listener.id,
+        canRead: document.getElementById(`perm-${listener.id}-canRead`)?.checked ?? true,
         canCreate: document.getElementById(`perm-${listener.id}-canCreate`)?.checked || false,
         canEdit: document.getElementById(`perm-${listener.id}-canEdit`)?.checked || false,
         canAppend: document.getElementById(`perm-${listener.id}-canAppend`)?.checked || false,
         canDelete: document.getElementById(`perm-${listener.id}-canDelete`)?.checked || false,
-        canList: document.getElementById(`perm-${listener.id}-canList`)?.checked || true,
+        canList: document.getElementById(`perm-${listener.id}-canList`)?.checked ?? true,
         canCreateDir: document.getElementById(`perm-${listener.id}-canCreateDir`)?.checked || false,
         canRename: document.getElementById(`perm-${listener.id}-canRename`)?.checked || false
       };
@@ -1300,7 +1324,7 @@ async function loadFileBrowser() {
   const users = await ipcRenderer.invoke('get-all-users');
   const select = document.getElementById('fileBrowserUser');
   select.innerHTML = '<option value="">Select a user...</option>' +
-    users.map(u => `<option value="${u.username}">${u.username}</option>`).join('');
+    users.map(u => `<option value="${escapeHtml(u.username)}">${escapeHtml(u.username)}</option>`).join('');
   
   // Reset state
   currentFileBrowserUser = null;
@@ -1339,14 +1363,14 @@ async function browsePath(path) {
 
 function renderBreadcrumb(path) {
   const parts = path.split('/').filter(p => p);
-  let html = '<span class="breadcrumb-item" onclick="browsePath(\'/\')">🏠 Root</span>';
+  let html = `<span class="breadcrumb-item" onclick="browsePath(${jsArg('/')})">🏠 Root</span>`;
   
   let currentPath = '';
   for (const part of parts) {
     currentPath += '/' + part;
     const pathForClick = currentPath; // Capture for onclick
     html += '<span class="breadcrumb-separator">/</span>';
-    html += `<span class="breadcrumb-item" onclick="browsePath('${pathForClick}')">${part}</span>`;
+    html += `<span class="breadcrumb-item" onclick="browsePath(${jsArg(pathForClick)})">${escapeHtml(part)}</span>`;
   }
   
   document.getElementById('fileBreadcrumb').innerHTML = html;
@@ -1368,13 +1392,13 @@ function renderFileList(files) {
       <div class="file-item">
         <div class="file-icon">${icon}</div>
         <div class="file-info">
-          <div class="file-name">${file.name}</div>
+          <div class="file-name">${escapeHtml(file.name)}</div>
           <div class="file-meta">${size} ${size ? '•' : ''} ${date}</div>
         </div>
         <div class="file-actions">
           ${isDirectory ? 
-            `<button class="btn btn-primary" onclick="browsePath('${currentFileBrowserPath === '/' ? '/' + file.name : currentFileBrowserPath + '/' + file.name}')">Open</button>` :
-            `<button class="btn btn-success" onclick="downloadFile('${file.name}')">Download</button>`
+            `<button class="btn btn-primary" onclick="browsePath(${jsArg(currentFileBrowserPath === '/' ? '/' + file.name : currentFileBrowserPath + '/' + file.name)})">Open</button>` :
+            `<button class="btn btn-success" onclick="downloadFile(${jsArg(file.name)})">Download</button>`
           }
         </div>
       </div>

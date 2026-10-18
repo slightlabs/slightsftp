@@ -475,6 +475,52 @@ export class DatabaseManager {
     return result[0].values.map(row => row[0] as number);
   }
 
+  /**
+   * Replace a user's listener subscriptions, listener permissions and virtual
+   * paths in one go (the "Edit User" dialog in the GUI).
+   */
+  replaceUserAccess(
+    userId: number,
+    listenerIds: number[],
+    virtualPaths: Array<Partial<VirtualPath>>,
+    permissions: Array<Partial<Permission>> = []
+  ): void {
+    const currentListeners = this.getUserListeners(userId);
+    for (const listenerId of currentListeners) {
+      if (!listenerIds.includes(listenerId)) {
+        this.unsubscribeUserFromListener(userId, listenerId);
+      }
+    }
+    for (const listenerId of listenerIds) {
+      if (!currentListeners.includes(listenerId)) {
+        this.subscribeUserToListener(userId, listenerId);
+      }
+    }
+
+    for (const perm of permissions) {
+      this.setPermission({ ...perm, userId } as Permission);
+    }
+
+    for (const vp of this.getVirtualPaths(userId)) {
+      this.deleteVirtualPath(vp.id!);
+    }
+    for (const vp of virtualPaths) {
+      this.addVirtualPath({
+        userId,
+        virtualPath: vp.virtualPath!,
+        localPath: vp.localPath!,
+        canRead: vp.canRead,
+        canWrite: vp.canWrite,
+        canAppend: vp.canAppend,
+        canDelete: vp.canDelete,
+        canList: vp.canList,
+        canCreateDir: vp.canCreateDir,
+        canRename: vp.canRename,
+        applyToSubdirs: vp.applyToSubdirs
+      } as VirtualPath);
+    }
+  }
+
   getListenerUsers(listenerId: number): number[] {
     if (!this.db) throw new Error('Database not initialized');
     

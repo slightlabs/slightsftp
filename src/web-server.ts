@@ -9,6 +9,7 @@ import { DatabaseManager } from './database';
 import { ServerManager } from './server-manager';
 import { User, Listener } from './types';
 import logger from './logger';
+import { resolveUserPath } from './path-utils';
 
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
@@ -38,6 +39,24 @@ export class WebServer {
     this.setupMiddleware();
     this.setupRoutes();
     this.setupWebSocket();
+
+    // Push FTP/SFTP server activity (already persisted by ServerManager) to GUI clients
+    if (typeof (serverManager as any)?.on === 'function') {
+      serverManager.on('activity', this.onServerActivity);
+    }
+  }
+
+  private onServerActivity = (activity: any): void => {
+    this.broadcast({ type: 'activity', data: { ...activity, timestamp: activity.timestamp || new Date().toISOString() } });
+  };
+
+  private broadcast(message: unknown): void {
+    const payload = JSON.stringify(message);
+    this.wss.clients.forEach((client) => {
+      if (client.readyState === WebSocket.OPEN) {
+        client.send(payload);
+      }
+    });
   }
 
   private setupMiddleware(): void {
@@ -85,13 +104,7 @@ export class WebServer {
       timestamp: new Date().toISOString()
     };
     this.db.logActivity(activity);
-    
-    // Broadcast activity to all connected WebSocket clients
-    this.wss.clients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(JSON.stringify({ type: 'activity', data: activity }));
-      }
-    });
+    this.broadcast({ type: 'activity', data: activity });
   }
 
   private setupRoutes(): void {
@@ -413,11 +426,11 @@ export class WebServer {
       try {
         const session = (req as any).session as WebSession;
         const { username, password, passwordEnabled, publicKey, guiEnabled } = req.body;
-        const hashedPassword = password ? this.hashPassword(password) : '';
-        
+
+        // DatabaseManager.createUser hashes the password itself
         const user: User = {
           username,
-          password: hashedPassword,
+          password: password || '',
           passwordEnabled,
           publicKey: publicKey || '',
           guiEnabled
@@ -426,7 +439,8 @@ export class WebServer {
         const id = this.db.createUser(user);
         this.logActivity(session.username, 'WEB_USER_CREATED', `Created user '${username}'`, true);
         
-        res.json({ ...user, id });
+        const { password: _omit, ...safeUser } = user;
+        res.json({ ...safeUser, id });
       } catch (error: any) {
         const session = (req as any).session as WebSession;
         this.logActivity(session.username, 'WEB_USER_CREATE_FAILED', error.message, false);
@@ -438,14 +452,26 @@ export class WebServer {
       try {
         const session = (req as any).session as WebSession;
         const username = req.params.username;
-        const { password, passwordEnabled, publicKey, guiEnabled } = req.body;
+        const { password, passwordEnabled, publicKey, guiEnabled, listeners, virtualPaths, permissions } = req.body;
+
+        const user = this.db.getUser(username);
+        if (!user || !user.id) {
+          res.status(404).json({ error: 'User not found' });
+          return;
+        }
         
         const updates: any = { passwordEnabled, publicKey, guiEnabled };
         if (password) {
-          updates.password = this.hashPassword(password);
+          // DatabaseManager.updateUser hashes the password itself
+          updates.password = password;
         }
         
         this.db.updateUser(username, updates);
+
+        // Optional: full access replacement, as sent by the GUI "Edit User" dialog
+        if (Array.isArray(listeners) && Array.isArray(virtualPaths)) {
+          this.db.replaceUserAccess(user.id, listeners, virtualPaths, Array.isArray(permissions) ? permissions : []);
+        }
         this.logActivity(session.username, 'WEB_USER_UPDATED', `Updated user '${username}'`, true);
         res.json({ success: true });
       } catch (error: any) {
@@ -561,16 +587,59 @@ export class WebServer {
 
     this.app.delete('/api/activity', (req: Request, res: Response) => {
       try {
-        const { beforeDate } = req.body;
-        if (beforeDate) {
-          this.db.clearActivitiesByDate(beforeDate);
-        } else {
-          this.db.clearAllActivities();
-        }
-        res.json({ success: true });
+        const { beforeDate } = req.body || {};
+        const count = beforeDate
+          ? this.db.clearActivitiesByDate(beforeDate)
+          : this.db.clearAllActivities();
+        res.json({ success: true, count });
       } catch (error: any) {
         res.status(400).json({ error: error.message });
       }
+    });
+
+    this.app.get('/api/activity/count', (req: Request, res: Response) => {
+      res.json({ count: this.db.getActivityCount() });
+    });
+
+    this.app.get('/api/activity/old-stats', (req: Request, res: Response) => {
+      const settings = this.db.getAllSettings();
+      const retentionDays = parseInt((req.query.retentionDays as string) || settings.logRetentionDays || '30');
+      res.json({ count: this.db.getOldLogsStats(retentionDays) });
+    });
+
+    this.app.post('/api/activity/cleanup', (req: Request, res: Response) => {
+      res.json({ success: true, count: this.db.cleanupOldActivities() });
+    });
+
+    // Settings
+    this.app.get('/api/settings', (req: Request, res: Response) => {
+      res.json(this.db.getAllSettings());
+    });
+
+    this.app.get('/api/settings/:key', (req: Request, res: Response) => {
+      res.json({ key: req.params.key, value: this.db.getSetting(req.params.key) ?? null });
+    });
+
+    this.app.put('/api/settings/:key', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      const value = req.body?.value;
+      if (value === undefined || value === null) {
+        res.status(400).json({ error: 'value is required' });
+        return;
+      }
+      this.db.setSetting(req.params.key, String(value));
+      this.logActivity(session.username, 'WEB_SETTING_UPDATED', `${req.params.key}=${value}`, true);
+      res.json({ success: true });
+    });
+
+    // Lookups by user id (used by the GUI "Edit User" dialog)
+    this.app.get('/api/users/id/:userId/virtual-paths', (req: Request, res: Response) => {
+      res.json(this.db.getVirtualPaths(parseInt(req.params.userId)));
+    });
+
+    this.app.get('/api/users/id/:userId/permissions/:listenerId', (req: Request, res: Response) => {
+      const permission = this.db.getPermission(parseInt(req.params.userId), parseInt(req.params.listenerId));
+      res.json(permission ?? null);
     });
 
     // Active sessions
@@ -610,29 +679,13 @@ export class WebServer {
           return;
         }
 
-        const virtualPaths = this.db.getVirtualPaths(user.id);
-        
-        // Find matching virtual path - need to match from root
-        const matchingVPath = virtualPaths.find(vp => {
-          // Normalize paths for comparison
-          const vpNorm = vp.virtualPath.endsWith('/') ? vp.virtualPath : vp.virtualPath + '/';
-          const pathNorm = virtualPath.endsWith('/') ? virtualPath : virtualPath + '/';
-          
-          // Match if exact or if virtual path is a prefix
-          return virtualPath === vp.virtualPath || 
-                 pathNorm.startsWith(vpNorm) ||
-                 (vp.virtualPath === '/' && virtualPath.startsWith('/'));
-        });
-
-        if (!matchingVPath) {
-          logger.error(`No matching virtual path for ${username} accessing ${virtualPath}. Available paths:`, virtualPaths.map(vp => vp.virtualPath));
+        const resolved = resolveUserPath(this.db.getVirtualPaths(user.id), virtualPath);
+        if (!resolved) {
+          logger.warn(`File browse denied for ${username}: ${virtualPath}`);
           res.status(403).json({ error: 'No access to this path' });
           return;
         }
-
-        // Map virtual path to local path
-        const relativePath = virtualPath.substring(matchingVPath.virtualPath.length);
-        const localPath = path.join(matchingVPath.localPath, relativePath);
+        const localPath = resolved.localPath;
 
         // Check if path exists and list files
         if (!fs.existsSync(localPath)) {
@@ -663,9 +716,51 @@ export class WebServer {
         res.status(500).json({ error: error.message });
       }
     });
+
+    this.app.get('/api/files/download', (req: Request, res: Response) => {
+      try {
+        const session = (req as any).session as WebSession;
+        const username = req.query.username as string;
+        const filePath = req.query.path as string;
+        if (!username || !filePath) {
+          res.status(400).json({ error: 'username and path are required' });
+          return;
+        }
+
+        const user = this.db.getUser(username);
+        if (!user || !user.id) {
+          res.status(404).json({ error: 'User not found' });
+          return;
+        }
+
+        const resolved = resolveUserPath(this.db.getVirtualPaths(user.id), filePath);
+        if (!resolved) {
+          res.status(403).json({ error: 'No access to this path' });
+          return;
+        }
+        if (!fs.existsSync(resolved.localPath)) {
+          res.status(404).json({ error: 'File not found' });
+          return;
+        }
+        if (fs.statSync(resolved.localPath).isDirectory()) {
+          res.status(400).json({ error: 'Path is a directory' });
+          return;
+        }
+
+        this.logActivity(session.username, 'WEB_FILE_DOWNLOAD', `${username}:${filePath}`, true);
+        res.download(resolved.localPath, path.basename(resolved.localPath));
+      } catch (error: any) {
+        logger.error('File download error:', error);
+        res.status(500).json({ error: error.message });
+      }
+    });
   }
 
   private setupWebSocket(): void {
+    // The WebSocket server re-emits HTTP server errors (e.g. EADDRINUSE); without a
+    // listener that would crash the process instead of rejecting start()
+    this.wss.on('error', (error) => logger.error('WebSocket server error:', error));
+
     this.wss.on('connection', (ws: WebSocket) => {
       logger.info('WebSocket client connected');
 
@@ -710,6 +805,18 @@ export class WebServer {
     const webAPIScript = `
     <script>
       // Web API compatibility layer for Electron IPC
+      async function api(method, url, body) {
+        const response = await fetch(url, {
+          method,
+          headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+          body: body !== undefined ? JSON.stringify(body) : undefined,
+          credentials: 'same-origin'
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error((data && data.error) || \`Request failed: \${method} \${url}\`);
+        return data;
+      }
+
       window.ipcRenderer = {
         async invoke(channel, ...args) {
           // Map Electron IPC channels to web API endpoints
@@ -747,7 +854,10 @@ export class WebServer {
                 headers: { 'Content-Type': 'application/json' }
               });
               if (!response.ok) throw new Error('Logout failed');
-              return response.json();
+              const result = await response.json();
+              // Electron closes the window on logout; in a browser go back to the login page
+              window.location.href = '/login';
+              return result;
             },
             'get-authenticated-user': async () => {
               const response = await fetch('/api/user');
@@ -771,11 +881,14 @@ export class WebServer {
               }
               return response.json();
             },
-            'update-listener': async (data) => {
-              const response = await fetch(\`/api/listeners/\${data.id}\`, {
+            'update-listener': async (idOrData, updates) => {
+              // Electron signature is (id, updates); also accept a single object with an id
+              const id = typeof idOrData === 'object' ? idOrData.id : idOrData;
+              const body = typeof idOrData === 'object' ? idOrData : updates;
+              const response = await fetch(\`/api/listeners/\${id}\`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
+                body: JSON.stringify(body)
               });
               if (!response.ok) {
                 const error = await response.json();
@@ -840,11 +953,15 @@ export class WebServer {
               }
               return response.json();
             },
-            'update-user': async (data) => {
-              const response = await fetch(\`/api/users/\${data.username}\`, {
+            'update-user': async (usernameOrData, updates, listeners, virtualPaths, permissions) => {
+              // Electron signature is (username, updates, listeners, virtualPaths, permissions)
+              const isObject = typeof usernameOrData === 'object';
+              const username = isObject ? usernameOrData.username : usernameOrData;
+              const body = isObject ? usernameOrData : { ...updates, listeners, virtualPaths, permissions };
+              const response = await fetch(\`/api/users/\${encodeURIComponent(username)}\`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
+                body: JSON.stringify(body)
               });
               if (!response.ok) {
                 const error = await response.json();
@@ -1006,6 +1123,49 @@ export class WebServer {
                 throw new Error(error.error || 'Failed to browse files');
               }
               return response.json();
+            },
+            'download-file': async (username, filePath) => {
+              const url = \`/api/files/download?username=\${encodeURIComponent(username)}&path=\${encodeURIComponent(filePath)}\`;
+              const response = await fetch(url, { method: 'HEAD' });
+              if (!response.ok) throw new Error('Failed to download file');
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = filePath.split('/').pop();
+              document.body.appendChild(link);
+              link.click();
+              link.remove();
+              return { success: true, savedPath: 'your browser downloads folder' };
+            },
+            'get-virtual-paths': (userId) => api('GET', \`/api/users/id/\${userId}/virtual-paths\`),
+            'get-permission': (userId, listenerId) => api('GET', \`/api/users/id/\${userId}/permissions/\${listenerId}\`),
+            'get-listener-status': async (id) => {
+              const statuses = await api('GET', '/api/listener-statuses');
+              const status = statuses.find(s => s.listener.id === id);
+              return { running: !!(status && status.running), listener: status && status.listener };
+            },
+            'get-activity-count': async () => (await api('GET', '/api/activity/count')).count,
+            'clear-all-activities': () => api('DELETE', '/api/activity', {}),
+            'clear-activities-by-date': (beforeDate) => api('DELETE', '/api/activity', { beforeDate }),
+            'get-old-logs-stats': (retentionDays) => api('GET', \`/api/activity/old-stats?retentionDays=\${encodeURIComponent(retentionDays)}\`),
+            'cleanup-old-activities': () => api('POST', '/api/activity/cleanup'),
+            'get-all-settings': () => api('GET', '/api/settings'),
+            'get-setting': async (key) => (await api('GET', \`/api/settings/\${encodeURIComponent(key)}\`)).value,
+            'set-setting': (key, value) => api('PUT', \`/api/settings/\${encodeURIComponent(key)}\`, { value }),
+            'save-activity-log': async (csvContent) => {
+              const blob = new Blob([csvContent], { type: 'text/csv' });
+              const link = document.createElement('a');
+              link.href = URL.createObjectURL(blob);
+              link.download = \`activity-log-\${new Date().toISOString().split('T')[0]}.csv\`;
+              document.body.appendChild(link);
+              link.click();
+              link.remove();
+              setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+              return { success: true };
+            },
+            'select-directory': async () => {
+              // No native folder picker in a browser: ask for a server-side path instead
+              const value = window.prompt('Enter the server-side folder path:');
+              return value ? value.trim() : null;
             }
           };
           
@@ -1084,12 +1244,22 @@ export class WebServer {
   }
 
   async start(): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
+      const onError = (err: Error) => {
+        logger.error(`Web GUI server failed to start on port ${this.port}:`, err);
+        reject(err);
+      };
+      this.server.once('error', onError);
       this.server.listen(this.port, () => {
+        this.server.off('error', onError);
         logger.info(`🌐 Web GUI server started on http://localhost:${this.port}`);
         resolve();
       });
     });
+  }
+
+  getPort(): number {
+    return this.port;
   }
 
   getApp(): express.Application {
@@ -1097,6 +1267,12 @@ export class WebServer {
   }
 
   async stop(): Promise<void> {
+    if (typeof (this.serverManager as any)?.off === 'function') {
+      this.serverManager.off('activity', this.onServerActivity);
+    }
+    for (const client of this.wss.clients) {
+      client.terminate();
+    }
     return new Promise((resolve, reject) => {
       this.wss.close(() => {
         this.server.close((err?: Error) => {
