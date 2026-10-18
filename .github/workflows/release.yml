@@ -54,9 +54,9 @@ jobs:
     needs: test
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
       fail-fast: false
-      max-parallel: 2
+      max-parallel: 3
     
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
@@ -66,6 +66,7 @@ jobs:
         uses: actions/checkout@v5
 
       - name: Sync package version with tag
+        if: startsWith(github.ref, 'refs/tags/')
         shell: bash
         run: |
           set -euo pipefail
@@ -94,6 +95,20 @@ jobs:
       - name: Build Linux Installers
         if: matrix.os == 'ubuntu-latest'
         run: npm run dist:linux -- --publish never
+
+      - name: Build macOS Installer (unsigned)
+        if: matrix.os == 'macos-latest'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: npm run dist:mac -- --publish never
+
+      - name: Upload macOS artifacts
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v5
+        with:
+          name: mac-installer
+          path: release/*.dmg
+          if-no-files-found: error
 
       - name: Upload Windows artifacts
         if: matrix.os == 'windows-latest'
@@ -157,6 +172,7 @@ jobs:
         uses: actions/download-artifact@v5
         with:
           pattern: '*-installer*'
+          # windows-installer, linux-installers, mac-installer
 
       - name: List downloaded artifacts
         run: ls -R
@@ -175,6 +191,7 @@ jobs:
             windows-installer/*.msi
             linux-installers/*.AppImage
             linux-installers/*.deb
+            mac-installer/*.dmg
           )
 
           echo "Resolved artifacts:"
