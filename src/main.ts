@@ -10,7 +10,7 @@ import { requiresPasswordChange, validateNewPassword } from './password';
 import { getServerCertificate, hostKeyFingerprint, setCertificateDir } from './tls';
 import { describeShare } from './shares';
 import { WebhookDispatcher, describeWebhook, validateWebhookInput } from './webhooks';
-import { getLoginGuard, saveGuardSettings } from './login-guard';
+import { cleanAllowedIps, getLoginGuard, saveGuardSettings } from './login-guard';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -655,7 +655,7 @@ function setupIpcHandlers(): void {
 
   // User operations
   ipcMain.handle('create-user', async (event, user) => {
-    const userId = db.createUser(user);
+    const userId = db.createUser({ ...user, allowedIps: cleanAllowedIps(user?.allowedIps) });
     
     // Log user creation
     db.logActivity({
@@ -689,6 +689,9 @@ function setupIpcHandlers(): void {
     if (!user) throw new Error('User not found');
     
     // Update user
+    if (updates && updates.allowedIps !== undefined) {
+      updates = { ...updates, allowedIps: cleanAllowedIps(updates.allowedIps) };
+    }
     db.updateUser(username, updates);
     
     // Replace subscriptions / permissions / virtual paths as sent by the Edit User dialog

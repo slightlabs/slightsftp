@@ -16,7 +16,7 @@ import { User, VirtualPath } from './types';
 import logger from './logger';
 import QRCode from 'qrcode';
 import { createShare, describeShare, shareUrl, ShareError } from './shares';
-import { getLoginGuard, TOO_MANY_ATTEMPTS } from './login-guard';
+import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 
 export const PORTAL_COOKIE = 'portalSession';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -125,7 +125,7 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     const ip = req.socket.remoteAddress;
     if (guard.isBanned(ip)) throw new HttpError(429, TOO_MANY_ATTEMPTS);
     const user = typeof username === 'string' ? db.getUser(username) : undefined;
-    if (!user || !user.portalEnabled || !user.passwordEnabled || typeof password !== 'string' || !db.checkPassword(user.username, password)) {
+    if (!user || !user.portalEnabled || !user.passwordEnabled || !userIpAllowed(user, ip) || typeof password !== 'string' || !db.checkPassword(user.username, password)) {
       options.logActivity(String(username || 'unknown'), 'PORTAL_LOGIN_FAILED', '/', false);
       guard.recordFailure(ip, 'file portal', String(username || ''));
       throw new HttpError(401, 'Invalid username or password');

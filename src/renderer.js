@@ -743,7 +743,7 @@ async function loadUsers() {
   const tbody = document.querySelector('#users-table tbody');
   tbody.innerHTML = users.map(user => `
     <tr>
-      <td>${escapeHtml(user.username)}${user.portalEnabled ? ' <span title="Web file portal enabled">🌐</span>' : ''}</td>
+      <td>${escapeHtml(user.username)}${user.portalEnabled ? ' <span title="Web file portal enabled">🌐</span>' : ''}${user.allowedIps ? ` <span title="${escapeHtml('Only from: ' + user.allowedIps)}">📍</span>` : ''}</td>
       <td>${user.passwordEnabled ? '✓' : '✗'}</td>
       <td>${user.publicKey ? '✓' : '✗'}</td>
       <td>${user.guiEnabled ? '✓' : '✗'}</td>
@@ -772,6 +772,7 @@ async function editUser(username) {
   fields.namedItem('guiEnabled').checked = user.guiEnabled;
   fields.namedItem('mustChangePassword').checked = !!user.mustChangePassword;
   fields.namedItem('portalEnabled').checked = !!user.portalEnabled;
+  fields.namedItem('allowedIps').value = user.allowedIps || '';
   
   // Populate listeners with permissions
   let listenersHtml = '';
@@ -1386,7 +1387,8 @@ document.getElementById('addUserForm').addEventListener('submit', async (e) => {
     publicKey: formData.get('publicKey') || undefined,
     guiEnabled: formData.get('guiEnabled') === 'on',
     mustChangePassword: formData.get('mustChangePassword') === 'on',
-    portalEnabled: formData.get('portalEnabled') === 'on'
+    portalEnabled: formData.get('portalEnabled') === 'on',
+    allowedIps: (formData.get('allowedIps') || '').trim()
   };
   
   try {
@@ -1437,7 +1439,8 @@ document.getElementById('editUserForm').addEventListener('submit', async (e) => 
     publicKey: formData.get('publicKey') || undefined,
     guiEnabled: formData.get('guiEnabled') === 'on',
     mustChangePassword: formData.get('mustChangePassword') === 'on',
-    portalEnabled: formData.get('portalEnabled') === 'on'
+    portalEnabled: formData.get('portalEnabled') === 'on',
+    allowedIps: (formData.get('allowedIps') || '').trim()
   };
   
   // Get selected listeners and their permissions

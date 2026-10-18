@@ -5,7 +5,7 @@ import { DatabaseManager } from './database';
 import { Listener, User, Permission } from './types';
 import { EventEmitter } from 'events';import logger from './logger';
 import { loadOrCreateHostKey } from './tls';
-import { getLoginGuard } from './login-guard';
+import { getLoginGuard, userIpAllowed } from './login-guard';
 import { SessionTransferStats, TransferHandle, TransferTracker } from './transfers';
 // SFTP constants (from ssh2-streams)
 const SFTP_STATUS_CODE = {
@@ -111,6 +111,18 @@ export class SFTPServer extends EventEmitter {
               listenerId: this.listener.id!,
               username: username,
               action: `LOGIN_FAILED (Not authorized for this listener) [${ipAddress}:${remotePort}]`,
+              path: '/',
+              success: false
+            });
+            countFailure(ctx);
+            return ctx.reject();
+          }
+
+          if (!userIpAllowed(user, ipAddress)) {
+            this.emit('activity', {
+              listenerId: this.listener.id!,
+              username: username,
+              action: `LOGIN_FAILED (IP not allowed) [${ipAddress}:${remotePort}]`,
               path: '/',
               success: false
             });

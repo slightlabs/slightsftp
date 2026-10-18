@@ -14,7 +14,7 @@ import { resolveUserPath } from './path-utils';
 import { requiresPasswordChange, validateNewPassword } from './password';
 import { hostKeyFingerprint } from './tls';
 import { registerPortalRoutes } from './portal';
-import { getLoginGuard, saveGuardSettings, TOO_MANY_ATTEMPTS } from './login-guard';
+import { cleanAllowedIps, getLoginGuard, saveGuardSettings, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { describeShare, registerShareRoutes, shareUrl } from './shares';
 import { WebhookDispatcher, describeWebhook, validateWebhookInput } from './webhooks';
 
@@ -218,6 +218,13 @@ export class WebServer {
           this.logActivity(username, 'WEB_LOGIN_FAILED', 'GUI access not enabled', false);
           guard.recordFailure(ip, 'Web GUI', username);
           res.status(403).json({ error: 'GUI access not enabled for this user' });
+          return;
+        }
+
+        if (!userIpAllowed(user, ip)) {
+          this.logActivity(username, 'WEB_LOGIN_FAILED', 'IP not allowed', false);
+          guard.recordFailure(ip, 'Web GUI', username);
+          res.status(401).json({ error: 'Invalid credentials' });
           return;
         }
 
@@ -603,7 +610,7 @@ export class WebServer {
     this.app.post('/api/users', (req: Request, res: Response) => {
       try {
         const session = (req as any).session as WebSession;
-        const { username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled } = req.body;
+        const { username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps } = req.body;
 
         // DatabaseManager.createUser hashes the password itself
         const user: User = {
@@ -613,7 +620,8 @@ export class WebServer {
           publicKey: publicKey || '',
           guiEnabled,
           mustChangePassword: !!mustChangePassword,
-          portalEnabled: !!portalEnabled
+          portalEnabled: !!portalEnabled,
+          allowedIps: cleanAllowedIps(allowedIps)
         };
         
         const id = this.db.createUser(user);
@@ -632,7 +640,7 @@ export class WebServer {
       try {
         const session = (req as any).session as WebSession;
         const username = req.params.username;
-        const { password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, listeners, virtualPaths, permissions } = req.body;
+        const { password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps, listeners, virtualPaths, permissions } = req.body;
 
         const user = this.db.getUser(username);
         if (!user || !user.id) {
@@ -641,6 +649,7 @@ export class WebServer {
         }
         
         const updates: any = { passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled };
+        if (allowedIps !== undefined) updates.allowedIps = cleanAllowedIps(allowedIps);
         if (password) {
           // DatabaseManager.updateUser hashes the password itself
           updates.password = password;

@@ -6,7 +6,7 @@ import { Listener, User, Permission } from './types';
 import { EventEmitter } from 'events';
 import logger from './logger';
 import { getServerCertificate } from './tls';
-import { getLoginGuard, TOO_MANY_ATTEMPTS } from './login-guard';
+import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { SessionTransferStats, TransferDirection, TransferHandle, TransferTracker } from './transfers';
 
 interface ClientSession {
@@ -75,6 +75,12 @@ export class FTPServer extends EventEmitter {
           this.logActivity(`LOGIN_FAILED (Not authorized for this listener) [${ipAddress}:${remotePort}]`, username, '/', false);
           guard.recordFailure(ipAddress, 'FTP', username);
           return reject(new Error('User not subscribed to this listener'));
+        }
+
+        if (!userIpAllowed(user, ipAddress)) {
+          this.logActivity(`LOGIN_FAILED (IP not allowed) [${ipAddress}:${remotePort}]`, username, '/', false);
+          guard.recordFailure(ipAddress, 'FTP', username);
+          return reject(new Error('Invalid credentials'));
         }
 
         // Verify password

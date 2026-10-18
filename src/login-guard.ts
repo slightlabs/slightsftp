@@ -179,3 +179,17 @@ export function saveGuardSettings(db: DatabaseManager, input: Partial<GuardSetti
   if (input.banMinutes !== undefined) db.setSetting('bruteForceBanMinutes', positive(input.banMinutes, 'Ban duration', 525600));
   if (input.allowlist !== undefined) db.setSetting('ipAllowlist', String(input.allowlist));
 }
+
+/** Per-user allow-list: true when the user has none, or `ip` is inside it. */
+export function userIpAllowed(user: { allowedIps?: string | null }, ip: string | undefined | null): boolean {
+  if (!user.allowedIps || !String(user.allowedIps).trim()) return true;
+  return ipInList(normalizeIp(ip), parseCidrList(user.allowedIps).blockList);
+}
+
+/** Validate an allowed-IPs field from a form; returns the cleaned value or null. */
+export function cleanAllowedIps(value: unknown): string | null {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const { entries, invalid } = parseCidrList(String(value));
+  if (invalid.length) throw new Error(`Invalid address or range: ${invalid.join(', ')}`);
+  return entries.join(', ');
+}

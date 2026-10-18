@@ -190,6 +190,7 @@ export class DatabaseManager {
     addColumn('listeners', 'tlsMode', "TEXT NOT NULL DEFAULT 'none'");
     addColumn('users', 'portalEnabled', 'INTEGER NOT NULL DEFAULT 0');
     addColumn('server_activities', 'bytes', 'INTEGER');
+    addColumn('users', 'allowedIps', 'TEXT');
   }
 
   // User operations
@@ -198,8 +199,8 @@ export class DatabaseManager {
     
     const hashedPassword = user.password ? this.hashPassword(user.password) : null;
     this.db.run(`
-      INSERT INTO users (username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       user.username,
       hashedPassword,
@@ -207,7 +208,8 @@ export class DatabaseManager {
       user.publicKey || null,
       user.guiEnabled ? 1 : 0,
       user.mustChangePassword ? 1 : 0,
-      user.portalEnabled ? 1 : 0
+      user.portalEnabled ? 1 : 0,
+      user.allowedIps || null
     ]);
     
     const result = this.db.exec('SELECT last_insert_rowid() as id');
@@ -262,6 +264,10 @@ export class DatabaseManager {
     if (user.portalEnabled !== undefined) {
       updates.push('portalEnabled = ?');
       values.push(user.portalEnabled ? 1 : 0);
+    }
+    if (user.allowedIps !== undefined) {
+      updates.push('allowedIps = ?');
+      values.push(user.allowedIps || null);
     }
 
     if (updates.length === 0) return;
@@ -925,6 +931,7 @@ export class DatabaseManager {
       guiEnabled: obj.guiEnabled === 1,
       mustChangePassword: obj.mustChangePassword === 1,
       portalEnabled: obj.portalEnabled === 1,
+      allowedIps: obj.allowedIps || null,
       createdAt: obj.createdAt
     };
   }

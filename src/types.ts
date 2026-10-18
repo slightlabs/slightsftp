@@ -9,6 +9,8 @@ export interface User {
   mustChangePassword?: boolean;
   /** may sign in to the browser file portal at /files */
   portalEnabled?: boolean;
+  /** comma-separated addresses / CIDR ranges this user may sign in from (empty = anywhere) */
+  allowedIps?: string | null;
   createdAt?: string;
 }
 
