@@ -62,7 +62,7 @@ jobs:
           VERSION="${TAG#v}"
           echo "Tag: ${TAG}"
           echo "Version: ${VERSION}"
-          npm version --no-git-tag-version "${VERSION}"
+          npm version --no-git-tag-version --allow-same-version "${VERSION}"
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
