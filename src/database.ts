@@ -12,6 +12,7 @@ export class DatabaseManager {
   private db: Database | null = null;
   private dbPath: string;
   private initialized: boolean = false;
+  private activityListeners: Array<(activity: ServerActivity) => void> = [];
 
   constructor(dbPath?: string) {
     this.dbPath = dbPath || path.join(process.cwd(), 'config.db');
@@ -166,6 +167,7 @@ export class DatabaseManager {
     addColumn('users', 'mustChangePassword', 'INTEGER NOT NULL DEFAULT 0');
     addColumn('listeners', 'tlsMode', "TEXT NOT NULL DEFAULT 'none'");
     addColumn('users', 'portalEnabled', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn('server_activities', 'bytes', 'INTEGER');
   }
 
   // User operations
@@ -656,17 +658,32 @@ export class DatabaseManager {
     if (!this.db) throw new Error('Database not initialized');
     
     this.db.run(`
-      INSERT INTO server_activities (listenerId, username, action, path, success)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO server_activities (listenerId, username, action, path, success, bytes)
+      VALUES (?, ?, ?, ?, ?, ?)
     `, [
       activity.listenerId,
       activity.username,
       activity.action,
       activity.path,
-      activity.success ? 1 : 0
+      activity.success ? 1 : 0,
+      activity.bytes ?? null
     ]);
     
     this.save();
+
+    for (const listener of this.activityListeners) {
+      try {
+        listener({ ...activity, timestamp: activity.timestamp || new Date().toISOString() });
+      } catch (err) {
+        console.error('Activity listener failed:', err);
+      }
+    }
+  }
+
+  /** Be notified of every activity entry after it is stored (used by webhooks). */
+  onActivity(listener: (activity: ServerActivity) => void): () => void {
+    this.activityListeners.push(listener);
+    return () => { this.activityListeners = this.activityListeners.filter(l => l !== listener); };
   }
 
   getRecentActivities(listenerId?: number, limit: number = 100): ServerActivity[] {
@@ -698,7 +715,8 @@ export class DatabaseManager {
       action: row[3] as string,
       path: row[4] as string,
       timestamp: row[5] as string,
-      success: (row[6] as number) === 1
+      success: (row[6] as number) === 1,
+      bytes: (row[7] as number | null) ?? null
     }));
   }
 

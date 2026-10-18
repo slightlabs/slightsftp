@@ -217,6 +217,11 @@ describe('Full-stack E2E: web admin API → live SFTP/FTP listeners → real cli
       const mine = res.body.filter((a: any) => a.username === 'alice' && a.listenerId === sftpListenerId);
       expect(mine.some((a: any) => /^LOGIN/.test(a.action))).toBe(true);
       expect(mine.length).toBeGreaterThan(3);
+      // completed transfers are single entries with the transferred size
+      expect(mine).toEqual(expect.arrayContaining([
+        expect.objectContaining({ action: 'UPLOAD', path: '/upload.txt', bytes: 'uploaded via sftp'.length, success: true }),
+        expect.objectContaining({ action: 'DOWNLOAD', path: '/welcome.txt', bytes: 'hello from server'.length, success: true }),
+      ]));
     });
   });
 
@@ -259,6 +264,12 @@ describe('Full-stack E2E: web admin API → live SFTP/FTP listeners → real cli
 
         await client.remove('ftp-upload.txt');
         expect(fs.existsSync(path.join(ftpRoot, 'ftp-upload.txt'))).toBe(false);
+
+        const entries = (await admin.get('/api/activity?limit=500')).body.filter((a: any) => a.listenerId === ftpListenerId);
+        expect(entries).toEqual(expect.arrayContaining([
+          expect.objectContaining({ action: 'UPLOAD', path: '/ftp-upload.txt', bytes: 'ftp upload body'.length }),
+          expect.objectContaining({ action: 'DOWNLOAD', path: '/welcome.txt', bytes: 'hello from server'.length }),
+        ]));
       } finally {
         client.close();
       }

@@ -15,6 +15,8 @@
   admin requires it ("Require password change at next GUI login").
 - SFTP **host key fingerprint** shown on each SFTP listener.
 - Real **REST API documentation** on the website.
+- The activity log records completed **uploads and downloads with their size** for
+  SFTP and FTP (previously SFTP only logged "OPEN").
 
 ### Security
 - Passwords are stored as **salted scrypt** hashes; existing SHA-256 hashes are

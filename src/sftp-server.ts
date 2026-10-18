@@ -190,6 +190,8 @@ export class SFTPServer extends EventEmitter {
 
               // File handles opened with write access (checked in OPEN)
               const writableHandles = new Set<number>();
+              // Open files: logged as one UPLOAD / DOWNLOAD (with size) when closed
+              const openFiles = new Map<number, { path: string; write: boolean; bytes: number }>();
 
               // Map virtual paths to real paths
               const pathMapper = (virtualPath: string): string => {
@@ -349,12 +351,13 @@ export class SFTPServer extends EventEmitter {
                 return hasVPathPerm;
               };
 
-              const logActivity = (action: string, filePath: string, success: boolean) => {
+              const logActivity = (action: string, filePath: string, success: boolean, bytes?: number) => {
                 this.emit('activity', {
                   listenerId: this.listener.id!,
                   username: username!,
                   action,
                   path: filePath,
+                  bytes,
                   success
                 });
               };
@@ -388,6 +391,7 @@ export class SFTPServer extends EventEmitter {
                   if (writeFlag) {
                     writableHandles.add(handle);
                   }
+                  openFiles.set(handle, { path: filename, write: !!writeFlag, bytes: 0 });
                   const handleBuffer = Buffer.alloc(4);
                   handleBuffer.writeUInt32BE(handle, 0);
                   logActivity('OPEN', filename, true);
@@ -415,6 +419,8 @@ export class SFTPServer extends EventEmitter {
                 try {
                   const buffer = Buffer.alloc(length);
                   const bytesRead = fs.readSync(handleNum, buffer, 0, length, offset);
+                  const transfer = openFiles.get(handleNum);
+                  if (transfer) transfer.bytes += bytesRead;
                   if (bytesRead === 0) {
                     sftp.status(reqId, SFTP_STATUS_CODE.EOF);
                   } else {
@@ -439,6 +445,8 @@ export class SFTPServer extends EventEmitter {
 
                 try {
                   fs.writeSync(handleNum, data, 0, data.length, offset);
+                  const transfer = openFiles.get(handleNum);
+                  if (transfer) transfer.bytes += data.length;
                   sftp.status(reqId, SFTP_STATUS_CODE.OK);
                 } catch (err) {
                   console.error('SFTP WRITE error:', err);
@@ -458,8 +466,13 @@ export class SFTPServer extends EventEmitter {
                 // Otherwise treat as file handle
                 const handleNum = handle.readUInt32BE(0);
                 writableHandles.delete(handleNum);
+                const transfer = openFiles.get(handleNum);
+                openFiles.delete(handleNum);
                 try {
                   fs.closeSync(handleNum);
+                  if (transfer) {
+                    logActivity(transfer.write ? 'UPLOAD' : 'DOWNLOAD', transfer.path, true, transfer.bytes);
+                  }
                   sftp.status(reqId, SFTP_STATUS_CODE.OK);
                 } catch (err) {
                   console.error('SFTP CLOSE error:', err);

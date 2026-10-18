@@ -39,6 +39,16 @@ jobs:
           npx playwright install --with-deps chromium
           xvfb-run -a npm run test:e2e
 
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 14
+
   build:
     needs: test
     strategy:

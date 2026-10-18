@@ -70,6 +70,8 @@ export interface ServerActivity {
   path: string;
   timestamp?: string;
   success: boolean;
+  /** size of a completed transfer, when known */
+  bytes?: number | null;
 }
 
 export type ShareType = 'download' | 'upload';

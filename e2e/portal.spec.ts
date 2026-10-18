@@ -121,6 +121,7 @@ test('renames and deletes', async () => {
 test('shares a file with a password-protected link that works in another browser', async ({ browser }) => {
   await row('welcome.txt').getByRole('button', { name: 'Share' }).click();
   await expect(page.locator('#shareDialog')).toBeVisible();
+  await expect(page.locator('#shareLink')).toHaveValue('');
   await page.fill('#shareLimit', '3');
   await page.fill('#sharePassword', 'letmein');
   await page.click('#shareCreate');
@@ -148,8 +149,11 @@ test('shares a file with a password-protected link that works in another browser
 
 test('"Request files" lets an outsider upload into a folder without seeing it', async ({ browser }) => {
   await row('docs').locator('.name button').click();
+  await expect(page.locator('#crumbs')).toContainText('docs');
   await page.click('#requestBtn');
+  await expect(page.locator('#shareSub')).toContainText('“docs”');
   await page.click('#shareCreate');
+  await expect(page.locator('#shareError')).toBeHidden();
   await expect(page.locator('#shareLink')).toHaveValue(/\/s\//);
   const url = await page.locator('#shareLink').inputValue();
   await page.click('#shareClose');

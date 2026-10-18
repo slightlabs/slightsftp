@@ -109,6 +109,16 @@ export class FTPServer extends EventEmitter {
           logger.error('FTP connection error:', err);
         });
 
+        // Completed transfers: one UPLOAD / DOWNLOAD entry with the file size
+        const logTransfer = (action: 'UPLOAD' | 'DOWNLOAD') => (err: any, localPath: string) => {
+          if (err || !localPath) return;
+          fs.promises.stat(localPath)
+            .then(st => this.logActivity(action, username, toVirtualPath(virtualPaths, localPath), true, st.size))
+            .catch(() => this.logActivity(action, username, toVirtualPath(virtualPaths, localPath), true));
+        };
+        connection.on('STOR', logTransfer('UPLOAD'));
+        connection.on('RETR', logTransfer('DOWNLOAD'));
+
         connection.on('close', () => {
           logger.info(`FTP user disconnected: ${username}`);
           this.activeSessions.delete(sessionId);
@@ -187,15 +197,30 @@ export class FTPServer extends EventEmitter {
     };
   }
 
-  private logActivity(action: string, username: string, filePath: string, success: boolean): void {
+  private logActivity(action: string, username: string, filePath: string, success: boolean, bytes?: number): void {
     this.emit('activity', {
       listenerId: this.listener.id!,
       username: username,
       action,
       path: filePath,
+      bytes,
       success
     });
   }
+}
+
+/** Map a local file path back to the user's virtual path (for activity entries). */
+export function toVirtualPath(virtualPaths: Array<{ virtualPath: string; localPath: string }>, localPath: string): string {
+  const resolved = path.resolve(localPath);
+  const sorted = [...virtualPaths].sort((a, b) => b.localPath.length - a.localPath.length);
+  for (const vp of sorted) {
+    const root = path.resolve(vp.localPath);
+    if (resolved === root || resolved.startsWith(root + path.sep)) {
+      const rel = path.relative(root, resolved).split(path.sep).join('/');
+      return path.posix.join(vp.virtualPath || '/', rel) || '/';
+    }
+  }
+  return path.basename(localPath);
 }
 
 export class CustomFileSystem extends FileSystem {
