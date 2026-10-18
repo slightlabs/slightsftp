@@ -36,3 +36,4 @@ playwright-report/
 # Generated TLS certificate
 server.crt
 server.key
+ssh_host_rsa_key

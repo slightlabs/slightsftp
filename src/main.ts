@@ -7,7 +7,7 @@ import { WebServer } from './web-server';
 import logger from './logger';
 import { resolveUserPath } from './path-utils';
 import { requiresPasswordChange, validateNewPassword } from './password';
-import { getServerCertificate, setCertificateDir } from './tls';
+import { getServerCertificate, hostKeyFingerprint, setCertificateDir } from './tls';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -530,6 +530,11 @@ function setupIpcHandlers(): void {
 
     completeLogin(db.getUser(user.username));
     return { success: true };
+  });
+
+  // Server identity that admins can hand to users for verification
+  ipcMain.handle('get-server-identity', async () => {
+    return { sshHostKeyFingerprint: hostKeyFingerprint() };
   });
 
   // Get authenticated user info

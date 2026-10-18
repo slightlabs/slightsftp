@@ -12,6 +12,7 @@ import { User, Listener } from './types';
 import logger from './logger';
 import { resolveUserPath } from './path-utils';
 import { requiresPasswordChange, validateNewPassword } from './password';
+import { hostKeyFingerprint } from './tls';
 
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
@@ -266,6 +267,10 @@ export class WebServer {
       session.mustChangePassword = false;
       this.logActivity(session.username, 'WEB_PASSWORD_CHANGED', 'Password changed via web interface', true);
       res.json({ success: true });
+    });
+
+    this.app.get('/api/server-identity', (req: Request, res: Response) => {
+      res.json({ sshHostKeyFingerprint: hostKeyFingerprint() });
     });
 
     // Get authenticated user
@@ -1186,6 +1191,7 @@ export class WebServer {
               link.remove();
               return { success: true, savedPath: 'your browser downloads folder' };
             },
+            'get-server-identity': () => api('GET', '/api/server-identity'),
             'get-virtual-paths': (userId) => api('GET', \`/api/users/id/\${userId}/virtual-paths\`),
             'get-permission': (userId, listenerId) => api('GET', \`/api/users/id/\${userId}/permissions/\${listenerId}\`),
             'get-listener-status': async (id) => {

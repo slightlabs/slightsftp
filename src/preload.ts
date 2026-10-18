@@ -16,7 +16,7 @@ const INVOKE_CHANNELS = [
   'get-setting', 'set-setting', 'get-all-settings',
   'browse-files', 'download-file', 'select-directory',
   'start-web-server', 'stop-web-server', 'get-web-server-status',
-  'set-first-login-password',
+  'set-first-login-password', 'get-server-identity',
 ];
 
 const EVENT_CHANNELS = ['activity', 'activity-update', 'listener-started', 'listener-stopped'];

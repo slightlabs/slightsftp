@@ -23,7 +23,8 @@ export interface ServerCertificate {
 export const CERT_FILE = 'server.crt';
 export const KEY_FILE = 'server.key';
 
-let certificateDir = process.cwd();
+// SLIGHTSFTP_CERT_DIR overrides the default (working directory) for headless setups and tests
+let certificateDir = process.env.SLIGHTSFTP_CERT_DIR || process.cwd();
 let cached: ServerCertificate | null = null;
 let pending: Promise<ServerCertificate> | null = null;
 
@@ -107,4 +108,43 @@ export async function getServerCertificate(custom?: { certPath?: string; keyPath
   } finally {
     pending = null;
   }
+}
+
+export const SSH_HOST_KEY_FILE = 'ssh_host_rsa_key';
+const hostKeyCache = new Map<string, Buffer>();
+
+/**
+ * The SFTP server's RSA host key, created once in the certificate directory and
+ * shared by every SFTP listener so the server identity never changes.
+ */
+export function loadOrCreateHostKey(dir: string = certificateDir): Buffer {
+  const file = path.join(dir, SSH_HOST_KEY_FILE);
+  const cachedKey = hostKeyCache.get(file);
+  if (cachedKey) return cachedKey;
+
+  let pem: string;
+  if (fs.existsSync(file)) {
+    pem = fs.readFileSync(file, 'utf8');
+  } else {
+    pem = crypto.generateKeyPairSync('rsa', {
+      modulusLength: 3072,
+      publicKeyEncoding: { type: 'spki', format: 'pem' },
+      privateKeyEncoding: { type: 'pkcs1', format: 'pem' }
+    }).privateKey;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, pem, { mode: 0o600 });
+    logger.info(`Generated SFTP host key ${file}`);
+  }
+
+  const key = Buffer.from(pem);
+  hostKeyCache.set(file, key);
+  return key;
+}
+
+/** SHA-256 fingerprint of the host key in OpenSSH notation ("SHA256:..."). */
+export function hostKeyFingerprint(dir: string = certificateDir): string {
+  const ssh2 = require('ssh2');
+  const parsed = ssh2.utils.parseKey(loadOrCreateHostKey(dir));
+  const publicSsh: Buffer = parsed.getPublicSSH();
+  return 'SHA256:' + crypto.createHash('sha256').update(publicSsh).digest('base64').replace(/=+$/, '');
 }

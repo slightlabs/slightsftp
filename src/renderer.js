@@ -264,8 +264,13 @@ async function editWebGUIListener(id) {
 }
 
 // Listeners
+let serverIdentity = null;
+
 async function loadListeners() {
   const statuses = await ipcRenderer.invoke('get-all-listener-statuses');
+  if (!serverIdentity) {
+    serverIdentity = await ipcRenderer.invoke('get-server-identity').catch(() => null);
+  }
   const normalizedStatuses = Array.isArray(statuses) ? [...statuses] : [];
 
   // Backward-compatible fallback: if backend omits Web GUI status, show it in stopped state.
@@ -340,6 +345,7 @@ async function loadListeners() {
           <div><strong>Protocol:</strong> ${escapeHtml(protocolLabel(s.listener))}</div>
           <div><strong>Address:</strong> ${escapeHtml(s.listener.bindingIp)}:${escapeHtml(s.listener.port)}</div>
           ${!isWebGUI ? `<div><strong>Enabled:</strong> ${s.listener.enabled ? 'Yes' : 'No'}</div>` : ''}
+          ${s.listener.protocol === 'SFTP' && serverIdentity?.sshHostKeyFingerprint ? `<div title="Give this to users so their SFTP client can verify the server"><strong>Host key:</strong> <code style="font-size: 11px;">${escapeHtml(serverIdentity.sshHostKeyFingerprint)}</code></div>` : ''}
           <div>
             <span class="status-indicator ${s.running ? 'status-running' : 'status-stopped'}"></span>
             ${s.running ? 'Running' : 'Stopped'}

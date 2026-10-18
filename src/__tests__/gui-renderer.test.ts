@@ -55,6 +55,7 @@ const model = {
 
 const backend: Record<string, Handler> = {
   'get-authenticated-user': () => ({ username: 'admin', id: 1 }),
+  'get-server-identity': () => ({ sshHostKeyFingerprint: 'SHA256:abcDEF123' }),
   'logout': () => ({ success: true }),
   'get-all-listener-statuses': () => [
     ...model.listeners.map(l => ({ listener: l, running: model.running.has(l.id) })),
@@ -238,6 +239,8 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       expect(buttonByText(card('Main SFTP'), 'Stop')).toBeTruthy();
       expect(buttonByText(card('Legacy FTP'), 'Start')).toBeTruthy();
       expect(card('Web GUI Server').textContent).toContain('Security Note');
+      expect(card('Main SFTP').textContent).toContain('Host key: SHA256:abcDEF123');
+      expect(card('Legacy FTP').textContent).not.toContain('Host key');
     });
 
     test('Start / Stop buttons call the matching IPC and refresh the card', async () => {

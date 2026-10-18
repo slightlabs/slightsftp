@@ -4,6 +4,7 @@ import * as path from 'path';
 import { DatabaseManager } from './database';
 import { Listener, User, Permission } from './types';
 import { EventEmitter } from 'events';import logger from './logger';
+import { loadOrCreateHostKey } from './tls';
 // SFTP constants (from ssh2-streams)
 const SFTP_STATUS_CODE = {
   OK: 0,
@@ -50,16 +51,9 @@ export class SFTPServer extends EventEmitter {
   }
 
   private generateHostKeys(): void {
-    // Generate RSA host key
-    const { generateKeyPairSync } = require('crypto');
-    const { privateKey } = generateKeyPairSync('rsa', {
-      modulusLength: 2048,
-      privateKeyEncoding: {
-        type: 'pkcs1',
-        format: 'pem'
-      }
-    });
-    this.hostKeys.push(Buffer.from(privateKey));
+    // A stable, persisted host key: regenerating it would make every client
+    // warn that the server identity changed after each restart
+    this.hostKeys.push(loadOrCreateHostKey());
   }
 
   start(): Promise<void> {
