@@ -196,6 +196,8 @@ export class DatabaseManager {
     addColumn('users', 'totpPendingSecret', 'TEXT');
     addColumn('server_activities', 'checksum', 'TEXT');
     addColumn('users', 'quotaBytes', 'INTEGER');
+    addColumn('users', 'uploadLimitKBps', 'INTEGER');
+    addColumn('users', 'downloadLimitKBps', 'INTEGER');
   }
 
   // User operations
@@ -204,8 +206,8 @@ export class DatabaseManager {
     
     const hashedPassword = user.password ? this.hashPassword(user.password) : null;
     this.db.run(`
-      INSERT INTO users (username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps, quotaBytes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps, quotaBytes, uploadLimitKBps, downloadLimitKBps)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       user.username,
       hashedPassword,
@@ -215,7 +217,9 @@ export class DatabaseManager {
       user.mustChangePassword ? 1 : 0,
       user.portalEnabled ? 1 : 0,
       user.allowedIps || null,
-      user.quotaBytes || null
+      user.quotaBytes || null,
+      user.uploadLimitKBps || null,
+      user.downloadLimitKBps || null
     ]);
     
     const result = this.db.exec('SELECT last_insert_rowid() as id');
@@ -278,6 +282,14 @@ export class DatabaseManager {
     if (user.quotaBytes !== undefined) {
       updates.push('quotaBytes = ?');
       values.push(user.quotaBytes || null);
+    }
+    if (user.uploadLimitKBps !== undefined) {
+      updates.push('uploadLimitKBps = ?');
+      values.push(user.uploadLimitKBps || null);
+    }
+    if (user.downloadLimitKBps !== undefined) {
+      updates.push('downloadLimitKBps = ?');
+      values.push(user.downloadLimitKBps || null);
     }
     if (user.totpPendingSecret !== undefined) {
       updates.push('totpPendingSecret = ?');
@@ -964,6 +976,8 @@ export class DatabaseManager {
       totpSecret: obj.totpSecret || null,
       totpPendingSecret: obj.totpPendingSecret || null,
       quotaBytes: obj.quotaBytes || null,
+      uploadLimitKBps: obj.uploadLimitKBps || null,
+      downloadLimitKBps: obj.downloadLimitKBps || null,
       createdAt: obj.createdAt
     };
   }

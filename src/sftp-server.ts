@@ -9,6 +9,7 @@ import { getLoginGuard, userIpAllowed } from './login-guard';
 import { findAuthorizedKey, parseAuthorizedKeys } from './authorized-keys';
 import { uploadChecksum } from './checksum';
 import { getQuotaManager } from './quota';
+import { getLimiter } from './bandwidth';
 import { SessionTransferStats, TransferHandle, TransferTracker } from './transfers';
 // SFTP constants (from ssh2-streams)
 const SFTP_STATUS_CODE = {
@@ -484,7 +485,11 @@ export class SFTPServer extends EventEmitter {
                   if (bytesRead === 0) {
                     sftp.status(reqId, SFTP_STATUS_CODE.EOF);
                   } else {
-                    sftp.data(reqId, buffer.slice(0, bytesRead));
+                    // Bandwidth limit: pace replies (clients pipeline requests, so this sets the rate)
+                    const wait = getLimiter(this.db, authenticatedUser, 'download')?.delayFor(bytesRead) || 0;
+                    const chunk = buffer.slice(0, bytesRead);
+                    if (wait > 0) setTimeout(() => sftp.data(reqId, chunk), wait);
+                    else sftp.data(reqId, chunk);
                   }
                 } catch (err) {
                   console.error('SFTP READ error:', err);
@@ -513,6 +518,7 @@ export class SFTPServer extends EventEmitter {
 
                 try {
                   fs.writeSync(handleNum, data, 0, data.length, offset);
+                  const uploadWait = getLimiter(this.db, authenticatedUser, 'upload')?.delayFor(data.length) || 0;
                   const transfer = openFiles.get(handleNum);
                   if (transfer) {
                     transfer.bytes += data.length;
@@ -522,7 +528,8 @@ export class SFTPServer extends EventEmitter {
                       quota.adjust(username!, growth);
                     }
                   }
-                  sftp.status(reqId, SFTP_STATUS_CODE.OK);
+                  if (uploadWait > 0) setTimeout(() => sftp.status(reqId, SFTP_STATUS_CODE.OK), uploadWait);
+                  else sftp.status(reqId, SFTP_STATUS_CODE.OK);
                 } catch (err) {
                   console.error('SFTP WRITE error:', err);
                   sftp.status(reqId, SFTP_STATUS_CODE.FAILURE);

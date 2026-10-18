@@ -18,6 +18,7 @@ import { Share, ShareType, User } from './types';
 import logger from './logger';
 import { uploadChecksum } from './checksum';
 import { QuotaExceededError, getQuotaManager, quotaLimiter } from './quota';
+import { getLimiter, sendFileThrottled, throttle } from './bandwidth';
 import { getLoginGuard, TOO_MANY_ATTEMPTS } from './login-guard';
 
 const UNLOCK_TTL_MS = 60 * 60 * 1000;
@@ -227,7 +228,7 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
     if (stat.isDirectory()) throw new ShareError(400, 'Cannot download a folder');
     db.recordShareDownload(ctx.share.id!);
     options.logActivity(ctx.share.owner, 'SHARE_DOWNLOAD', target.virtual, true);
-    res.download(target.localPath, path.basename(target.localPath));
+    await sendFileThrottled(res, target.localPath, path.basename(target.localPath), getLimiter(db, ctx.owner, 'download'));
   }));
 
   router.put('/upload', handle(async (req, res) => {
@@ -255,11 +256,11 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
       }
     }
     try {
-      if (ctx.owner.quotaBytes) {
-        await pipeline(req, quotaLimiter(quota, ctx.owner), fs.createWriteStream(temp, { flags: 'wx' }));
-      } else {
-        await pipeline(req, fs.createWriteStream(temp, { flags: 'wx' }));
-      }
+      const stages: NodeJS.ReadWriteStream[] = [];
+      if (ctx.owner.quotaBytes) stages.push(quotaLimiter(quota, ctx.owner));
+      const limiter = getLimiter(db, ctx.owner, 'upload');
+      if (limiter) stages.push(throttle(limiter));
+      await (pipeline as any)(req, ...stages, fs.createWriteStream(temp, { flags: 'wx' }));
       await fs.promises.rename(temp, finalPath);
     } catch (err) {
       await fs.promises.rm(temp, { force: true });

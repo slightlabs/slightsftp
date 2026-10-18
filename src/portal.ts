@@ -20,6 +20,7 @@ import { createShare, describeShare, shareUrl, ShareError } from './shares';
 import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { beginTotpSetup, checkSecondFactor, confirmTotpSetup, disableTotp } from './two-factor';
 import { QuotaExceededError, getQuotaManager, quotaLimiter } from './quota';
+import { getLimiter, sendFileThrottled, throttle } from './bandwidth';
 
 export const PORTAL_COOKIE = 'portalSession';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -243,7 +244,7 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     const stat = await fs.promises.stat(target.localPath);
     if (stat.isDirectory()) throw new HttpError(400, 'Cannot download a folder');
     options.logActivity(user.username, 'PORTAL_DOWNLOAD', target.virtual, true);
-    res.download(target.localPath, path.basename(target.localPath));
+    await sendFileThrottled(res, target.localPath, path.basename(target.localPath), getLimiter(db, user, 'download'));
   }));
 
   router.put('/upload', handle(async (req, res) => {
@@ -270,11 +271,11 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     // Write to a temp file first so an aborted upload never leaves a truncated file
     const temp = path.join(parent, `.${path.basename(target.localPath)}.${crypto.randomBytes(6).toString('hex')}.part`);
     try {
-      if (user.quotaBytes) {
-        await pipeline(req, quotaLimiter(quota, user, replaced), fs.createWriteStream(temp, { flags: 'wx' }));
-      } else {
-        await pipeline(req, fs.createWriteStream(temp, { flags: 'wx' }));
-      }
+      const stages: NodeJS.ReadWriteStream[] = [];
+      if (user.quotaBytes) stages.push(quotaLimiter(quota, user, replaced));
+      const limiter = getLimiter(db, user, 'upload');
+      if (limiter) stages.push(throttle(limiter));
+      await (pipeline as any)(req, ...stages, fs.createWriteStream(temp, { flags: 'wx' }));
       await fs.promises.rename(temp, target.localPath);
     } catch (err) {
       await fs.promises.rm(temp, { force: true });

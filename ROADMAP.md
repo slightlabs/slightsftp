@@ -32,7 +32,7 @@ Items are implemented in order. Each ships with tests and is marked here when do
 ## Phase 4 — Storage & administration
 
 - [x] **Quotas** — per-user storage quota enforced on upload.
-- [ ] **Bandwidth limits** — per-user upload/download rate limits.
+- [x] **Bandwidth limits** — per-user upload/download rate limits.
 - [ ] **Recycle bin** — deleted files are moved to a restorable trash with retention.
 - [ ] **REST API tokens** — personal access tokens for automation.
 - [ ] **Config backup / restore** from the GUI.

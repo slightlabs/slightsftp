@@ -860,6 +860,8 @@ async function editUser(username) {
   fields.namedItem('portalEnabled').checked = !!user.portalEnabled;
   fields.namedItem('allowedIps').value = user.allowedIps || '';
   fields.namedItem('quotaMb').value = user.quotaBytes ? Math.round(user.quotaBytes / 1048576 * 100) / 100 : '';
+  fields.namedItem('uploadLimitKBps').value = user.uploadLimitKBps || '';
+  fields.namedItem('downloadLimitKBps').value = user.downloadLimitKBps || '';
   const usageLabel = document.querySelector('#editUserForm .quota-usage');
   usageLabel.textContent = 'Checking usage…';
   ipcRenderer.invoke('get-user-usage', username)
@@ -1486,7 +1488,9 @@ document.getElementById('addUserForm').addEventListener('submit', async (e) => {
     mustChangePassword: formData.get('mustChangePassword') === 'on',
     portalEnabled: formData.get('portalEnabled') === 'on',
     allowedIps: (formData.get('allowedIps') || '').trim(),
-    quotaMb: (formData.get('quotaMb') || '').trim()
+    quotaMb: (formData.get('quotaMb') || '').trim(),
+    uploadLimitKBps: (formData.get('uploadLimitKBps') || '').trim(),
+    downloadLimitKBps: (formData.get('downloadLimitKBps') || '').trim()
   };
   
   try {
@@ -1539,7 +1543,9 @@ document.getElementById('editUserForm').addEventListener('submit', async (e) => 
     mustChangePassword: formData.get('mustChangePassword') === 'on',
     portalEnabled: formData.get('portalEnabled') === 'on',
     allowedIps: (formData.get('allowedIps') || '').trim(),
-    quotaMb: (formData.get('quotaMb') || '').trim()
+    quotaMb: (formData.get('quotaMb') || '').trim(),
+    uploadLimitKBps: (formData.get('uploadLimitKBps') || '').trim(),
+    downloadLimitKBps: (formData.get('downloadLimitKBps') || '').trim()
   };
   
   if (currentEditingUser && currentEditingUser.totpEnabled && !e.target.elements.namedItem('totpEnabled').checked) {

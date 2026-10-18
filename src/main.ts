@@ -16,6 +16,7 @@ import { cleanAuthorizedKeys } from './authorized-keys';
 import { SyslogForwarder, formatSyslog, readSyslogSettings, saveSyslogSettings } from './syslog';
 import { checksumsEnabled } from './checksum';
 import { getQuotaManager, quotaFromMegabytes } from './quota';
+import { limitFromForm } from './bandwidth';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -716,7 +717,14 @@ function setupIpcHandlers(): void {
   // User operations
   ipcMain.handle('create-user', async (event, user) => {
     const { quotaMb, ...fields } = user || {};
-    const userId = db.createUser({ ...fields, allowedIps: cleanAllowedIps(fields.allowedIps), publicKey: cleanAuthorizedKeys(fields.publicKey), quotaBytes: quotaFromMegabytes(quotaMb) });
+    const userId = db.createUser({
+      ...fields,
+      allowedIps: cleanAllowedIps(fields.allowedIps),
+      publicKey: cleanAuthorizedKeys(fields.publicKey),
+      quotaBytes: quotaFromMegabytes(quotaMb),
+      uploadLimitKBps: limitFromForm(fields.uploadLimitKBps),
+      downloadLimitKBps: limitFromForm(fields.downloadLimitKBps)
+    });
     
     // Log user creation
     db.logActivity({
@@ -751,6 +759,11 @@ function setupIpcHandlers(): void {
     }
     if (updates && updates.publicKey !== undefined) {
       updates = { ...updates, publicKey: cleanAuthorizedKeys(updates.publicKey) };
+    }
+    if (updates) {
+      for (const key of ['uploadLimitKBps', 'downloadLimitKBps'] as const) {
+        if (updates[key] !== undefined) updates = { ...updates, [key]: limitFromForm(updates[key]) };
+      }
     }
     if (updates && updates.quotaMb !== undefined) {
       const { quotaMb, ...rest } = updates;

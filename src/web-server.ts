@@ -22,6 +22,7 @@ import { cleanAuthorizedKeys } from './authorized-keys';
 import { SyslogForwarder, formatSyslog, readSyslogSettings, saveSyslogSettings } from './syslog';
 import { checksumsEnabled } from './checksum';
 import { getQuotaManager, quotaFromMegabytes } from './quota';
+import { limitFromForm } from './bandwidth';
 
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
@@ -692,7 +693,7 @@ export class WebServer {
     this.app.post('/api/users', (req: Request, res: Response) => {
       try {
         const session = (req as any).session as WebSession;
-        const { username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps, quotaMb } = req.body;
+        const { username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps, quotaMb, uploadLimitKBps, downloadLimitKBps } = req.body;
 
         // DatabaseManager.createUser hashes the password itself
         const user: User = {
@@ -704,7 +705,9 @@ export class WebServer {
           mustChangePassword: !!mustChangePassword,
           portalEnabled: !!portalEnabled,
           allowedIps: cleanAllowedIps(allowedIps),
-          quotaBytes: quotaFromMegabytes(quotaMb)
+          quotaBytes: quotaFromMegabytes(quotaMb),
+          uploadLimitKBps: limitFromForm(uploadLimitKBps),
+          downloadLimitKBps: limitFromForm(downloadLimitKBps)
         };
         
         const id = this.db.createUser(user);
@@ -734,6 +737,8 @@ export class WebServer {
         const updates: any = { passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled };
         if (allowedIps !== undefined) updates.allowedIps = cleanAllowedIps(allowedIps);
         if (publicKey !== undefined) updates.publicKey = cleanAuthorizedKeys(publicKey);
+        if (req.body.uploadLimitKBps !== undefined) updates.uploadLimitKBps = limitFromForm(req.body.uploadLimitKBps);
+        if (req.body.downloadLimitKBps !== undefined) updates.downloadLimitKBps = limitFromForm(req.body.downloadLimitKBps);
         if (req.body.quotaMb !== undefined) {
           updates.quotaBytes = quotaFromMegabytes(req.body.quotaMb);
           getQuotaManager(this.db).invalidate(username);

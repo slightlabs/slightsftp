@@ -18,6 +18,9 @@ export interface User {
   totpPendingSecret?: string | null;
   /** storage limit in bytes across the user's folders (null = unlimited) */
   quotaBytes?: number | null;
+  /** speed limits in KB/s across all sessions (null = unlimited) */
+  uploadLimitKBps?: number | null;
+  downloadLimitKBps?: number | null;
   createdAt?: string;
 }
 

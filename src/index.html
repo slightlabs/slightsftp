@@ -897,6 +897,10 @@
           <input type="number" name="quotaMb" min="1" step="any" placeholder="unlimited">
           <small class="quota-usage" style="color: #666;"></small>
         </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group"><label>Upload limit KB/s (optional)</label><input type="number" name="uploadLimitKBps" min="1" placeholder="unlimited"></div>
+          <div class="form-group"><label>Download limit KB/s (optional)</label><input type="number" name="downloadLimitKBps" min="1" placeholder="unlimited"></div>
+        </div>
         <button type="submit" class="btn btn-primary">Create User</button>
       </form>
     </div>
@@ -943,6 +947,10 @@
           <label>Storage quota in MB (optional)</label>
           <input type="number" name="quotaMb" min="1" step="any" placeholder="unlimited">
           <small class="quota-usage" style="color: #666;"></small>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group"><label>Upload limit KB/s (optional)</label><input type="number" name="uploadLimitKBps" min="1" placeholder="unlimited"></div>
+          <div class="form-group"><label>Download limit KB/s (optional)</label><input type="number" name="downloadLimitKBps" min="1" placeholder="unlimited"></div>
         </div>
         <div class="form-group checkbox-group">
           <input type="checkbox" name="totpEnabled" disabled>

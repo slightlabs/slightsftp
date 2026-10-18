@@ -397,7 +397,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       setField(form, 'guiEnabled', true);
       setField(form, 'mustChangePassword', true);
       await submit(form);
-      expect(lastCall('create-user')).toEqual([{ username: 'dave', password: 'p@ss', passwordEnabled: true, publicKey: undefined, guiEnabled: true, mustChangePassword: true, portalEnabled: false, allowedIps: '', quotaMb: '' }]);
+      expect(lastCall('create-user')).toEqual([{ username: 'dave', password: 'p@ss', passwordEnabled: true, publicKey: undefined, guiEnabled: true, mustChangePassword: true, portalEnabled: false, allowedIps: '', quotaMb: '', uploadLimitKBps: '', downloadLimitKBps: '' }]);
       expect(row('dave')).toBeTruthy();
     });
 
@@ -472,7 +472,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
 
         const [username, updates, listeners, vps, perms] = lastCall('update-user')!;
         expect(username).toBe('carol');
-        expect(updates).toEqual({ password: 'n3w', passwordEnabled: true, publicKey: 'AAAAB3Nza', guiEnabled: false, mustChangePassword: false, portalEnabled: false, allowedIps: '', quotaMb: '' });
+        expect(updates).toEqual({ password: 'n3w', passwordEnabled: true, publicKey: 'AAAAB3Nza', guiEnabled: false, mustChangePassword: false, portalEnabled: false, allowedIps: '', quotaMb: '', uploadLimitKBps: '', downloadLimitKBps: '' });
         expect(listeners).toEqual([1, 2]);
 
         const p1 = perms.find((p: any) => p.listenerId === 1);

@@ -8,6 +8,7 @@ import logger from './logger';
 import { getServerCertificate } from './tls';
 import { uploadChecksum } from './checksum';
 import { QuotaExceededError, QuotaManager, getQuotaManager } from './quota';
+import { RateLimiter, getLimiter } from './bandwidth';
 import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { SessionTransferStats, TransferDirection, TransferHandle, TransferTracker } from './transfers';
 
@@ -252,6 +253,41 @@ function countBytes(stream: any, handle: TransferHandle | undefined, method: 'wr
   // calling end() when a 'close' listener exists, which would hang the upload.
   stream.once(method === 'write' ? 'finish' : 'end', end);
   stream.once('error', end);
+}
+
+/**
+ * Bandwidth limits for FTP without changing how ftp-srv drives the streams:
+ * uploads report backpressure (write() returns false, 'drain' comes later) and
+ * downloads delay the resume() ftp-srv calls after each chunk is sent.
+ */
+function paceStream(stream: any, limiter: RateLimiter | null, kind: 'upload' | 'download'): void {
+  if (!limiter) return;
+  if (kind === 'upload') {
+    const original = stream.write.bind(stream);
+    stream.write = (chunk: any, ...rest: any[]) => {
+      const ok = original(chunk, ...rest);
+      const wait = limiter.delayFor(chunk?.length || 0);
+      if (wait <= 0) return ok;
+      setTimeout(() => stream.emit('drain'), wait);
+      return false;
+    };
+  } else {
+    // count via push(): a 'data' listener here would start the stream flowing early
+    let pending = 0;
+    const push = stream.push.bind(stream);
+    stream.push = (chunk: any, ...rest: any[]) => {
+      if (chunk && typeof chunk.length === 'number') pending += chunk.length;
+      return push(chunk, ...rest);
+    };
+    const resume = stream.resume.bind(stream);
+    stream.resume = () => {
+      const wait = limiter.delayFor(pending);
+      pending = 0;
+      if (wait > 0) setTimeout(resume, wait);
+      else resume();
+      return stream;
+    };
+  }
 }
 
 /** Abort an upload stream once it would take the user over their storage quota. */
@@ -502,6 +538,7 @@ export class CustomFileSystem extends FileSystem {
       const writeStream = fs.createWriteStream(realPath, options);
       countBytes(writeStream, this.track?.(fileName, 'upload'), 'write');
       if (hasQuota) enforceQuota(writeStream, this.user, quota, () => this.logCallback('WRITE_DENIED (quota exceeded)', fileName, false));
+      paceStream(writeStream, getLimiter(this.db, this.user, 'upload'), 'upload');
       writeStream.on('error', (err) => {
         this.logCallback('WRITE_FAILED', fileName, false);
         reject(err);
@@ -525,6 +562,7 @@ export class CustomFileSystem extends FileSystem {
     return new Promise((resolve, reject) => {
       const readStream = fs.createReadStream(realPath, options);
       countBytes(readStream, this.track?.(fileName, 'download'), 'push');
+      paceStream(readStream, getLimiter(this.db, this.user, 'download'), 'download');
       readStream.on('error', (err) => {
         this.logCallback('READ_FAILED', fileName, false);
         reject(err);
