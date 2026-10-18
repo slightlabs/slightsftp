@@ -70,7 +70,7 @@
                     <ul>
                         <li><strong>Protocol:</strong> Choose between FTP or SFTP</li>
                         <li><strong>Binding IP:</strong> IP address to bind to (0.0.0.0 for all interfaces)</li>
-                        <li><strong>Port:</strong> Port number for the listener (default: 21 for FTP, 22 for SFTP)</li>
+                        <li><strong>Port:</strong> Port number for the listener. The default listeners use non-privileged ports (SFTP 2222, FTP 2121) so the server runs without root; the standard ports 22/21 can be used when running with administrator/root rights.</li>
                         <li><strong>Enable/Disable:</strong> Toggle listener on/off</li>
                     </ul>
                 </div>
@@ -93,16 +93,20 @@
                     <h3>Permission Types</h3>
                     <ul>
                         <li><strong>Read:</strong> Allow downloading files</li>
-                        <li><strong>Write:</strong> Allow uploading files</li>
+                        <li><strong>Write:</strong> Allow uploading files (create / edit)</li>
+                        <li><strong>Append:</strong> Allow appending to existing files</li>
                         <li><strong>Delete:</strong> Allow deleting files and directories</li>
                         <li><strong>List:</strong> Allow directory listing</li>
+                        <li><strong>Create Directory:</strong> Allow creating folders</li>
+                        <li><strong>Rename:</strong> Allow renaming and moving files</li>
                     </ul>
                 </div>
 
                 <div class="config-item">
                     <h3>Permission Inheritance</h3>
                     <ul>
-                        <li>Permissions are set per virtual path mapping</li>
+                        <li>Permissions are set per virtual path mapping and per listener; an operation is allowed only when both allow it</li>
+                        <li>Users are confined to their virtual paths — <code>..</code> can never reach files outside them</li>
                         <li>Different paths can have different permissions for the same user</li>
                         <li>Default permissions can be set at user level</li>
                     </ul>
