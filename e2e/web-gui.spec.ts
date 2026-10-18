@@ -87,6 +87,22 @@ test('the default admin must choose a new password, then lands on the dashboard'
   await expect(page.locator('#server-overview')).toContainText('Total Listeners');
 });
 
+test('the dashboard follows the system dark mode and can be switched', async () => {
+  const bodyBg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  await page.emulateMedia({ colorScheme: 'light' });
+  expect(await bodyBg()).toBe('rgb(245, 245, 245)');
+  await page.emulateMedia({ colorScheme: 'dark' });
+  expect(await bodyBg()).toBe('rgb(21, 23, 29)');
+  await page.click('#themeBtn'); // dark (explicit)
+  await page.click('#themeBtn'); // light (explicit) wins over the system setting
+  expect(await bodyBg()).toBe('rgb(245, 245, 245)');
+  await page.reload();
+  expect(await bodyBg()).toBe('rgb(245, 245, 245)'); // remembered
+  await page.click('#themeBtn'); // back to system
+  expect(await bodyBg()).toBe('rgb(21, 23, 29)');
+  await page.emulateMedia({ colorScheme: 'light' });
+});
+
 test('admin creates an SFTP listener from the Listeners panel', async () => {
   await nav('listeners');
   await expect(card('Web GUI Server')).toContainText('Running');

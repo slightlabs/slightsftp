@@ -42,7 +42,7 @@ Items are implemented in order. Each ships with tests and is marked here when do
 
 - [ ] First-run setup wizard.
 - [ ] Auto-update from GitHub Releases.
-- [ ] Dark mode.
+- [x] Dark mode.
 - [ ] macOS build; winget / Homebrew / Flatpak listings.
 - [ ] Cloud storage virtual paths (S3, Azure Blob).
 - [ ] LDAP / Active Directory users.

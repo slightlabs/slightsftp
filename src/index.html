@@ -463,7 +463,53 @@
       border-radius: 4px;
       font-size: 14px;
     }
+
+    /* Dark theme: follows the system unless the user picked a theme (data-theme on <html>) */
+    @media (prefers-color-scheme: dark) {
+      html:not([data-theme="light"]) body { background: #15171d; color: #e3e6ee; }
+      html:not([data-theme="light"]) .header, html:not([data-theme="light"]) .card, html:not([data-theme="light"]) .listener-card, html:not([data-theme="light"]) .modal-content { background: #1e212a; color: #e3e6ee; box-shadow: 0 2px 6px rgba(0,0,0,.4); }
+      html:not([data-theme="light"]) .sidebar { background: #10131a; }
+      html:not([data-theme="light"]) .sidebar-item:hover { background: #1f2533; }
+      html:not([data-theme="light"]) table th, html:not([data-theme="light"]) .table th { background: #262a35; color: #cfd3dd; }
+      html:not([data-theme="light"]) table td, html:not([data-theme="light"]) .table td, html:not([data-theme="light"]) table th, html:not([data-theme="light"]) .table th { border-color: #2e3340; }
+      html:not([data-theme="light"]) tr:hover td { background: #232733; }
+      html:not([data-theme="light"]) input, html:not([data-theme="light"]) select, html:not([data-theme="light"]) textarea { background: #12141a; color: #e3e6ee; border-color: #3a3f4d; }
+      html:not([data-theme="light"]) .virtual-path-item, html:not([data-theme="light"]) .file-item:hover, html:not([data-theme="light"]) .breadcrumb-item:hover { background: #262a35; }
+      html:not([data-theme="light"]) .empty-state, html:not([data-theme="light"]) label, html:not([data-theme="light"]) small, html:not([data-theme="light"]) p { color: #aab0bf; }
+      html:not([data-theme="light"]) .modal-header, html:not([data-theme="light"]) .card-header { border-color: #2e3340; }
+      html:not([data-theme="light"]) .close-btn { color: #cfd3dd; }
+      html:not([data-theme="light"]) .btn:not(.btn-primary):not(.btn-success):not(.btn-danger):not(.btn-warning) { background: #2b303c; color: #e3e6ee; }
+      html:not([data-theme="light"]) code { color: #9fc3ff; }
+      html:not([data-theme="light"]) [style*="background: #f8f9fa"], html:not([data-theme="light"]) [style*="background: #fff;"], html:not([data-theme="light"]) [style*="background: white"] { background: #262a35 !important; }
+      html:not([data-theme="light"]) [style*="background: #fff3cd"] { background: #3a3220 !important; color: #f0dca0 !important; }
+      html:not([data-theme="light"]) [style*="background: #e8f5e9"] { background: #1d3324 !important; color: #b7e4c0 !important; }
+      html:not([data-theme="light"]) [style*="background: #e3f2fd"] { background: #1c2a3a !important; }
+      html:not([data-theme="light"]) [style*="color: #666"], html:not([data-theme="light"]) [style*="color: #555"], html:not([data-theme="light"]) [style*="color: #888"] { color: #9aa1b1 !important; }
+    }
+      html[data-theme="dark"] body { background: #15171d; color: #e3e6ee; }
+      html[data-theme="dark"] .header, html[data-theme="dark"] .card, html[data-theme="dark"] .listener-card, html[data-theme="dark"] .modal-content { background: #1e212a; color: #e3e6ee; box-shadow: 0 2px 6px rgba(0,0,0,.4); }
+      html[data-theme="dark"] .sidebar { background: #10131a; }
+      html[data-theme="dark"] .sidebar-item:hover { background: #1f2533; }
+      html[data-theme="dark"] table th, html[data-theme="dark"] .table th { background: #262a35; color: #cfd3dd; }
+      html[data-theme="dark"] table td, html[data-theme="dark"] .table td, html[data-theme="dark"] table th, html[data-theme="dark"] .table th { border-color: #2e3340; }
+      html[data-theme="dark"] tr:hover td { background: #232733; }
+      html[data-theme="dark"] input, html[data-theme="dark"] select, html[data-theme="dark"] textarea { background: #12141a; color: #e3e6ee; border-color: #3a3f4d; }
+      html[data-theme="dark"] .virtual-path-item, html[data-theme="dark"] .file-item:hover, html[data-theme="dark"] .breadcrumb-item:hover { background: #262a35; }
+      html[data-theme="dark"] .empty-state, html[data-theme="dark"] label, html[data-theme="dark"] small, html[data-theme="dark"] p { color: #aab0bf; }
+      html[data-theme="dark"] .modal-header, html[data-theme="dark"] .card-header { border-color: #2e3340; }
+      html[data-theme="dark"] .close-btn { color: #cfd3dd; }
+      html[data-theme="dark"] .btn:not(.btn-primary):not(.btn-success):not(.btn-danger):not(.btn-warning) { background: #2b303c; color: #e3e6ee; }
+      html[data-theme="dark"] code { color: #9fc3ff; }
+      html[data-theme="dark"] [style*="background: #f8f9fa"], html[data-theme="dark"] [style*="background: #fff;"], html[data-theme="dark"] [style*="background: white"] { background: #262a35 !important; }
+      html[data-theme="dark"] [style*="background: #fff3cd"] { background: #3a3220 !important; color: #f0dca0 !important; }
+      html[data-theme="dark"] [style*="background: #e8f5e9"] { background: #1d3324 !important; color: #b7e4c0 !important; }
+      html[data-theme="dark"] [style*="background: #e3f2fd"] { background: #1c2a3a !important; }
+      html[data-theme="dark"] [style*="color: #666"], html[data-theme="dark"] [style*="color: #555"], html[data-theme="dark"] [style*="color: #888"] { color: #9aa1b1 !important; }
   </style>
+  <script>
+    // apply the saved theme before first paint
+    try { const t = localStorage.getItem('slightsftp-theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) { /* storage unavailable */ }
+  </script>
 </head>
 <body>
   <div class="container">
@@ -485,6 +531,7 @@
         <h1>SLightSFTP Server Manager</h1>
         <div class="user-info">
           <div class="user-badge" id="currentUser">Loading...</div>
+          <button class="btn-logout" onclick="toggleTheme()" id="themeBtn" title="Theme: follow system">🌓</button>
           <button class="btn-logout" onclick="showTwoFactorModal()" id="twoFactorBtn" title="Two-factor sign-in">🔐 2FA</button>
           <button class="btn-logout" onclick="logout()">Logout</button>
         </div>

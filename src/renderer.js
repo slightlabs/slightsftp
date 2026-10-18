@@ -110,6 +110,21 @@ async function disableTwoFactor() {
   }
 }
 
+// Theme: system → dark → light
+function toggleTheme() {
+  const order = [undefined, 'dark', 'light'];
+  const current = document.documentElement.dataset.theme;
+  const next = order[(order.indexOf(current) + 1) % order.length];
+  if (next) document.documentElement.dataset.theme = next;
+  else delete document.documentElement.dataset.theme;
+  try {
+    if (next) localStorage.setItem('slightsftp-theme', next);
+    else localStorage.removeItem('slightsftp-theme');
+  } catch (e) { /* storage unavailable */ }
+  const btn = document.getElementById('themeBtn');
+  if (btn) btn.title = `Theme: ${next || 'follow system'}`;
+}
+
 // Logout function
 async function logout() {
   const confirmed = confirm('Are you sure you want to logout?');

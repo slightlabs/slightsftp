@@ -270,6 +270,22 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
     });
   });
 
+  describe('theme', () => {
+    test('the toggle cycles system → dark → light → system and remembers the choice', () => {
+      const html = document.documentElement;
+      expect(html.dataset.theme).toBeUndefined();
+      $('#themeBtn').click();
+      expect(html.dataset.theme).toBe('dark');
+      expect(localStorage.getItem('slightsftp-theme')).toBe('dark');
+      $('#themeBtn').click();
+      expect(html.dataset.theme).toBe('light');
+      $('#themeBtn').click();
+      expect(html.dataset.theme).toBeUndefined();
+      expect(localStorage.getItem('slightsftp-theme')).toBeNull();
+      expect($('#themeBtn').title).toBe('Theme: follow system');
+    });
+  });
+
   describe('navigation', () => {
     test.each(['listeners', 'sessions', 'users', 'files', 'shares', 'webhooks', 'security', 'trash', 'activity', 'dashboard'])('sidebar switches to the %s panel', async panel => {
       await openPanel(panel);
