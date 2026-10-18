@@ -73,10 +73,10 @@ jobs:
         run: docker build -t slightsftp:ci .
       - name: Smoke test
         run: |
-          docker run -d --name s -p 3000:3000 slightsftp:ci
+          docker run -d --name slightsftp-ci -p 3000:3000 slightsftp:ci
           for i in $(seq 1 30); do curl -fs http://127.0.0.1:3000/login >/dev/null && break; sleep 2; done
           curl -fs http://127.0.0.1:3000/login >/dev/null
-          docker rm -f s
+          docker rm -f slightsftp-ci
 
   build-linux:
     name: Build Linux packages
