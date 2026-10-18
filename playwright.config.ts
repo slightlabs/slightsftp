@@ -17,7 +17,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    { name: 'web-gui', testMatch: /web-gui\.spec\.ts/, use: { browserName: 'chromium' } },
+    { name: 'web-gui', testMatch: /(web-gui|portal)\.spec\.ts/, use: { browserName: 'chromium' } },
     { name: 'electron-gui', testMatch: /electron-gui\.spec\.ts/ },
   ],
 });

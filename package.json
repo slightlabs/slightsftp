@@ -4,7 +4,7 @@
   "description": "Multi-user FTP/SFTP server with GUI management",
   "main": "dist/main.js",
   "scripts": {
-    "build": "tsc && node -e \"const fs=require('fs');const path=require('path');if(!fs.existsSync('dist/assets'))fs.mkdirSync('dist/assets',{recursive:true});fs.copyFileSync('assets/icon.png','dist/assets/icon.png');fs.copyFileSync('src/index.html','dist/index.html');fs.copyFileSync('src/login.html','dist/login.html');fs.copyFileSync('src/admin.html','dist/admin.html');fs.copyFileSync('src/renderer.js','dist/renderer.js');\"",
+    "build": "tsc && node -e \"const fs=require('fs');const path=require('path');if(!fs.existsSync('dist/assets'))fs.mkdirSync('dist/assets',{recursive:true});fs.copyFileSync('assets/icon.png','dist/assets/icon.png');fs.copyFileSync('src/index.html','dist/index.html');fs.copyFileSync('src/login.html','dist/login.html');fs.copyFileSync('src/admin.html','dist/admin.html');fs.copyFileSync('src/renderer.js','dist/renderer.js');fs.copyFileSync('src/portal.html','dist/portal.html');\"",
     "start": "npm run build && electron --no-sandbox dist/main.js",
     "start:web": "npm run build && node dist/web-only.js",
     "dev": "tsc && electron --no-sandbox dist/main.js",
@@ -49,6 +49,7 @@
       "src/login.html",
       "src/renderer.js",
       "src/admin.html",
+      "src/portal.html",
       "assets/**/*",
       "node_modules/**/*",
       "package.json"

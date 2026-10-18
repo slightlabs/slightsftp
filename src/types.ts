@@ -7,6 +7,8 @@ export interface User {
   guiEnabled: boolean;
   /** user must pick a new password at their next GUI / portal login */
   mustChangePassword?: boolean;
+  /** may sign in to the browser file portal at /files */
+  portalEnabled?: boolean;
   createdAt?: string;
 }
 

@@ -16,7 +16,7 @@ Items are implemented in order. Each ships with tests and is marked here when do
 
 ## Phase 2 — Headline features
 
-- [ ] **Browser file portal** — end users sign in at `/files` and browse, upload (drag & drop), download, create folders, rename and delete, honouring the same virtual-path permissions as SFTP/FTP.
+- [x] **Browser file portal** — end users sign in at `/files` and browse, upload (drag & drop), download, create folders, rename and delete, honouring the same virtual-path permissions as SFTP/FTP.
 - [ ] **Share links** — expiring, optionally password-protected download links and upload-only "drop box" links, with download limits, revocation and a QR code.
 - [ ] **Event rules & webhooks** — on upload / download / delete / login: POST a JSON webhook (Slack/Teams-compatible), optionally filtered by user and path.
 - [ ] **Live transfers view** — per-session bytes and throughput on the dashboard.

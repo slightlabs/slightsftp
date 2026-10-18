@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SLightSFTP Files</title>
+<style>
+  :root {
+    --bg: #f4f6fb; --panel: #ffffff; --text: #1f2933; --muted: #6b7280; --border: #e5e7eb;
+    --accent: #5b5fe0; --accent-text: #ffffff; --danger: #d64545; --hover: #f1f3fa; --drop: rgba(91, 95, 224, 0.12);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12141a; --panel: #1b1e27; --text: #e6e8ee; --muted: #9aa1b1; --border: #2c303c;
+      --accent: #8b8ff5; --accent-text: #0f1016; --danger: #f07070; --hover: #232734; --drop: rgba(139, 143, 245, 0.16);
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Ubuntu, sans-serif; background: var(--bg); color: var(--text); }
+  button, input { font: inherit; }
+  button { cursor: pointer; border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 8px; padding: 7px 12px; }
+  button:hover { background: var(--hover); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  button.danger { color: var(--danger); }
+  button:disabled { opacity: .55; cursor: not-allowed; }
+  input[type=text], input[type=password] { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text); }
+  [hidden] { display: none !important; }
+
+  .center { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 28px; width: 100%; max-width: 380px; box-shadow: 0 10px 30px rgba(0,0,0,.06); }
+  .card h1 { margin: 0 0 4px; font-size: 22px; }
+  .card p.sub { margin: 0 0 20px; color: var(--muted); }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 5px; }
+  .card button.primary { width: 100%; padding: 10px; margin-top: 6px; }
+  .error { background: rgba(214, 69, 69, .1); color: var(--danger); border-radius: 8px; padding: 9px 12px; margin-bottom: 14px; font-size: 14px; }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 2; }
+  header .brand { font-weight: 650; }
+  header .spacer { flex: 1; }
+  header .who { color: var(--muted); font-size: 14px; }
+  main { max-width: 980px; margin: 0 auto; padding: 16px; }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; flex: 1; min-width: 0; font-size: 15px; }
+  .crumbs button { border: none; background: none; padding: 4px 6px; color: var(--accent); }
+  .crumbs span.sep { color: var(--muted); }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; position: relative; }
+  .row { display: grid; grid-template-columns: 28px 1fr 100px 170px auto; align-items: center; gap: 10px; padding: 9px 14px; border-top: 1px solid var(--border); }
+  .row:first-child { border-top: none; }
+  .row.head { color: var(--muted); font-size: 13px; background: var(--bg); }
+  .row:not(.head):hover { background: var(--hover); }
+  .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .name button { border: none; background: none; padding: 0; color: var(--text); text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .name button:hover { color: var(--accent); text-decoration: underline; }
+  .size, .date { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .size { text-align: right; }
+  .actions { display: flex; gap: 6px; justify-content: flex-end; }
+  .actions button { padding: 4px 9px; font-size: 13px; }
+  .empty { padding: 36px; text-align: center; color: var(--muted); }
+  .dropzone { position: absolute; inset: 0; background: var(--drop); border: 2px dashed var(--accent); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: 600; color: var(--accent); pointer-events: none; }
+  .uploads { margin-top: 12px; display: grid; gap: 6px; }
+  .upload { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+  .upload .bar { height: 4px; border-radius: 2px; background: var(--border); margin-top: 6px; overflow: hidden; }
+  .upload .bar > div { height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+  .upload.failed { color: var(--danger); }
+  .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: var(--text); color: var(--panel); padding: 9px 16px; border-radius: 10px; font-size: 14px; max-width: calc(100% - 32px); }
+  @media (max-width: 640px) {
+    .row { grid-template-columns: 24px 1fr auto; }
+    .row .size, .row .date { display: none; }
+    header .who { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- sign in -->
+<div class="center" id="loginView" hidden>
+  <form class="card" id="loginForm" autocomplete="on">
+    <h1>SLightSFTP Files</h1>
+    <p class="sub">Sign in to your files</p>
+    <div class="error" id="loginError" hidden></div>
+    <div class="field"><label for="username">Username</label><input type="text" id="username" autocomplete="username" required autofocus></div>
+    <div class="field"><label for="password">Password</label><input type="password" id="password" autocomplete="current-password" required></div>
+    <button class="primary" type="submit" id="loginBtn">Sign in</button>
+  </form>
+</div>
+
+<!-- forced password change -->
+<div class="center" id="changeView" hidden>
+  <form class="card" id="changeForm">
+    <h1>Choose a new password</h1>
+    <p class="sub">You need a new password before continuing.</p>
+    <div class="error" id="changeError" hidden></div>
+    <div class="field"><label for="newPassword">New password</label><input type="password" id="newPassword" autocomplete="new-password" required></div>
+    <div class="field"><label for="confirmPassword">Confirm new password</label><input type="password" id="confirmPassword" autocomplete="new-password" required></div>
+    <button class="primary" type="submit">Save and continue</button>
+  </form>
+</div>
+
+<!-- file browser -->
+<div id="filesView" hidden>
+  <header>
+    <span class="brand">📁 SLightSFTP Files</span>
+    <span class="spacer"></span>
+    <span class="who" id="who"></span>
+    <button type="button" id="logoutBtn">Sign out</button>
+  </header>
+  <main>
+    <div class="toolbar">
+      <nav class="crumbs" id="crumbs" aria-label="Folder path"></nav>
+      <button type="button" id="newFolderBtn">New folder</button>
+      <button type="button" class="primary" id="uploadBtn">Upload</button>
+      <input type="file" id="fileInput" multiple hidden>
+    </div>
+    <div class="panel" id="listPanel">
+      <div class="row head"><span></span><span>Name</span><span class="size">Size</span><span class="date">Modified</span><span></span></div>
+      <div id="rows"></div>
+      <div class="dropzone" id="dropzone" hidden>Drop files to upload</div>
+    </div>
+    <div class="uploads" id="uploads"></div>
+  </main>
+</div>
+
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+  const $ = id => document.getElementById(id);
+  const state = { path: '/', permissions: {}, username: '' };
+
+  const el = (tag, props = {}, ...children) => {
+    const node = document.createElement(tag);
+    Object.assign(node, props);
+    for (const child of children) node.append(child);
+    return node;
+  };
+
+  async function api(method, url, body) {
+    const res = await fetch(url, {
+      method,
+      credentials: 'same-origin',
+      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const err = new Error(data.error || `Request failed (${res.status})`);
+      err.status = res.status;
+      err.data = data;
+      throw err;
+    }
+    return data;
+  }
+
+  let toastTimer;
+  function toast(message) {
+    const t = $('toast');
+    t.textContent = message;
+    t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 3500);
+  }
+
+  function show(view) {
+    for (const id of ['loginView', 'changeView', 'filesView']) $(id).hidden = id !== view;
+  }
+
+  function showError(id, message) {
+    $(id).textContent = message;
+    $(id).hidden = !message;
+  }
+
+  const join = (dir, name) => (dir === '/' ? '' : dir) + '/' + name;
+  const formatSize = bytes => {
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+    return `${(bytes / 1024 ** i).toFixed(i ? 1 : 0)} ${units[i]}`;
+  };
+
+  // ── auth ───────────────────────────────────────────────────────────────
+  $('loginForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    showError('loginError', '');
+    $('loginBtn').disabled = true;
+    try {
+      const result = await api('POST', '/portal/api/login', { username: $('username').value.trim(), password: $('password').value });
+      $('password').value = '';
+      if (result.requirePasswordChange) {
+        show('changeView');
+        $('newPassword').focus();
+      } else {
+        await start();
+      }
+    } catch (err) {
+      showError('loginError', err.message);
+    } finally {
+      $('loginBtn').disabled = false;
+    }
+  });
+
+  $('changeForm').addEventListener('submit', async e => {
+    e.preventDefault();
+    const pw = $('newPassword').value;
+    if (pw.length < 8) return showError('changeError', 'The new password must be at least 8 characters');
+    if (pw !== $('confirmPassword').value) return showError('changeError', 'The passwords do not match');
+    try {
+      await api('POST', '/portal/api/change-password', { newPassword: pw });
+      await start();
+    } catch (err) {
+      showError('changeError', err.message);
+    }
+  });
+
+  $('logoutBtn').addEventListener('click', async () => {
+    await api('POST', '/portal/api/logout').catch(() => undefined);
+    state.username = '';
+    show('loginView');
+    $('username').focus();
+  });
+
+  // ── browsing ───────────────────────────────────────────────────────────
+  function renderCrumbs() {
+    const crumbs = $('crumbs');
+    crumbs.replaceChildren();
+    const parts = state.path.split('/').filter(Boolean);
+    crumbs.append(el('button', { type: 'button', textContent: 'My files', onclick: () => open('/') }));
+    parts.forEach((part, i) => {
+      const target = '/' + parts.slice(0, i + 1).join('/');
+      crumbs.append(el('span', { className: 'sep', textContent: '/' }));
+      crumbs.append(el('button', { type: 'button', textContent: part, onclick: () => open(target) }));
+    });
+  }
+
+  function renderRows(files) {
+    const rows = $('rows');
+    rows.replaceChildren();
+    const p = state.permissions;
+    if (!files.length) {
+      rows.append(el('div', { className: 'empty', textContent: p.canWrite ? 'This folder is empty — drop files here to upload.' : 'This folder is empty.' }));
+      return;
+    }
+    for (const file of files) {
+      const isDir = file.type === 'directory';
+      const fullPath = join(state.path, file.name);
+      const actions = el('span', { className: 'actions' });
+      if (!isDir && p.canRead) actions.append(el('button', { type: 'button', textContent: 'Download', onclick: () => download(fullPath) }));
+      if (p.canRename) actions.append(el('button', { type: 'button', textContent: 'Rename', onclick: () => rename(file.name) }));
+      if (p.canDelete) actions.append(el('button', { type: 'button', className: 'danger', textContent: 'Delete', onclick: () => remove(file.name, isDir) }));
+
+      const nameButton = el('button', { type: 'button', title: file.name, textContent: file.name, onclick: () => (isDir ? open(fullPath) : download(fullPath)) });
+      rows.append(el('div', { className: 'row' },
+        el('span', { textContent: isDir ? '📁' : '📄' }),
+        el('span', { className: 'name' }, nameButton),
+        el('span', { className: 'size', textContent: isDir ? '' : formatSize(file.size) }),
+        el('span', { className: 'date', textContent: file.modified ? new Date(file.modified).toLocaleString() : '' }),
+        actions));
+    }
+  }
+
+  async function open(dir) {
+    try {
+      const listing = await api('GET', '/portal/api/list?path=' + encodeURIComponent(dir));
+      state.path = listing.path;
+      state.permissions = listing.permissions;
+      renderCrumbs();
+      renderRows(listing.files);
+      $('uploadBtn').hidden = !state.permissions.canWrite;
+      $('newFolderBtn').hidden = !state.permissions.canCreateDir;
+      history.replaceState(null, '', '#' + encodeURI(state.path));
+    } catch (err) {
+      if (err.status === 401) return show('loginView');
+      toast(err.message);
+    }
+  }
+
+  function download(filePath) {
+    const a = el('a', { href: '/portal/api/download?path=' + encodeURIComponent(filePath), download: filePath.split('/').pop() });
+    document.body.append(a);
+    a.click();
+    a.remove();
+  }
+
+  async function rename(name) {
+    const next = prompt('New name', name);
+    if (!next || next === name) return;
+    if (next.includes('/')) return toast('Names cannot contain "/"');
+    try {
+      await api('POST', '/portal/api/rename', { from: join(state.path, name), to: join(state.path, next) });
+      await open(state.path);
+    } catch (err) { toast(err.message); }
+  }
+
+  async function remove(name, isDir) {
+    if (!confirm(`Delete ${isDir ? 'folder' : 'file'} "${name}"?`)) return;
+    try {
+      await api('DELETE', '/portal/api/file?path=' + encodeURIComponent(join(state.path, name)));
+      await open(state.path);
+    } catch (err) { toast(err.message); }
+  }
+
+  $('newFolderBtn').addEventListener('click', async () => {
+    const name = prompt('Folder name');
+    if (!name) return;
+    if (name.includes('/')) return toast('Names cannot contain "/"');
+    try {
+      await api('POST', '/portal/api/mkdir', { path: join(state.path, name) });
+      await open(state.path);
+    } catch (err) { toast(err.message); }
+  });
+
+  // ── uploads ────────────────────────────────────────────────────────────
+  function uploadFile(file) {
+    const item = el('div', { className: 'upload', textContent: `${file.name} — ${formatSize(file.size)}` });
+    const bar = el('div');
+    item.append(el('div', { className: 'bar' }, bar));
+    $('uploads').prepend(item);
+
+    return new Promise(resolve => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', '/portal/api/upload?path=' + encodeURIComponent(join(state.path, file.name)));
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.upload.onprogress = e => { if (e.lengthComputable) bar.style.width = `${(e.loaded / e.total) * 100}%`; };
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          bar.style.width = '100%';
+          setTimeout(() => item.remove(), 2500);
+        } else {
+          let msg = 'Upload failed';
+          try { msg = JSON.parse(xhr.responseText).error || msg; } catch { /* keep default */ }
+          item.classList.add('failed');
+          item.firstChild.textContent = `${file.name} — ${msg}`;
+        }
+        resolve();
+      };
+      xhr.onerror = () => { item.classList.add('failed'); item.firstChild.textContent = `${file.name} — network error`; resolve(); };
+      xhr.send(file);
+    });
+  }
+
+  async function uploadAll(files) {
+    if (!state.permissions.canWrite) return toast('You cannot upload to this folder');
+    for (const file of files) await uploadFile(file);
+    await open(state.path);
+  }
+
+  $('uploadBtn').addEventListener('click', () => $('fileInput').click());
+  $('fileInput').addEventListener('change', e => { uploadAll(Array.from(e.target.files)); e.target.value = ''; });
+
+  const panel = $('listPanel');
+  let dragDepth = 0;
+  panel.addEventListener('dragenter', e => { e.preventDefault(); if (state.permissions.canWrite) { dragDepth++; $('dropzone').hidden = false; } });
+  panel.addEventListener('dragover', e => e.preventDefault());
+  panel.addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; $('dropzone').hidden = true; } });
+  panel.addEventListener('drop', e => {
+    e.preventDefault();
+    dragDepth = 0;
+    $('dropzone').hidden = true;
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length) uploadAll(files);
+  });
+
+  // ── boot ───────────────────────────────────────────────────────────────
+  async function start() {
+    const me = await api('GET', '/portal/api/me');
+    if (me.requirePasswordChange) return show('changeView');
+    state.username = me.username;
+    $('who').textContent = me.username;
+    show('filesView');
+    const initial = decodeURI(location.hash.slice(1) || '/');
+    await open(initial.startsWith('/') ? initial : '/');
+  }
+
+  start().catch(() => show('loginView'));
+})();
+</script>
+</body>
+</html>

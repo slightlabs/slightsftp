@@ -151,6 +151,7 @@ export class DatabaseManager {
     };
     addColumn('users', 'mustChangePassword', 'INTEGER NOT NULL DEFAULT 0');
     addColumn('listeners', 'tlsMode', "TEXT NOT NULL DEFAULT 'none'");
+    addColumn('users', 'portalEnabled', 'INTEGER NOT NULL DEFAULT 0');
   }
 
   // User operations
@@ -159,15 +160,16 @@ export class DatabaseManager {
     
     const hashedPassword = user.password ? this.hashPassword(user.password) : null;
     this.db.run(`
-      INSERT INTO users (username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO users (username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [
       user.username,
       hashedPassword,
       user.passwordEnabled ? 1 : 0,
       user.publicKey || null,
       user.guiEnabled ? 1 : 0,
-      user.mustChangePassword ? 1 : 0
+      user.mustChangePassword ? 1 : 0,
+      user.portalEnabled ? 1 : 0
     ]);
     
     const result = this.db.exec('SELECT last_insert_rowid() as id');
@@ -218,6 +220,10 @@ export class DatabaseManager {
     if (user.mustChangePassword !== undefined) {
       updates.push('mustChangePassword = ?');
       values.push(user.mustChangePassword ? 1 : 0);
+    }
+    if (user.portalEnabled !== undefined) {
+      updates.push('portalEnabled = ?');
+      values.push(user.portalEnabled ? 1 : 0);
     }
 
     if (updates.length === 0) return;
@@ -732,6 +738,7 @@ export class DatabaseManager {
       publicKey: obj.publicKey,
       guiEnabled: obj.guiEnabled === 1,
       mustChangePassword: obj.mustChangePassword === 1,
+      portalEnabled: obj.portalEnabled === 1,
       createdAt: obj.createdAt
     };
   }

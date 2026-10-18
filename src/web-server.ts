@@ -13,6 +13,7 @@ import logger from './logger';
 import { resolveUserPath } from './path-utils';
 import { requiresPasswordChange, validateNewPassword } from './password';
 import { hostKeyFingerprint } from './tls';
+import { registerPortalRoutes } from './portal';
 
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
@@ -167,6 +168,15 @@ export class WebServer {
       
       const indexHtml = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf-8');
       res.send(this.injectWebAPI(indexHtml, true));
+    });
+
+    // End-user file portal (separate sessions; never reaches the admin API)
+    this.app.get('/files', (req: Request, res: Response) => {
+      res.sendFile(path.join(__dirname, 'portal.html'));
+    });
+    registerPortalRoutes(this.app, this.db, {
+      logActivity: (username, action, filePath, success) => this.logActivity(username, action, filePath, success),
+      secureCookies: () => this.isHttps(),
     });
 
     // Authentication endpoints
@@ -469,7 +479,7 @@ export class WebServer {
     this.app.post('/api/users', (req: Request, res: Response) => {
       try {
         const session = (req as any).session as WebSession;
-        const { username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword } = req.body;
+        const { username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled } = req.body;
 
         // DatabaseManager.createUser hashes the password itself
         const user: User = {
@@ -478,7 +488,8 @@ export class WebServer {
           passwordEnabled,
           publicKey: publicKey || '',
           guiEnabled,
-          mustChangePassword: !!mustChangePassword
+          mustChangePassword: !!mustChangePassword,
+          portalEnabled: !!portalEnabled
         };
         
         const id = this.db.createUser(user);
@@ -497,7 +508,7 @@ export class WebServer {
       try {
         const session = (req as any).session as WebSession;
         const username = req.params.username;
-        const { password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, listeners, virtualPaths, permissions } = req.body;
+        const { password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, listeners, virtualPaths, permissions } = req.body;
 
         const user = this.db.getUser(username);
         if (!user || !user.id) {
@@ -505,7 +516,7 @@ export class WebServer {
           return;
         }
         
-        const updates: any = { passwordEnabled, publicKey, guiEnabled, mustChangePassword };
+        const updates: any = { passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled };
         if (password) {
           // DatabaseManager.updateUser hashes the password itself
           updates.password = password;
