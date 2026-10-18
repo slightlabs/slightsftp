@@ -6,6 +6,7 @@ import { Listener, User, Permission } from './types';
 import { EventEmitter } from 'events';
 import logger from './logger';
 import { getServerCertificate } from './tls';
+import { SessionTransferStats, TransferDirection, TransferHandle, TransferTracker } from './transfers';
 
 interface ClientSession {
   connection: any;
@@ -19,6 +20,7 @@ export class FTPServer extends EventEmitter {
   private listener: Listener;
   private db: DatabaseManager;
   private activeSessions: Map<string, ClientSession> = new Map();
+  private transfers = new TransferTracker();
 
   constructor(listener: Listener, db: DatabaseManager) {
     super();
@@ -102,7 +104,8 @@ export class FTPServer extends EventEmitter {
           virtualPaths,
           (action: string, filePath: string, success: boolean) => {
             this.logActivity(action, username, filePath, success);
-          }
+          },
+          (filePath, direction) => this.transfers.start(sessionId, filePath, direction)
         );
 
         connection.on('error', (err: any) => {
@@ -122,6 +125,7 @@ export class FTPServer extends EventEmitter {
         connection.on('close', () => {
           logger.info(`FTP user disconnected: ${username}`);
           this.activeSessions.delete(sessionId);
+          this.transfers.endSession(sessionId);
           this.logActivity('LOGOUT', username, '/', true);
         });
 
@@ -163,12 +167,13 @@ export class FTPServer extends EventEmitter {
     });
   }
 
-  getActiveSessions(): Array<{ sessionId: string; username: string; ipAddress: string; connectedAt: Date }> {
+  getActiveSessions(): Array<{ sessionId: string; username: string; ipAddress: string; connectedAt: Date } & SessionTransferStats> {
     return Array.from(this.activeSessions.entries()).map(([sessionId, session]) => ({
       sessionId,
       username: session.username,
       ipAddress: session.ipAddress,
-      connectedAt: session.connectedAt
+      connectedAt: session.connectedAt,
+      ...this.transfers.stats(sessionId)
     }));
   }
 
@@ -209,6 +214,25 @@ export class FTPServer extends EventEmitter {
   }
 }
 
+/**
+ * Count bytes flowing through a file stream for the live transfers view without
+ * changing how the stream flows: ftp-srv pipes into write streams and attaches
+ * its own 'data' handler to read streams, so we wrap write() / push() instead.
+ */
+function countBytes(stream: any, handle: TransferHandle | undefined, method: 'write' | 'push'): void {
+  if (!handle) return;
+  const original = stream[method].bind(stream);
+  stream[method] = (chunk: any, ...rest: any[]) => {
+    if (chunk && typeof chunk.length === 'number') handle.add(chunk.length);
+    return original(chunk, ...rest);
+  };
+  const end = () => handle.end();
+  // Never listen for 'close' here: ftp-srv's STOR emits 'close' *instead of*
+  // calling end() when a 'close' listener exists, which would hang the upload.
+  stream.once(method === 'write' ? 'finish' : 'end', end);
+  stream.once('error', end);
+}
+
 /** Map a local file path back to the user's virtual path (for activity entries). */
 export function toVirtualPath(virtualPaths: Array<{ virtualPath: string; localPath: string }>, localPath: string): string {
   const resolved = path.resolve(localPath);
@@ -230,6 +254,7 @@ export class CustomFileSystem extends FileSystem {
   private permissions: Permission;
   private virtualPaths: any[];
   private logCallback: (action: string, path: string, success: boolean) => void;
+  private track?: (path: string, direction: TransferDirection) => TransferHandle;
 
   constructor(
     connection: any,
@@ -239,9 +264,11 @@ export class CustomFileSystem extends FileSystem {
     listener: Listener,
     permissions: Permission,
     virtualPaths: any[],
-    logCallback: (action: string, path: string, success: boolean) => void
+    logCallback: (action: string, path: string, success: boolean) => void,
+    track?: (path: string, direction: TransferDirection) => TransferHandle
   ) {
     super(connection, options);
+    this.track = track;
     this.db = db;
     this.user = user;
     this.listener = listener;
@@ -429,6 +456,7 @@ export class CustomFileSystem extends FileSystem {
 
     return new Promise((resolve, reject) => {
       const writeStream = fs.createWriteStream(realPath, options);
+      countBytes(writeStream, this.track?.(fileName, 'upload'), 'write');
       writeStream.on('error', (err) => {
         this.logCallback('WRITE_FAILED', fileName, false);
         reject(err);
@@ -451,6 +479,7 @@ export class CustomFileSystem extends FileSystem {
 
     return new Promise((resolve, reject) => {
       const readStream = fs.createReadStream(realPath, options);
+      countBytes(readStream, this.track?.(fileName, 'download'), 'push');
       readStream.on('error', (err) => {
         this.logCallback('READ_FAILED', fileName, false);
         reject(err);

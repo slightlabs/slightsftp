@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { LiveTransfer } from './transfers';
 import { DatabaseManager } from './database';
 import { SFTPServer } from './sftp-server';
 import { FTPServer } from './ftp-server';
@@ -13,6 +14,10 @@ export interface ActiveSession {
   username: string;
   ipAddress: string;
   connectedAt: Date;
+  /** live transfer statistics (bytes moved, transfers in progress) */
+  uploadedBytes?: number;
+  downloadedBytes?: number;
+  transfers?: LiveTransfer[];
 }
 
 export class ServerManager extends EventEmitter {

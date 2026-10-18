@@ -35,7 +35,9 @@ const model = {
     2: [{ id: 10, userId: 2, virtualPath: '/', localPath: '/srv/carol', canRead: true, canWrite: true, canAppend: true, canDelete: false, canList: true, canCreateDir: false, canRename: false, applyToSubdirs: true }],
   } as Record<number, any[]>,
   sessions: [
-    { sessionId: 's-1', username: 'carol', protocol: 'SFTP', listenerId: 1, listenerName: 'Main SFTP', ipAddress: '10.0.0.5', connectedAt: new Date(Date.now() - 65_000).toISOString() },
+    { sessionId: 's-1', username: 'carol', protocol: 'SFTP', listenerId: 1, listenerName: 'Main SFTP', ipAddress: '10.0.0.5', connectedAt: new Date(Date.now() - 65_000).toISOString(),
+      uploadedBytes: 2 * 1024 * 1024, downloadedBytes: 512,
+      transfers: [{ path: `/${XSS}.iso`, direction: 'upload', bytes: 1024 * 1024, startedAt: new Date().toISOString(), bytesPerSecond: 256 * 1024 }] },
   ],
   activities: [
     { id: 1, listenerId: 1, username: 'carol', action: 'UPLOAD', path: `/${XSS}.txt`, success: true, timestamp: nowSql() },
@@ -205,6 +207,12 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       expect(items).toHaveLength(3);
       expect(items[1].classList.contains('activity-error')).toBe(true);
       expect(items[2].textContent).toContain('[Admin GUI] admin: GUI_LOGIN');
+    });
+
+    test('shows transfers in progress with speed', () => {
+      const live = $('#live-transfers').textContent!.replace(/\s+/g, ' ');
+      expect(live).toContain(`carol /${XSS}.iso — 1 MB at 256 KB/s (SFTP)`);
+      expect($('#live-transfers').querySelector('img')).toBeNull();
     });
 
     test('activity paths are rendered as text, never as HTML (no script injection)', () => {
@@ -540,6 +548,8 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       const cells = Array.from($$('#sessions-table tr')[0].children).map(c => c.textContent!.trim());
       expect(cells.slice(0, 4)).toEqual(['carol', 'SFTP', 'Main SFTP', '10.0.0.5']);
       expect(cells[5]).toMatch(/^1m \d+s$/);
+      expect(cells[6]).toContain('↑ 2 MB ↓ 512 Bytes');
+      expect(cells[6]).toContain(`⬆ /${XSS}.iso — 1 MB at 256 KB/s`);
     });
 
     test('Disconnect confirms, calls IPC and shows the empty state', async () => {

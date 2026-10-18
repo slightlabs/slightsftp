@@ -229,6 +229,7 @@ async function loadDashboard() {
   document.getElementById('active-listeners').innerHTML = activeListenersHtml;
   
   displayActivities('dashboard-activity', recentActivities);
+  renderLiveTransfers(activeSessions);
 }
 
 async function editWebGUIListener(id) {
@@ -586,7 +587,7 @@ async function loadActiveSessions() {
   const tbody = document.getElementById('sessions-table');
   
   if (sessions.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No active sessions</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="empty-state">No active sessions</td></tr>';
   } else {
     tbody.innerHTML = sessions.map(session => {
       const connectedAt = new Date(session.connectedAt);
@@ -600,6 +601,7 @@ async function loadActiveSessions() {
           <td>${escapeHtml(session.ipAddress)}</td>
           <td>${connectedAt.toLocaleString()}</td>
           <td>${duration}</td>
+          <td>${renderSessionTransfers(session)}</td>
           <td>
             <button class="btn btn-danger" onclick="disconnectSession(${jsArg(session.sessionId)}, ${jsArg(session.username)})">
               Disconnect
@@ -636,6 +638,32 @@ async function disconnectSession(sessionId, username) {
   } catch (err) {
     alert(`Failed to disconnect session: ${err.message}`);
   }
+}
+
+function formatRate(bytesPerSecond) {
+  return `${formatBytes(bytesPerSecond || 0)}/s`;
+}
+
+// "↑ 1.2 MB ↓ 300 KB" plus any transfer in progress
+function renderSessionTransfers(session) {
+  const totals = `↑ ${formatBytes(session.uploadedBytes || 0)} ↓ ${formatBytes(session.downloadedBytes || 0)}`;
+  const live = (session.transfers || []).map(t =>
+    `<div class="live-transfer" style="font-size: 12px; color: #2980b9;">${t.direction === 'upload' ? '⬆' : '⬇'} ${escapeHtml(t.path)} — ${formatBytes(t.bytes)} at ${formatRate(t.bytesPerSecond)}</div>`
+  ).join('');
+  return totals + live;
+}
+
+function renderLiveTransfers(sessions) {
+  const rows = [];
+  for (const session of sessions) {
+    for (const t of session.transfers || []) {
+      rows.push(`<div class="live-transfer" style="padding: 6px 0; border-bottom: 1px solid #eee;">
+        ${t.direction === 'upload' ? '⬆️' : '⬇️'} <strong>${escapeHtml(session.username)}</strong> ${escapeHtml(t.path)}
+        <span style="color: #666;">— ${formatBytes(t.bytes)} at ${formatRate(t.bytesPerSecond)} (${escapeHtml(session.protocol)})</span>
+      </div>`);
+    }
+  }
+  document.getElementById('live-transfers').innerHTML = rows.join('') || '<div class="empty-state">No transfers in progress</div>';
 }
 
 function formatDuration(ms) {

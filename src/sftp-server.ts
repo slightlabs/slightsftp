@@ -5,6 +5,7 @@ import { DatabaseManager } from './database';
 import { Listener, User, Permission } from './types';
 import { EventEmitter } from 'events';import logger from './logger';
 import { loadOrCreateHostKey } from './tls';
+import { SessionTransferStats, TransferHandle, TransferTracker } from './transfers';
 // SFTP constants (from ssh2-streams)
 const SFTP_STATUS_CODE = {
   OK: 0,
@@ -39,6 +40,7 @@ export class SFTPServer extends EventEmitter {
   private idleTimeoutMs: number = 300000; // 5 minutes default
   private clientTimeouts: Map<any, NodeJS.Timeout> = new Map();
   private activeSessions: Map<string, ClientSession> = new Map();
+  private transfers = new TransferTracker();
 
   constructor(listener: Listener, db: DatabaseManager, idleTimeoutMs?: number) {
     super();
@@ -191,7 +193,7 @@ export class SFTPServer extends EventEmitter {
               // File handles opened with write access (checked in OPEN)
               const writableHandles = new Set<number>();
               // Open files: logged as one UPLOAD / DOWNLOAD (with size) when closed
-              const openFiles = new Map<number, { path: string; write: boolean; bytes: number }>();
+              const openFiles = new Map<number, { path: string; write: boolean; bytes: number; live: TransferHandle }>();
 
               // Map virtual paths to real paths
               const pathMapper = (virtualPath: string): string => {
@@ -391,7 +393,12 @@ export class SFTPServer extends EventEmitter {
                   if (writeFlag) {
                     writableHandles.add(handle);
                   }
-                  openFiles.set(handle, { path: filename, write: !!writeFlag, bytes: 0 });
+                  openFiles.set(handle, {
+                    path: filename,
+                    write: !!writeFlag,
+                    bytes: 0,
+                    live: this.transfers.start(sessionId, filename, writeFlag ? 'upload' : 'download')
+                  });
                   const handleBuffer = Buffer.alloc(4);
                   handleBuffer.writeUInt32BE(handle, 0);
                   logActivity('OPEN', filename, true);
@@ -420,7 +427,10 @@ export class SFTPServer extends EventEmitter {
                   const buffer = Buffer.alloc(length);
                   const bytesRead = fs.readSync(handleNum, buffer, 0, length, offset);
                   const transfer = openFiles.get(handleNum);
-                  if (transfer) transfer.bytes += bytesRead;
+                  if (transfer) {
+                    transfer.bytes += bytesRead;
+                    transfer.live.add(bytesRead);
+                  }
                   if (bytesRead === 0) {
                     sftp.status(reqId, SFTP_STATUS_CODE.EOF);
                   } else {
@@ -446,7 +456,10 @@ export class SFTPServer extends EventEmitter {
                 try {
                   fs.writeSync(handleNum, data, 0, data.length, offset);
                   const transfer = openFiles.get(handleNum);
-                  if (transfer) transfer.bytes += data.length;
+                  if (transfer) {
+                    transfer.bytes += data.length;
+                    transfer.live.add(data.length);
+                  }
                   sftp.status(reqId, SFTP_STATUS_CODE.OK);
                 } catch (err) {
                   console.error('SFTP WRITE error:', err);
@@ -468,6 +481,7 @@ export class SFTPServer extends EventEmitter {
                 writableHandles.delete(handleNum);
                 const transfer = openFiles.get(handleNum);
                 openFiles.delete(handleNum);
+                transfer?.live.end();
                 try {
                   fs.closeSync(handleNum);
                   if (transfer) {
@@ -747,6 +761,7 @@ export class SFTPServer extends EventEmitter {
           
           // Remove from active sessions
           this.activeSessions.delete(sessionId);
+          this.transfers.endSession(sessionId);
           console.log(`[SESSION] Sessions after delete: ${this.activeSessions.size}`);
           
           // Clear idle timeout for this client
@@ -780,6 +795,8 @@ export class SFTPServer extends EventEmitter {
         client.on('close', () => {
           console.log('[CLIENT] Close event - connection closed');
           this.clearIdleTimeout(client);
+          this.activeSessions.delete(sessionId);
+          this.transfers.endSession(sessionId);
         });
       });
 
@@ -820,13 +837,14 @@ export class SFTPServer extends EventEmitter {
     });
   }
 
-  getActiveSessions(): Array<{ sessionId: string; username: string; ipAddress: string; connectedAt: Date }> {
+  getActiveSessions(): Array<{ sessionId: string; username: string; ipAddress: string; connectedAt: Date } & SessionTransferStats> {
     console.log(`[SESSION] getActiveSessions called - Total: ${this.activeSessions.size}`);
     const sessions = Array.from(this.activeSessions.entries()).map(([sessionId, session]) => ({
       sessionId,
       username: session.username,
       ipAddress: session.ipAddress,
-      connectedAt: session.connectedAt
+      connectedAt: session.connectedAt,
+      ...this.transfers.stats(sessionId)
     }));
     console.log(`[SESSION] Returning sessions:`, sessions);
     return sessions;
