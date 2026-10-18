@@ -18,7 +18,7 @@ export function classifyActivity(activity: Pick<ServerActivity, 'action' | 'succ
   if (/^(UPLOAD|PORTAL_UPLOAD|SHARE_UPLOAD)$/.test(word)) return activity.success ? 'upload' : null;
   if (/^(DOWNLOAD|PORTAL_DOWNLOAD|SHARE_DOWNLOAD)$/.test(word)) return activity.success ? 'download' : null;
   if (/^(REMOVE|RMDIR|DELETE|PORTAL_DELETE)$/.test(word)) return activity.success ? 'delete' : null;
-  if (/^(LOGIN_FAILED|PORTAL_LOGIN_FAILED|WEB_LOGIN_FAILED|SHARE_UNLOCK_FAILED)$/.test(word)) return 'login_failed';
+  if (/^(LOGIN_FAILED|PORTAL_LOGIN_FAILED|WEB_LOGIN_FAILED|SHARE_UNLOCK_FAILED|IP_BANNED)$/.test(word)) return 'login_failed';
   if (/^(LOGIN|PORTAL_LOGIN|WEB_LOGIN_SUCCESS|GUI_LOGIN)$/.test(word)) return activity.success ? 'login' : 'login_failed';
   if (/^SHARE_(CREATED|CREATED_UPLOAD|REVOKED)$/.test(word) || word === 'WEB_SHARE_REVOKED') return 'share';
   return null;

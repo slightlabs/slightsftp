@@ -6,6 +6,7 @@ import { Listener, User, Permission } from './types';
 import { EventEmitter } from 'events';
 import logger from './logger';
 import { getServerCertificate } from './tls';
+import { getLoginGuard, TOO_MANY_ATTEMPTS } from './login-guard';
 import { SessionTransferStats, TransferDirection, TransferHandle, TransferTracker } from './transfers';
 
 interface ClientSession {
@@ -51,6 +52,12 @@ export class FTPServer extends EventEmitter {
         const ipAddress = connection.ip || 'unknown';
         const remotePort = (connection as any).socket?.remotePort || 0;
 
+        const guard = getLoginGuard(this.db);
+        if (guard.isBanned(ipAddress)) {
+          this.logActivity(`LOGIN_REFUSED (IP banned) [${ipAddress}:${remotePort}]`, username, '/', false);
+          return reject(new Error(TOO_MANY_ATTEMPTS));
+        }
+
         if (tlsMode === 'required' && !connection.secure) {
           this.logActivity(`LOGIN_FAILED (TLS required) [${ipAddress}:${remotePort}]`, username, '/', false);
           return reject(new Error('This server requires an encrypted connection (AUTH TLS)'));
@@ -59,18 +66,21 @@ export class FTPServer extends EventEmitter {
         const user = this.db.getUser(username);
         if (!user) {
           this.logActivity(`LOGIN_FAILED (User not found) [${ipAddress}:${remotePort}]`, username, '/', false);
+          guard.recordFailure(ipAddress, 'FTP', username);
           return reject(new Error('Invalid credentials'));
         }
 
         const userListeners = this.db.getUserListeners(user.id!);
         if (!userListeners.includes(this.listener.id!)) {
           this.logActivity(`LOGIN_FAILED (Not authorized for this listener) [${ipAddress}:${remotePort}]`, username, '/', false);
+          guard.recordFailure(ipAddress, 'FTP', username);
           return reject(new Error('User not subscribed to this listener'));
         }
 
         // Verify password
         if (!user.passwordEnabled || !this.db.verifyPassword(username, password)) {
           this.logActivity(`LOGIN_FAILED (Invalid password) [${ipAddress}:${remotePort}]`, username, '/', false);
+          guard.recordFailure(ipAddress, 'FTP', username);
           return reject(new Error('Invalid credentials'));
         }
 
@@ -88,6 +98,7 @@ export class FTPServer extends EventEmitter {
           connectedAt: new Date()
         });
 
+        guard.recordSuccess(ipAddress);
         this.logActivity(`LOGIN (password) [${ipAddress}:${remotePort}]`, username, '/', true);
 
         // Create custom file system

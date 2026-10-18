@@ -14,6 +14,7 @@ import { resolveUserPath } from './path-utils';
 import { requiresPasswordChange, validateNewPassword } from './password';
 import { hostKeyFingerprint } from './tls';
 import { registerPortalRoutes } from './portal';
+import { getLoginGuard, saveGuardSettings, TOO_MANY_ATTEMPTS } from './login-guard';
 import { describeShare, registerShareRoutes, shareUrl } from './shares';
 import { WebhookDispatcher, describeWebhook, validateWebhookInput } from './webhooks';
 
@@ -192,6 +193,12 @@ export class WebServer {
     // Authentication endpoints
     this.app.post('/api/login', async (req: Request, res: Response) => {
       const { username, password } = req.body;
+      const guard = getLoginGuard(this.db);
+      const ip = req.socket.remoteAddress;
+      if (guard.isBanned(ip)) {
+        res.status(429).json({ error: TOO_MANY_ATTEMPTS });
+        return;
+      }
       
       logger.info('Login attempt:', { username, hasPassword: !!password });
       
@@ -201,6 +208,7 @@ export class WebServer {
         
         if (!user) {
           this.logActivity(username, 'WEB_LOGIN_FAILED', 'User not found', false);
+          guard.recordFailure(ip, 'Web GUI', username);
           res.status(401).json({ error: 'Invalid credentials' });
           return;
         }
@@ -208,6 +216,7 @@ export class WebServer {
         // Check if user has GUI access
         if (!user.guiEnabled) {
           this.logActivity(username, 'WEB_LOGIN_FAILED', 'GUI access not enabled', false);
+          guard.recordFailure(ip, 'Web GUI', username);
           res.status(403).json({ error: 'GUI access not enabled for this user' });
           return;
         }
@@ -215,9 +224,12 @@ export class WebServer {
         // Verify password
         if (!password || !this.db.checkPassword(username, password)) {
           this.logActivity(username, 'WEB_LOGIN_FAILED', 'Invalid credentials', false);
+          guard.recordFailure(ip, 'Web GUI', username);
           res.status(401).json({ error: 'Invalid credentials' });
           return;
         }
+
+        guard.recordSuccess(ip);
 
         // Create session
         const sessionId = this.generateSessionId();
@@ -287,6 +299,33 @@ export class WebServer {
       session.mustChangePassword = false;
       this.logActivity(session.username, 'WEB_PASSWORD_CHANGED', 'Password changed via web interface', true);
       res.json({ success: true });
+    });
+
+    // Brute-force protection
+    this.app.get('/api/security/bans', (req: Request, res: Response) => {
+      res.json(getLoginGuard(this.db).listBans());
+    });
+
+    this.app.delete('/api/security/bans/:ip', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      getLoginGuard(this.db).unban(req.params.ip);
+      this.logActivity(session.username, 'WEB_IP_UNBANNED', req.params.ip, true);
+      res.json({ success: true });
+    });
+
+    this.app.get('/api/security/settings', (req: Request, res: Response) => {
+      res.json(getLoginGuard(this.db).settings());
+    });
+
+    this.app.put('/api/security/settings', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      try {
+        saveGuardSettings(this.db, req.body || {});
+        this.logActivity(session.username, 'WEB_SECURITY_SETTINGS_UPDATED', 'brute-force protection', true);
+        res.json(getLoginGuard(this.db).settings());
+      } catch (error: any) {
+        res.status(400).json({ error: error.message });
+      }
     });
 
     // Webhooks
@@ -1289,6 +1328,10 @@ export class WebServer {
             },
             'get-server-identity': () => api('GET', '/api/server-identity'),
             'get-shares': () => api('GET', '/api/shares'),
+            'get-ip-bans': () => api('GET', '/api/security/bans'),
+            'unban-ip': (ip) => api('DELETE', \`/api/security/bans/\${encodeURIComponent(ip)}\`),
+            'get-security-settings': () => api('GET', '/api/security/settings'),
+            'set-security-settings': (settings) => api('PUT', '/api/security/settings', settings),
             'get-webhooks': () => api('GET', '/api/webhooks'),
             'create-webhook': (hook) => api('POST', '/api/webhooks', hook),
             'update-webhook': (id, hook) => api('PUT', \`/api/webhooks/\${id}\`, hook),

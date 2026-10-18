@@ -16,6 +16,7 @@ import { resolveUserPath } from './path-utils';
 import { hashPassword, verifyPasswordHash } from './password';
 import { Share, ShareType, User } from './types';
 import logger from './logger';
+import { getLoginGuard, TOO_MANY_ATTEMPTS } from './login-guard';
 
 const UNLOCK_TTL_MS = 60 * 60 * 1000;
 
@@ -187,10 +188,15 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
       res.json({ success: true });
       return;
     }
+    const guard = getLoginGuard(db);
+    const ip = req.socket.remoteAddress;
+    if (guard.isBanned(ip)) throw new ShareError(429, TOO_MANY_ATTEMPTS);
     if (!verifyPasswordHash(ctx.share.passwordHash, String(req.body?.password || '')).valid) {
       options.logActivity(ctx.share.owner, 'SHARE_UNLOCK_FAILED', ctx.share.virtualPath, false);
+      guard.recordFailure(ip, 'share link');
       throw new ShareError(401, 'Wrong password');
     }
+    guard.recordSuccess(ip);
     const id = crypto.randomBytes(24).toString('hex');
     unlocked.set(id, { shareId: ctx.share.id!, expires: Date.now() + UNLOCK_TTL_MS });
     res.cookie(`share_${ctx.share.id}`, id, { httpOnly: true, sameSite: 'lax', secure: options.secureCookies(), maxAge: UNLOCK_TTL_MS, path: `/s/${ctx.share.token}` });

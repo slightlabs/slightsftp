@@ -46,6 +46,8 @@ const model = {
   ],
   settings: { logRetentionDays: '30' } as Record<string, string>,
   webhooks: [] as any[],
+  security: { enabled: true, maxFailures: 5, windowMinutes: 10, banMinutes: 15, allowlist: '127.0.0.0/8, ::1' },
+  bans: [{ ip: '203.0.113.9', reason: `5 failed logins in 10 min (last: SFTP as ${XSS})`, bannedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 900_000).toISOString() }] as any[],
   shares: [
     { id: 7, owner: 'carol', virtualPath: `/${XSS}.pdf`, type: 'download', status: 'active', downloadCount: 1, maxDownloads: 5, expiresAt: null, hasPassword: true },
     { id: 8, owner: 'carol', virtualPath: '/inbox', type: 'upload', status: 'expired', downloadCount: 0, maxDownloads: null, expiresAt: '2026-01-01T00:00:00.000Z', hasPassword: false },
@@ -65,6 +67,10 @@ const backend: Record<string, Handler> = {
   'get-server-identity': () => ({ sshHostKeyFingerprint: 'SHA256:abcDEF123' }),
   'get-shares': () => model.shares,
   'get-webhooks': () => model.webhooks,
+  'get-security-settings': () => model.security,
+  'set-security-settings': (u: any) => { Object.assign(model.security, u); return model.security; },
+  'get-ip-bans': () => model.bans,
+  'unban-ip': (ip: string) => { model.bans = model.bans.filter(b => b.ip !== ip); return { success: true }; },
   'create-webhook': (h: any) => { const hook = { id: model.webhooks.length + 1, enabled: true, lastStatus: null, hasSecret: !!h.secret, ...h }; model.webhooks.push(hook); return hook; },
   'update-webhook': (id: number, u: any) => { Object.assign(model.webhooks.find(h => h.id === id)!, u); return model.webhooks.find(h => h.id === id); },
   'delete-webhook': (id: number) => { model.webhooks = model.webhooks.filter(h => h.id !== id); return { success: true }; },
@@ -239,7 +245,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
   });
 
   describe('navigation', () => {
-    test.each(['listeners', 'sessions', 'users', 'files', 'shares', 'webhooks', 'activity', 'dashboard'])('sidebar switches to the %s panel', async panel => {
+    test.each(['listeners', 'sessions', 'users', 'files', 'shares', 'webhooks', 'security', 'activity', 'dashboard'])('sidebar switches to the %s panel', async panel => {
       await openPanel(panel);
       expect($$('.panel.active').map(p => p.id)).toEqual([panel]);
       expect($$('.sidebar-item.active').map(i => i.dataset.panel)).toEqual([panel]);
@@ -476,6 +482,33 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       expect((window.confirm as jest.Mock).mock.calls[0][0]).toContain('dave');
       expect(lastCall('delete-user')).toEqual(['dave']);
       expect(row('dave')).toBeUndefined();
+    });
+  });
+
+  describe('security panel', () => {
+    beforeAll(() => openPanel('security'));
+
+    test('shows the protection settings and current bans (reasons as text)', () => {
+      const f = $<HTMLFormElement>('#securitySettingsForm').elements as any;
+      expect(f.namedItem('enabled').checked).toBe(true);
+      expect(f.namedItem('maxFailures').value).toBe('5');
+      expect(f.namedItem('allowlist').value).toBe('127.0.0.0/8, ::1');
+      const row = $$('#bans-table tr')[0];
+      expect(row.textContent).toContain('203.0.113.9');
+      expect(row.querySelector('img')).toBeNull();
+    });
+
+    test('saving sends typed settings; Unban removes the row', async () => {
+      const f = $<HTMLFormElement>('#securitySettingsForm');
+      (f.elements as any).namedItem('maxFailures').value = '8';
+      (f.elements as any).namedItem('allowlist').value = '10.0.0.0/8';
+      await submit(f);
+      expect(lastCall('set-security-settings')).toEqual([{ enabled: true, maxFailures: 8, windowMinutes: 10, banMinutes: 15, allowlist: '10.0.0.0/8' }]);
+
+      buttonByText($$('#bans-table tr')[0], 'Unban').click();
+      await flush();
+      expect(lastCall('unban-ip')).toEqual(['203.0.113.9']);
+      expect($('#bans-table').textContent).toContain('No banned addresses');
     });
   });
 

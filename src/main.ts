@@ -10,6 +10,7 @@ import { requiresPasswordChange, validateNewPassword } from './password';
 import { getServerCertificate, hostKeyFingerprint, setCertificateDir } from './tls';
 import { describeShare } from './shares';
 import { WebhookDispatcher, describeWebhook, validateWebhookInput } from './webhooks';
+import { getLoginGuard, saveGuardSettings } from './login-guard';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -552,6 +553,22 @@ function setupIpcHandlers(): void {
       success: true
     });
     return { success: true };
+  });
+
+  // Brute-force protection
+  ipcMain.handle('get-ip-bans', async () => getLoginGuard(db).listBans());
+
+  ipcMain.handle('unban-ip', async (event, ip) => {
+    getLoginGuard(db).unban(ip);
+    db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'IP_UNBANNED', path: ip, success: true });
+    return { success: true };
+  });
+
+  ipcMain.handle('get-security-settings', async () => getLoginGuard(db).settings());
+
+  ipcMain.handle('set-security-settings', async (event, settings) => {
+    saveGuardSettings(db, settings || {});
+    return getLoginGuard(db).settings();
   });
 
   // Webhooks

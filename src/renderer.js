@@ -167,6 +167,9 @@ function loadPanelData(panelId) {
     case 'webhooks':
       loadWebhooks();
       break;
+    case 'security':
+      loadSecurity();
+      break;
   }
 }
 
@@ -466,6 +469,58 @@ async function editListener(id) {
   }
 }
 
+
+// Security (brute-force protection)
+async function loadSecurity() {
+  const [settings, bans] = await Promise.all([
+    ipcRenderer.invoke('get-security-settings'),
+    ipcRenderer.invoke('get-ip-bans')
+  ]);
+  const fields = document.getElementById('securitySettingsForm').elements;
+  fields.namedItem('enabled').checked = settings.enabled;
+  fields.namedItem('maxFailures').value = settings.maxFailures;
+  fields.namedItem('windowMinutes').value = settings.windowMinutes;
+  fields.namedItem('banMinutes').value = settings.banMinutes;
+  fields.namedItem('allowlist').value = settings.allowlist;
+
+  const tbody = document.getElementById('bans-table');
+  tbody.innerHTML = bans.length ? bans.map(b => `
+    <tr>
+      <td><code>${escapeHtml(b.ip)}</code></td>
+      <td>${escapeHtml(b.reason)}</td>
+      <td>${new Date(b.bannedAt).toLocaleString()}</td>
+      <td>${new Date(b.expiresAt).toLocaleString()}</td>
+      <td><button class="btn" onclick="unbanIp(${jsArg(b.ip)})">Unban</button></td>
+    </tr>
+  `).join('') : '<tr><td colspan="5" class="empty-state">No banned addresses</td></tr>';
+}
+
+async function unbanIp(ip) {
+  try {
+    await ipcRenderer.invoke('unban-ip', ip);
+  } catch (err) {
+    alert(`Failed to unban: ${err.message}`);
+  }
+  loadSecurity();
+}
+
+document.getElementById('securitySettingsForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fields = e.target.elements;
+  try {
+    await ipcRenderer.invoke('set-security-settings', {
+      enabled: fields.namedItem('enabled').checked,
+      maxFailures: parseInt(fields.namedItem('maxFailures').value),
+      windowMinutes: parseInt(fields.namedItem('windowMinutes').value),
+      banMinutes: parseInt(fields.namedItem('banMinutes').value),
+      allowlist: fields.namedItem('allowlist').value
+    });
+    alert('Security settings saved.');
+  } catch (err) {
+    alert(`Failed to save settings: ${err.message}`);
+  }
+  loadSecurity();
+});
 
 // Webhooks
 const WEBHOOK_EVENT_LABELS = { upload: 'Upload', download: 'Download', delete: 'Delete', login: 'Sign-in', login_failed: 'Failed sign-in', share: 'Share links' };

@@ -157,6 +157,13 @@ export class DatabaseManager {
         createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS ip_bans (
+        ip TEXT PRIMARY KEY,
+        reason TEXT NOT NULL,
+        bannedAt TEXT NOT NULL,
+        expiresAt TEXT NOT NULL
+      );
+
       CREATE INDEX IF NOT EXISTS idx_activities_listener ON server_activities(listenerId);
       CREATE INDEX IF NOT EXISTS idx_activities_timestamp ON server_activities(timestamp);
     `);
@@ -607,6 +614,32 @@ export class DatabaseManager {
         applyToSubdirs: vp.applyToSubdirs
       } as VirtualPath);
     }
+  }
+
+  // IP bans (brute-force protection)
+  addIpBan(ban: { ip: string; reason: string; bannedAt: string; expiresAt: string }): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('INSERT OR REPLACE INTO ip_bans (ip, reason, bannedAt, expiresAt) VALUES (?, ?, ?, ?)', [ban.ip, ban.reason, ban.bannedAt, ban.expiresAt]);
+    this.save();
+  }
+
+  getIpBan(ip: string): { ip: string; reason: string; bannedAt: string; expiresAt: string } | undefined {
+    return this.listIpBans(ip)[0];
+  }
+
+  listIpBans(ip?: string): Array<{ ip: string; reason: string; bannedAt: string; expiresAt: string }> {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = ip
+      ? this.db.exec('SELECT ip, reason, bannedAt, expiresAt FROM ip_bans WHERE ip = ?', [ip])
+      : this.db.exec('SELECT ip, reason, bannedAt, expiresAt FROM ip_bans ORDER BY bannedAt DESC');
+    if (result.length === 0) return [];
+    return result[0].values.map(([ip, reason, bannedAt, expiresAt]) => ({ ip: ip as string, reason: reason as string, bannedAt: bannedAt as string, expiresAt: expiresAt as string }));
+  }
+
+  deleteIpBan(ip: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('DELETE FROM ip_bans WHERE ip = ?', [ip]);
+    this.save();
   }
 
   // Webhooks

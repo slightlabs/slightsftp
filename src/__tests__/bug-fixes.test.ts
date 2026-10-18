@@ -106,6 +106,7 @@ function makeSFTPMocks() {
   });
   const mockDb = {
     getUser: jest.fn().mockReturnValue(TEST_USER),
+    getSetting: jest.fn(), // brute-force guard reads its settings (defaults apply)
     getVirtualPaths: jest.fn().mockReturnValue([FULL_VP]),
     getPermission: jest.fn().mockReturnValue({ ...FULL_PERM }),
     getUserListeners: jest.fn().mockReturnValue([1]),

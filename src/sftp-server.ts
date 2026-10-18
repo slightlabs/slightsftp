@@ -5,6 +5,7 @@ import { DatabaseManager } from './database';
 import { Listener, User, Permission } from './types';
 import { EventEmitter } from 'events';import logger from './logger';
 import { loadOrCreateHostKey } from './tls';
+import { getLoginGuard } from './login-guard';
 import { SessionTransferStats, TransferHandle, TransferTracker } from './transfers';
 // SFTP constants (from ssh2-streams)
 const SFTP_STATUS_CODE = {
@@ -72,6 +73,22 @@ export class SFTPServer extends EventEmitter {
         let authenticatedUser: User | undefined;
         let userPermissions: Permission | undefined;
 
+        // Brute-force protection: banned addresses are dropped immediately
+        const guard = getLoginGuard(this.db);
+        if (guard.isBanned(ipAddress)) {
+          logger.warn(`SFTP connection from banned address ${ipAddress} refused`);
+          client.on('error', () => undefined);
+          client.end();
+          return;
+        }
+        // "none" and key-probe attempts are normal parts of the SSH handshake;
+        // only real password / signed public-key attempts count as failures
+        const countFailure = (ctx: any) => {
+          if (ctx.method === 'password' || (ctx.method === 'publickey' && ctx.signature)) {
+            guard.recordFailure(ipAddress, 'SFTP', ctx.username);
+          }
+        };
+
         client.on('authentication', (ctx) => {
           username = ctx.username;
           const user = this.db.getUser(username);
@@ -84,6 +101,7 @@ export class SFTPServer extends EventEmitter {
               path: '/',
               success: false
             });
+            countFailure(ctx);
             return ctx.reject();
           }
 
@@ -96,6 +114,7 @@ export class SFTPServer extends EventEmitter {
               path: '/',
               success: false
             });
+            countFailure(ctx);
             return ctx.reject();
           }
 
@@ -121,6 +140,7 @@ export class SFTPServer extends EventEmitter {
                 path: '/',
                 success: true
               });
+              guard.recordSuccess(ipAddress);
               return ctx.accept();
             } else {
               this.emit('activity', {
@@ -130,6 +150,7 @@ export class SFTPServer extends EventEmitter {
                 path: '/',
                 success: false
               });
+              countFailure(ctx);
               return ctx.reject();
             }
           } else if (ctx.method === 'publickey' && user.publicKey) {
@@ -159,9 +180,11 @@ export class SFTPServer extends EventEmitter {
                     path: '/',
                     success: true
                   });
-                  return ctx.accept();
+                  guard.recordSuccess(ipAddress);
+              return ctx.accept();
                 } else {
-                  return ctx.accept();
+                  guard.recordSuccess(ipAddress);
+              return ctx.accept();
                 }
               }
             }
@@ -174,6 +197,7 @@ export class SFTPServer extends EventEmitter {
             path: '/',
             success: false
           });
+          countFailure(ctx);
           ctx.reject();
         });
 
