@@ -23,7 +23,7 @@
     "dist": "npm run build && electron-builder",
     "dist:linux": "npm run build && electron-builder --linux AppImage deb",
     "dist:win": "npm run build && electron-builder --win --x64",
-    "dist:mac": "npm run build && electron-builder --mac dmg"
+    "dist:mac": "npm run build && electron-builder --mac dmg --x64 --arm64"
   },
   "keywords": [
     "ftp",
