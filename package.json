@@ -1,6 +1,6 @@
 {
   "name": "slightsftp",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Multi-user FTP/SFTP server with GUI management",
   "main": "dist/main.js",
   "scripts": {

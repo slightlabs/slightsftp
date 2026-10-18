@@ -1,5 +1,32 @@
 # Changelog
 
+## v1.4.0 — 2026-10-19
+
+### Security
+- **SFTP public-key sign-in now verifies signatures.** Earlier versions accepted any
+  signature for a listed public key, so anyone who knew a user's *public* key could sign
+  in as that user. Upgrade is strongly recommended if you use key-based logins.
+- **Brute-force protection**: repeated failed logins from one address (SFTP, FTP, web
+  GUI, file portal, share-link passwords) ban it temporarily. Ban list with Unban in the
+  new Security panel; loopback is never banned by default.
+- **Two-factor sign-in (TOTP)** for the desktop app, web GUI and file portal, with any
+  authenticator app. Admins can reset a user's 2FA.
+- **Per-user IP allow-lists**: restrict accounts to addresses / CIDR ranges.
+
+### New
+- **Webhooks**: notify Slack, Teams or any URL on uploads, downloads, deletes, sign-ins,
+  failed sign-ins and share links — with user / path filters, HMAC signatures and retries.
+- **Live transfers**: files in progress with speed, and per-session totals, on the
+  dashboard and in Active Sessions.
+- **OpenSSH public keys**: paste `authorized_keys` lines (Ed25519, RSA, ECDSA), several
+  per user.
+
+### Upgrade notes
+- Existing single base64 public keys keep working; they are shown in OpenSSH format
+  after the user is next saved.
+- Brute-force protection is on by default (5 failures in 10 minutes → 15 minute ban);
+  adjust it in Security.
+
 ## v1.3.0 — 2026-10-19
 
 ### New

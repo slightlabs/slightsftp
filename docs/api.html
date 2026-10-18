@@ -53,7 +53,7 @@ curl -k -b jar -H 'Content-Type: application/json' \
                 <p>Sign in to receive an <code>HttpOnly</code> <code>sessionId</code> cookie (also <code>Secure</code> when the GUI is served over HTTPS). Every other <code>/api</code> endpoint requires it and answers <code>401</code> without it. While a password change is pending, only the change-password, user and logout endpoints are available (others answer <code>403</code> with <code>requirePasswordChange: true</code>).</p>
                 <div class="api-item">
                     <h3><code>POST /api/login</code></h3>
-                    <p>Body <code>{ username, password }</code>. Returns <code>{ success, username }</code>, plus <code>requirePasswordChange: true</code> when a new password must be chosen. Only users with GUI access may sign in.</p>
+                    <p>Body <code>{ username, password, totp? }</code>. Returns <code>{ success, username }</code>, plus <code>requirePasswordChange: true</code> when a new password must be chosen. Only users with GUI access may sign in. Banned addresses get <code>429</code>.</p>
                 </div>
                 <div class="api-item">
                     <h3><code>POST /api/change-password</code></h3>
@@ -125,7 +125,7 @@ curl -k -b jar -H 'Content-Type: application/json' \
                 </div>
                 <div class="api-item">
                     <h3><code>POST /api/users</code></h3>
-                    <p>Body <code>{ username, password, passwordEnabled, publicKey?, guiEnabled, mustChangePassword? }</code>.</p>
+                    <p>Body <code>{ username, password, passwordEnabled, publicKey?, guiEnabled, mustChangePassword?, portalEnabled?, allowedIps? }</code>. <code>publicKey</code> holds OpenSSH public key lines (one per line); <code>allowedIps</code> a list of addresses / CIDR ranges.</p>
                 </div>
                 <div class="api-item">
                     <h3><code>PUT /api/users/:username</code></h3>
@@ -228,6 +228,110 @@ curl -k -b jar -H 'Content-Type: application/json' \
                 <div class="api-item">
                     <h3><code>PUT /api/settings/:key</code></h3>
                     <p>Body <code>{ value }</code>.</p>
+                </div>
+            </div>
+            <div class="api-section">
+                <h2>Two-factor sign-in</h2>
+                <p>For the signed-in admin. <code>POST /api/login</code> answers <code>401</code> with <code>requireTotp: true</code> when a code is needed; send it as <code>totp</code>.</p>
+                <div class="api-item">
+                    <h3><code>POST /api/2fa/setup</code></h3>
+                    <p>Start setup: <code>{ secret, otpauthUrl, qrSvg }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/2fa/enable</code></h3>
+                    <p>Body <code>{ code }</code> — confirm with a code from the authenticator app.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/2fa/disable</code></h3>
+                    <p>Body <code>{ code }</code> — a current code is required.</p>
+                </div>
+            </div>
+            <div class="api-section">
+                <h2>Security</h2>
+                <p>Brute-force protection: repeated failed logins from one IP address ban it for a while (all protocols).</p>
+                <div class="api-item">
+                    <h3><code>GET /api/security/settings</code></h3>
+                    <p><code>{ enabled, maxFailures, windowMinutes, banMinutes, allowlist }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>PUT /api/security/settings</code></h3>
+                    <p>Update any of those fields; <code>allowlist</code> is a list of addresses / CIDR ranges that are never banned.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/security/bans</code></h3>
+                    <p>Active bans: <code>[{ ip, reason, bannedAt, expiresAt }]</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>DELETE /api/security/bans/:ip</code></h3>
+                    <p>Lift a ban.</p>
+                </div>
+            </div>
+            <div class="api-section">
+                <h2>Webhooks</h2>
+                <p>Events: <code>upload</code>, <code>download</code>, <code>delete</code>, <code>login</code>, <code>login_failed</code>, <code>share</code>. Deliveries are signed with <code>X-SLightSFTP-Signature: sha256=&lt;HMAC&gt;</code> when a secret is set.</p>
+                <div class="api-item">
+                    <h3><code>GET /api/webhooks</code></h3>
+                    <p>All webhooks (secrets are never returned; <code>hasSecret</code> instead).</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/webhooks</code></h3>
+                    <p>Body <code>{ name, url, events, format: 'json'|'slack', usernameFilter?, pathPrefix?, secret? }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>PUT /api/webhooks/:id</code></h3>
+                    <p>Update fields, e.g. <code>{ enabled: false }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>DELETE /api/webhooks/:id</code></h3>
+                    <p>Delete.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/webhooks/:id/test</code></h3>
+                    <p>Send a test event: <code>{ ok, status, error?, attempts }</code>.</p>
+                </div>
+            </div>
+            <div class="api-section">
+                <h2>Share links</h2>
+                <p>Created by users in the file portal; admins can list and revoke all of them.</p>
+                <div class="api-item">
+                    <h3><code>GET /api/shares</code></h3>
+                    <p>All links: <code>{ id, owner, type, virtualPath, status, downloadCount, maxDownloads, expiresAt, hasPassword, url }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>DELETE /api/shares/:id</code></h3>
+                    <p>Revoke a link.</p>
+                </div>
+            </div>
+            <div class="api-section">
+                <h2>File portal API</h2>
+                <p>Used by <code>/files</code>; separate <code>portalSession</code> cookie, never valid for the admin API.</p>
+                <div class="api-item">
+                    <h3><code>POST /portal/api/login</code></h3>
+                    <p>Body <code>{ username, password, totp? }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /portal/api/list?path=</code></h3>
+                    <p>Folder listing with the permissions that apply there.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /portal/api/download?path=</code></h3>
+                    <p>Download a file.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>PUT /portal/api/upload?path=</code></h3>
+                    <p>Upload the request body as a file.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /portal/api/mkdir · /portal/api/rename</code></h3>
+                    <p>Body <code>{ path }</code> / <code>{ from, to }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>DELETE /portal/api/file?path=</code></h3>
+                    <p>Delete a file or empty folder.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /portal/api/shares</code></h3>
+                    <p>Body <code>{ path, type: 'download'|'upload', password?, expiresInDays?, maxDownloads? }</code>.</p>
                 </div>
             </div>
             <div class="api-section">
