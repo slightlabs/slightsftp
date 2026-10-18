@@ -1,0 +1,19 @@
+# docker compose up -d   →  web admin GUI on https://localhost:3000
+services:
+  slightsftp:
+    image: ghcr.io/slightlabs/slightsftp:latest
+    build: .
+    restart: unless-stopped
+    environment:
+      WEB_HTTPS: "true"        # self-signed certificate, stored in /data
+      # FTP_PASV_URL: 203.0.113.10   # public address for passive FTP
+    ports:
+      - "3000:3000"            # web admin GUI and file portal
+      - "2222:2222"            # SFTP listener (create it in the GUI)
+      - "2121:2121"            # FTP listener (optional)
+      - "30000-30009:30000-30009"  # passive FTP data ports
+    volumes:
+      - slightsftp-data:/data  # configuration, keys, recycle bin
+      - ./files:/files         # map virtual paths to folders under /files
+volumes:
+  slightsftp-data:

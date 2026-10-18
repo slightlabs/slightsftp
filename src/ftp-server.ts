@@ -44,7 +44,11 @@ export class FTPServer extends EventEmitter {
     return new Promise((resolve, reject) => {
       this.server = new FtpSrv({
         url: `ftp://${this.listener.bindingIp}:${this.listener.port}`,
-        pasv_url: this.listener.bindingIp,
+        // Behind NAT / in containers: FTP_PASV_URL is the address clients should connect
+        // back to, FTP_PASV_MIN / FTP_PASV_MAX the published passive port range
+        pasv_url: process.env.FTP_PASV_URL || this.listener.bindingIp,
+        pasv_min: Number(process.env.FTP_PASV_MIN) || 1024,
+        pasv_max: Number(process.env.FTP_PASV_MAX) || 65535,
         anonymous: false,
         tls,
         greeting: ['Welcome to SLightSFTP Server']

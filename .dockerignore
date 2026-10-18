@@ -1,0 +1,16 @@
+node_modules
+dist
+release
+coverage
+test-results
+playwright-report
+docs
+e2e
+.git
+*.db
+*.log
+ftp-root
+recycle-bin
+server.crt
+server.key
+ssh_host_rsa_key

@@ -16,6 +16,22 @@ Multi-user FTP/SFTP server with GUI management interface.
 
 See [ROADMAP.md](ROADMAP.md) for what's coming next.
 
+## Docker
+
+```bash
+docker run -d --name slightsftp \
+  -p 3000:3000 -p 2222:2222 \
+  -v slightsftp-data:/data -v /srv/files:/files \
+  -e WEB_HTTPS=true \
+  ghcr.io/slightlabs/slightsftp:latest
+```
+
+Open https://localhost:3000, sign in as `admin` / `admin123` (you will be asked for a new
+password), create an SFTP listener on port 2222 and map users' virtual paths to folders
+under `/files`. Configuration, keys and the recycle bin are kept in the `/data` volume.
+For FTP, also publish port 2121 and the passive range `30000-30009`, and set
+`FTP_PASV_URL` to the server's public address. See `docker-compose.yml`.
+
 ## Installation
 
 ```bash

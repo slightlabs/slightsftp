@@ -139,6 +139,19 @@
                 <p class="download-note">📥 All downloads available on <a href="https://github.com/slightlabs/slightsftp/releases" target="_blank">GitHub Releases</a></p>
             </div>
 
+            <h3>Run with Docker</h3>
+            <div class="install-steps">
+                <div class="step">
+                    <h3>Headless server with the web admin GUI</h3>
+                    <pre><code>docker run -d --name slightsftp \
+  -p 3000:3000 -p 2222:2222 \
+  -v slightsftp-data:/data -v /srv/files:/files \
+  -e WEB_HTTPS=true \
+  ghcr.io/slightlabs/slightsftp:latest</code></pre>
+                    <p>Then open <code>https://localhost:3000</code>, sign in as <code>admin</code> / <code>admin123</code> and choose a new password.</p>
+                </div>
+            </div>
+
             <h3>Build from Source</h3>
             <div class="install-steps">
                 <div class="step">
