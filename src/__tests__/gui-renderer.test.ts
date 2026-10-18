@@ -45,6 +45,7 @@ const model = {
     { id: 3, listenerId: null, username: 'admin', action: 'GUI_LOGIN', path: '/', success: true, timestamp: nowSql() },
   ],
   settings: { logRetentionDays: '30' } as Record<string, string>,
+  adminTotp: false,
   webhooks: [] as any[],
   security: { enabled: true, maxFailures: 5, windowMinutes: 10, banMinutes: 15, allowlist: '127.0.0.0/8, ::1' },
   bans: [{ ip: '203.0.113.9', reason: `5 failed logins in 10 min (last: SFTP as ${XSS})`, bannedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 900_000).toISOString() }] as any[],
@@ -63,7 +64,10 @@ const model = {
 };
 
 const backend: Record<string, Handler> = {
-  'get-authenticated-user': () => ({ username: 'admin', id: 1 }),
+  'get-authenticated-user': () => ({ username: 'admin', id: 1, totpEnabled: model.adminTotp }),
+  'totp-setup': () => ({ secret: 'JBSWY3DPEHPK3PXP', otpauthUrl: 'otpauth://totp/x', qrSvg: '<svg id="qr-svg"></svg>' }),
+  'totp-enable': (code: string) => { if (code !== '123456') throw new Error("Error invoking remote method 'totp-enable': Error: That code is not valid."); model.adminTotp = true; return { success: true }; },
+  'totp-disable': () => { model.adminTotp = false; return { success: true }; },
   'get-server-identity': () => ({ sshHostKeyFingerprint: 'SHA256:abcDEF123' }),
   'get-shares': () => model.shares,
   'get-webhooks': () => model.webhooks,
@@ -551,6 +555,64 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       expect(lastCall('delete-webhook')).toEqual([1]);
       expect($('#webhooks-table').textContent).toContain('No webhooks yet');
     });
+  });
+
+  describe('two-factor sign-in', () => {
+    test('setting up shows the QR code and key, and a valid code turns it on', async () => {
+      buttonByText(document.body, '🔐 2FA').click();
+      await flush();
+      expect($('#twoFactorModal').classList.contains('active')).toBe(true);
+      expect($('#twoFactorOff').style.display).toBe('block');
+      buttonByText($('#twoFactorOff'), 'Set up').click();
+      await flush();
+      expect($('#twoFactorQr').querySelector('#qr-svg')).toBeTruthy();
+      expect($('#twoFactorSecret').textContent).toBe('JBSWY3DPEHPK3PXP');
+
+      $<HTMLInputElement>('#twoFactorCode').value = '000000';
+      buttonByText($('#twoFactorSetup'), 'Turn on').click();
+      await flush();
+      expect((window.alert as jest.Mock).mock.calls.at(-1)[0]).toBe('That code is not valid.'); // IPC wrapper stripped
+
+      $<HTMLInputElement>('#twoFactorCode').value = '123456';
+      buttonByText($('#twoFactorSetup'), 'Turn on').click();
+      await flush();
+      expect(lastCall('totp-enable')).toEqual(['123456']);
+      expect($('#twoFactorModal').classList.contains('active')).toBe(false);
+    });
+
+    test('when on, the dialog offers to turn it off with a code', async () => {
+      buttonByText(document.body, '🔐 2FA').click();
+      await flush();
+      expect($('#twoFactorOn').style.display).toBe('block');
+      $<HTMLInputElement>('#twoFactorDisableCode').value = '222333';
+      buttonByText($('#twoFactorOn'), 'Turn off').click();
+      await flush();
+      expect(lastCall('totp-disable')).toEqual(['222333']);
+    });
+
+    test('admins can reset a user\'s 2FA from Edit User (but not turn it on)', async () => {
+      await openPanel('users');
+      const user = model.users.find(u => u.username === 'carol')! as any;
+      user.totpEnabled = false;
+      buttonByText($$('#users-table tbody tr').find(r => r.children[0].textContent!.startsWith('carol'))!, 'Edit').click();
+      await flush();
+      const box = $<HTMLFormElement>('#editUserForm').elements.namedItem('totpEnabled') as HTMLInputElement;
+      expect(box.checked).toBe(false);
+      expect(box.disabled).toBe(true);
+      closeEdit();
+
+      user.totpEnabled = true;
+      buttonByText($$('#users-table tbody tr').find(r => r.children[0].textContent!.startsWith('carol'))!, 'Edit').click();
+      await flush();
+      expect(box.checked).toBe(true);
+      expect(box.disabled).toBe(false);
+      box.checked = false;
+      await submit($<HTMLFormElement>('#editUserForm'));
+      expect(lastCall('update-user')![1]).toMatchObject({ totpEnabled: false });
+      user.totpEnabled = false;
+    });
+
+    function closeEdit() { ($('#editUserModal .close-btn') as HTMLElement).click(); }
   });
 
   describe('shared links panel', () => {

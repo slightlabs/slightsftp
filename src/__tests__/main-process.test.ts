@@ -447,6 +447,40 @@ describe('Electron main process (main.ts) with real backend', () => {
     });
   });
 
+  describe('two-factor sign-in (desktop)', () => {
+    test('set up, sign in with a code, admin reset', async () => {
+      const { totp } = require('../totp');
+      const realNow = Date.now.bind(Date);
+      let offset = 0;
+      const spy = jest.spyOn(Date, 'now').mockImplementation(() => realNow() + offset);
+      try {
+        expect((await invoke('get-authenticated-user')).totpEnabled).toBe(false);
+        const setup = await invoke('totp-setup');
+        expect(setup.qrSvg).toContain('<svg');
+        await expect(invoke('totp-enable', '000000')).rejects.toThrow(/not valid/);
+        await invoke('totp-enable', totp(setup.secret, Date.now()));
+        expect((await invoke('get-authenticated-user')).totpEnabled).toBe(true);
+        expect((await invoke('get-user', 'admin'))).not.toHaveProperty('totpSecret');
+
+        await invoke('logout');
+        expect(await invoke('authenticate-user', 'admin', ADMIN_PW)).toEqual({ success: false, requireTotp: true, error: 'Enter the code from your authenticator app' });
+        expect(await invoke('authenticate-user', 'admin', ADMIN_PW, '111111')).toMatchObject({ success: false, requireTotp: true, error: 'Invalid two-factor code' });
+        offset += 30_000;
+        expect((await invoke('authenticate-user', 'admin', ADMIN_PW, totp(setup.secret, Date.now()))).success).toBe(true);
+
+        // an admin reset (via Edit User) turns it off; secrets are not settable over IPC
+        await invoke('update-user', 'admin', { totpEnabled: true, totpSecret: 'AAAA' }, [], await invoke('get-virtual-paths', (await invoke('get-user', 'admin')).id), []);
+        expect((await invoke('get-user', 'admin')).totpEnabled).toBe(true);
+        await invoke('update-user', 'admin', { totpEnabled: false });
+        expect((await invoke('get-authenticated-user')).totpEnabled).toBe(false);
+        await invoke('logout');
+        expect((await invoke('authenticate-user', 'admin', ADMIN_PW)).success).toBe(true);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
   describe('webhook handlers', () => {
     test('create, test, fire on a desktop sign-in, toggle and delete', async () => {
       const received: any[] = [];

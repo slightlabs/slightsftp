@@ -234,6 +234,11 @@
                 >
             </div>
 
+            <div class="form-group" id="totpGroup" hidden>
+                <label for="totp">Authentication code</label>
+                <input type="text" id="totp" name="totp" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]*" maxlength="7" placeholder="6-digit code from your app">
+            </div>
+
             <button type="submit" class="btn-login" id="loginBtn">
                 Sign In
             </button>
@@ -266,6 +271,8 @@
         const passwordInput = document.getElementById('password');
         const loginBtn = document.getElementById('loginBtn');
         const errorMessage = document.getElementById('errorMessage');
+        const totpGroup = document.getElementById('totpGroup');
+        const totpInput = document.getElementById('totp');
 
         function showError(message) {
             errorMessage.textContent = message;
@@ -293,7 +300,21 @@
             passwordInput.disabled = true;
 
             try {
-                const result = await ipcRenderer.invoke('authenticate-user', username, password);
+                const totpValue = totpGroup.hidden ? undefined : totpInput.value.trim();
+                const result = await ipcRenderer.invoke('authenticate-user', username, password, totpValue);
+
+                if (!result.success && result.requireTotp) {
+                    // Password was right; ask for the authenticator code
+                    totpGroup.hidden = false;
+                    loginBtn.disabled = false;
+                    loginBtn.textContent = 'Verify';
+                    usernameInput.disabled = false;
+                    passwordInput.disabled = false;
+                    if (totpValue) showError(result.error || 'Invalid two-factor code');
+                    totpInput.value = '';
+                    totpInput.focus();
+                    return;
+                }
 
                 if (result.success && result.requirePasswordChange) {
                     showChangePassword();

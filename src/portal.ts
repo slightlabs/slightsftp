@@ -17,6 +17,7 @@ import logger from './logger';
 import QRCode from 'qrcode';
 import { createShare, describeShare, shareUrl, ShareError } from './shares';
 import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
+import { beginTotpSetup, checkSecondFactor, confirmTotpSetup, disableTotp } from './two-factor';
 
 export const PORTAL_COOKIE = 'portalSession';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -130,6 +131,15 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
       guard.recordFailure(ip, 'file portal', String(username || ''));
       throw new HttpError(401, 'Invalid username or password');
     }
+    const second = checkSecondFactor(db, user, req.body?.totp);
+    if (second !== 'ok') {
+      if (second === 'invalid') {
+        options.logActivity(user.username, 'PORTAL_LOGIN_FAILED', 'Invalid two-factor code', false);
+        guard.recordFailure(ip, 'file portal', user.username);
+      }
+      res.status(401).json({ error: second === 'required' ? 'Enter the code from your authenticator app' : 'Invalid two-factor code', requireTotp: true });
+      return;
+    }
     guard.recordSuccess(ip);
     const id = crypto.randomBytes(32).toString('hex');
     const mustChangePassword = requiresPasswordChange(user, password);
@@ -153,6 +163,7 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     res.json({
       username: user.username,
       requirePasswordChange: (req as any).portalSession.mustChangePassword,
+      totpEnabled: !!user.totpEnabled,
       roots: db.getVirtualPaths(user.id!).map(vp => vp.virtualPath),
     });
   });
@@ -170,6 +181,26 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     db.updateUser(user.username, { password: newPassword, mustChangePassword: false });
     session.mustChangePassword = false;
     options.logActivity(user.username, 'PORTAL_PASSWORD_CHANGED', '/', true);
+    res.json({ success: true });
+  }));
+
+  // ── two-factor sign-in ─────────────────────────────────────────────────
+  router.post('/2fa/setup', handle(async (req, res) => {
+    const user: User = (req as any).portalUser;
+    res.json(await beginTotpSetup(db, user.username));
+  }));
+
+  router.post('/2fa/enable', handle((req, res) => {
+    const user: User = (req as any).portalUser;
+    if (!confirmTotpSetup(db, user.username, req.body?.code)) throw new HttpError(400, 'That code is not valid. Check the time on your phone and try again.');
+    options.logActivity(user.username, 'PORTAL_2FA_ENABLED', '/', true);
+    res.json({ success: true });
+  }));
+
+  router.post('/2fa/disable', handle((req, res) => {
+    const user: User = (req as any).portalUser;
+    if (!disableTotp(db, user.username, req.body?.code)) throw new HttpError(400, 'Invalid two-factor code');
+    options.logActivity(user.username, 'PORTAL_2FA_DISABLED', '/', true);
     res.json({ success: true });
   }));
 

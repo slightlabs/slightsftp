@@ -191,6 +191,9 @@ export class DatabaseManager {
     addColumn('users', 'portalEnabled', 'INTEGER NOT NULL DEFAULT 0');
     addColumn('server_activities', 'bytes', 'INTEGER');
     addColumn('users', 'allowedIps', 'TEXT');
+    addColumn('users', 'totpEnabled', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn('users', 'totpSecret', 'TEXT');
+    addColumn('users', 'totpPendingSecret', 'TEXT');
   }
 
   // User operations
@@ -268,6 +271,22 @@ export class DatabaseManager {
     if (user.allowedIps !== undefined) {
       updates.push('allowedIps = ?');
       values.push(user.allowedIps || null);
+    }
+    if (user.totpPendingSecret !== undefined) {
+      updates.push('totpPendingSecret = ?');
+      values.push(user.totpPendingSecret || null);
+    }
+    if (user.totpSecret !== undefined) {
+      updates.push('totpSecret = ?');
+      values.push(user.totpSecret || null);
+    }
+    if (user.totpEnabled !== undefined) {
+      updates.push('totpEnabled = ?');
+      values.push(user.totpEnabled ? 1 : 0);
+      if (!user.totpEnabled) {
+        // turning 2FA off always forgets the secret
+        updates.push('totpSecret = NULL', 'totpPendingSecret = NULL');
+      }
     }
 
     if (updates.length === 0) return;
@@ -932,6 +951,9 @@ export class DatabaseManager {
       mustChangePassword: obj.mustChangePassword === 1,
       portalEnabled: obj.portalEnabled === 1,
       allowedIps: obj.allowedIps || null,
+      totpEnabled: obj.totpEnabled === 1,
+      totpSecret: obj.totpSecret || null,
+      totpPendingSecret: obj.totpPendingSecret || null,
       createdAt: obj.createdAt
     };
   }

@@ -11,6 +11,7 @@ import { getServerCertificate, hostKeyFingerprint, setCertificateDir } from './t
 import { describeShare } from './shares';
 import { WebhookDispatcher, describeWebhook, validateWebhookInput } from './webhooks';
 import { cleanAllowedIps, getLoginGuard, saveGuardSettings } from './login-guard';
+import { beginTotpSetup, checkSecondFactor, confirmTotpSetup, disableTotp, publicUser } from './two-factor';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -64,7 +65,7 @@ function ensureDirectories() {
 function createLoginWindow(): void {
   loginWindow = new BrowserWindow({
     width: 450,
-    height: 550,
+    height: 630, // room for the two-factor code field
     resizable: false,
     frame: false,
     webPreferences: {
@@ -474,7 +475,7 @@ function completeLogin(user: any): void {
 
 function setupIpcHandlers(): void {
   // Authentication handler
-  ipcMain.handle('authenticate-user', async (event, username, password) => {
+  ipcMain.handle('authenticate-user', async (event, username, password, totpCode) => {
     try {
       const user = db.getUser(username);
       
@@ -485,6 +486,19 @@ function setupIpcHandlers(): void {
 
       if (!db.checkPassword(username, password)) {
         return { success: false, error: 'Invalid username or password' };
+      }
+
+      // Second factor (TOTP) when the user has turned it on
+      const second = checkSecondFactor(db, user, totpCode);
+      if (second !== 'ok') {
+        if (second === 'invalid') {
+          db.logActivity({ listenerId: null, username: user.username, action: 'GUI_LOGIN_FAILED', path: 'Invalid two-factor code', success: false });
+        }
+        return {
+          success: false,
+          requireTotp: true,
+          error: second === 'required' ? 'Enter the code from your authenticator app' : 'Invalid two-factor code'
+        };
       }
 
       // First login with the default password, or the account was flagged by an admin
@@ -606,13 +620,36 @@ function setupIpcHandlers(): void {
     return { sshHostKeyFingerprint: hostKeyFingerprint() };
   });
 
+  // Two-factor sign-in for the signed-in user
+  ipcMain.handle('totp-setup', async () => {
+    if (!authenticatedUser) throw new Error('Not signed in');
+    return beginTotpSetup(db, authenticatedUser.username);
+  });
+
+  ipcMain.handle('totp-enable', async (event, code) => {
+    if (!authenticatedUser || !confirmTotpSetup(db, authenticatedUser.username, code)) {
+      throw new Error('That code is not valid. Check the time on your phone and try again.');
+    }
+    db.logActivity({ listenerId: null, username: authenticatedUser.username, action: 'GUI_2FA_ENABLED', path: '/', success: true });
+    return { success: true };
+  });
+
+  ipcMain.handle('totp-disable', async (event, code) => {
+    if (!authenticatedUser || !disableTotp(db, authenticatedUser.username, code)) {
+      throw new Error('Invalid two-factor code');
+    }
+    db.logActivity({ listenerId: null, username: authenticatedUser.username, action: 'GUI_2FA_DISABLED', path: '/', success: true });
+    return { success: true };
+  });
+
   // Get authenticated user info
   ipcMain.handle('get-authenticated-user', async () => {
     logger.debug('IPC: get-authenticated-user called');
     logger.debug('authenticatedUser:', authenticatedUser);
     const result = authenticatedUser ? { 
       username: authenticatedUser.username, 
-      id: authenticatedUser.id 
+      id: authenticatedUser.id,
+      totpEnabled: !!db.getUser(authenticatedUser.username)?.totpEnabled
     } : null;
     logger.debug('Returning:', result);
     return result;
@@ -669,12 +706,8 @@ function setupIpcHandlers(): void {
     return userId;
   });
   
-  // Password hashes never leave the main process
-  const withoutPassword = (user: any) => {
-    if (!user) return user;
-    const { password: _hash, ...rest } = user;
-    return rest;
-  };
+  // Password hashes and TOTP secrets never leave the main process
+  const withoutPassword = (user: any) => (user ? publicUser(user) : user);
 
   ipcMain.handle('get-user', async (event, username) => {
     return withoutPassword(db.getUser(username));
@@ -691,6 +724,11 @@ function setupIpcHandlers(): void {
     // Update user
     if (updates && updates.allowedIps !== undefined) {
       updates = { ...updates, allowedIps: cleanAllowedIps(updates.allowedIps) };
+    }
+    if (updates) {
+      // Admins may reset (turn off) two-factor sign-in, never set secrets or turn it on
+      const { totpSecret: _s, totpPendingSecret: _p, totpEnabled, ...rest } = updates;
+      updates = totpEnabled === false ? { ...rest, totpEnabled: false } : rest;
     }
     db.updateUser(username, updates);
     

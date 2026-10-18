@@ -87,7 +87,7 @@ describe('browser file portal', () => {
 
     test('me lists the user and their mapped roots', async () => {
       const me = await pat.get('/portal/api/me').expect(200);
-      expect(me.body).toEqual({ username: 'pat', requirePasswordChange: false, roots: ['/', '/reports'] });
+      expect(me.body).toEqual({ username: 'pat', requirePasswordChange: false, totpEnabled: false, roots: ['/', '/reports'] });
     });
 
     test('everything requires a session', async () => {

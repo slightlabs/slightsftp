@@ -484,6 +484,7 @@
         <h1>SLightSFTP Server Manager</h1>
         <div class="user-info">
           <div class="user-badge" id="currentUser">Loading...</div>
+          <button class="btn-logout" onclick="showTwoFactorModal()" id="twoFactorBtn" title="Two-factor sign-in">🔐 2FA</button>
           <button class="btn-logout" onclick="logout()">Logout</button>
         </div>
       </div>
@@ -911,6 +912,10 @@
           <label>Allowed IP addresses (optional)</label>
           <input type="text" name="allowedIps" placeholder="anywhere — or e.g. 203.0.113.7, 10.0.0.0/8">
         </div>
+        <div class="form-group checkbox-group">
+          <input type="checkbox" name="totpEnabled" disabled>
+          <label>Two-factor sign-in enabled (untick to reset it for this user)</label>
+        </div>
         <h3>Subscribed Listeners & Permissions</h3>
         <div id="userListenersCheckboxes"></div>
         <h3>Virtual Paths</h3>
@@ -1029,6 +1034,32 @@
         </div>
         <button type="submit" class="btn btn-primary">Create Webhook</button>
       </form>
+    </div>
+  </div>
+
+  <!-- Two-factor Modal -->
+  <div id="twoFactorModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Two-factor sign-in</h2>
+        <button class="close-btn" onclick="closeModal('twoFactorModal')">&times;</button>
+      </div>
+      <div id="twoFactorOff">
+        <p>Protect your account with a code from an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, …) in addition to your password.</p>
+        <button type="button" class="btn btn-primary" onclick="beginTwoFactorSetup()">Set up</button>
+      </div>
+      <div id="twoFactorSetup" style="display: none;">
+        <p>Scan this QR code with your authenticator app, then enter the 6-digit code it shows.</p>
+        <div id="twoFactorQr" style="width: 200px; margin: 0 auto; background: #fff; padding: 8px;"></div>
+        <p style="font-size: 12px; color: #666; text-align: center;">Or enter this key manually: <code id="twoFactorSecret"></code></p>
+        <div class="form-group"><label>Code</label><input type="text" id="twoFactorCode" inputmode="numeric" autocomplete="one-time-code" maxlength="7"></div>
+        <button type="button" class="btn btn-primary" onclick="confirmTwoFactorSetup()">Turn on</button>
+      </div>
+      <div id="twoFactorOn" style="display: none;">
+        <p>✅ Two-factor sign-in is <strong>on</strong> for your account.</p>
+        <div class="form-group"><label>Current code (to turn it off)</label><input type="text" id="twoFactorDisableCode" inputmode="numeric" maxlength="7"></div>
+        <button type="button" class="btn btn-danger" onclick="disableTwoFactor()">Turn off</button>
+      </div>
     </div>
   </div>
 

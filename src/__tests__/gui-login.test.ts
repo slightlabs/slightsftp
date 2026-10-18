@@ -67,7 +67,7 @@ describe('Login window GUI (login.html)', () => {
   test('trims the username and sends credentials to authenticate-user', async () => {
     ipcRenderer.invoke.mockResolvedValue({ success: true });
     await submitWith('  admin  ', 'admin123');
-    expect(ipcRenderer.invoke).toHaveBeenCalledWith('authenticate-user', 'admin', 'admin123');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('authenticate-user', 'admin', 'admin123', undefined);
   });
 
   test('successful login closes the login window', async () => {
@@ -116,7 +116,7 @@ describe('Login window GUI (login.html)', () => {
     password().value = 'admin123';
     password().dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter' }));
     await flush();
-    expect(ipcRenderer.invoke).toHaveBeenCalledWith('authenticate-user', 'admin', 'admin123');
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('authenticate-user', 'admin', 'admin123', undefined);
   });
 
   test('the close button closes the window', () => {
@@ -166,6 +166,37 @@ describe('Login window GUI (login.html)', () => {
       ipcRenderer.invoke.mockResolvedValue({ success: true });
       await submitChange('Brand-New-Pass1');
       expect(ipcRenderer.invoke).toHaveBeenCalledWith('set-first-login-password', 'Brand-New-Pass1');
+      expect(window.close).toHaveBeenCalled();
+    });
+  });
+
+  describe('two-factor code step', () => {
+    afterAll(() => { $('totpGroup').hidden = true; });
+
+    test('asks for the authenticator code when the password was right', async () => {
+      jest.advanceTimersByTime(3000); // let earlier error banners auto-hide
+      expect($('totpGroup').hidden).toBe(true);
+      ipcRenderer.invoke.mockResolvedValue({ success: false, requireTotp: true, error: 'Enter the code from your authenticator app' });
+      await submitWith('admin', 'secret-pass');
+      expect($('totpGroup').hidden).toBe(false);
+      expect(error().classList.contains('show')).toBe(false); // first prompt is not an error
+      expect(loginBtn().textContent).toBe('Verify');
+      expect(loginBtn().disabled).toBe(false);
+    });
+
+    test('sends the code with the password; a wrong code shows the error', async () => {
+      ipcRenderer.invoke.mockResolvedValue({ success: false, requireTotp: true, error: 'Invalid two-factor code' });
+      $<HTMLInputElement>('totp').value = '123 456';
+      await submitWith('admin', 'secret-pass');
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('authenticate-user', 'admin', 'secret-pass', '123 456');
+      expect(error().textContent).toBe('Invalid two-factor code');
+    });
+
+    test('a correct code signs in', async () => {
+      ipcRenderer.invoke.mockResolvedValue({ success: true });
+      $<HTMLInputElement>('totp').value = '654321';
+      await submitWith('admin', 'secret-pass');
+      expect(ipcRenderer.invoke).toHaveBeenCalledWith('authenticate-user', 'admin', 'secret-pass', '654321');
       expect(window.close).toHaveBeenCalled();
     });
   });

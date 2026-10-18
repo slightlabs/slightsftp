@@ -11,6 +11,11 @@ export interface User {
   portalEnabled?: boolean;
   /** comma-separated addresses / CIDR ranges this user may sign in from (empty = anywhere) */
   allowedIps?: string | null;
+  /** two-factor (TOTP) sign-in for the GUIs and the file portal */
+  totpEnabled?: boolean;
+  totpSecret?: string | null;
+  /** secret being set up, until the first code is confirmed */
+  totpPendingSecret?: string | null;
   createdAt?: string;
 }
 

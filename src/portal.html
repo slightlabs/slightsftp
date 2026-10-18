@@ -99,6 +99,7 @@
     <div class="error" id="loginError" hidden></div>
     <div class="field"><label for="username">Username</label><input type="text" id="username" autocomplete="username" required autofocus></div>
     <div class="field"><label for="password">Password</label><input type="password" id="password" autocomplete="current-password" required></div>
+    <div class="field" id="totpField" hidden><label for="totp">Authentication code</label><input type="text" id="totp" inputmode="numeric" autocomplete="one-time-code" maxlength="7" placeholder="6-digit code from your app"></div>
     <button class="primary" type="submit" id="loginBtn">Sign in</button>
   </form>
 </div>
@@ -121,6 +122,7 @@
     <span class="brand">📁 SLightSFTP Files</span>
     <span class="spacer"></span>
     <span class="who" id="who"></span>
+    <button type="button" id="twoFactorBtn" title="Two-factor sign-in">🔐 2FA</button>
     <button type="button" id="logoutBtn">Sign out</button>
   </header>
   <main>
@@ -167,6 +169,28 @@
   <p class="sub">Links you created. Revoke a link to disable it immediately.</p>
   <div class="shares" id="sharesList"></div>
   <div class="dialog-actions"><button type="button" id="sharesClose">Close</button></div>
+</dialog>
+
+<dialog id="twoFactorDialog">
+  <h2>Two-factor sign-in</h2>
+  <div id="tfOff">
+    <p class="sub">Add a code from an authenticator app to your password.</p>
+    <div class="dialog-actions"><button type="button" id="tfClose1">Close</button><button type="button" class="primary" id="tfBegin">Set up</button></div>
+  </div>
+  <div id="tfSetup" hidden>
+    <p class="sub">Scan the QR code with your authenticator app, then enter the code it shows.</p>
+    <img class="qr" id="tfQr" alt="QR code for your authenticator app">
+    <p class="sub" style="text-align:center">Key: <code id="tfSecret"></code></p>
+    <div class="field"><label for="tfCode">Code</label><input type="text" id="tfCode" inputmode="numeric" maxlength="7"></div>
+    <div class="error" id="tfError" hidden></div>
+    <div class="dialog-actions"><button type="button" id="tfClose2">Cancel</button><button type="button" class="primary" id="tfEnable">Turn on</button></div>
+  </div>
+  <div id="tfOn" hidden>
+    <p class="sub">✅ Two-factor sign-in is on.</p>
+    <div class="field"><label for="tfOffCode">Current code (to turn it off)</label><input type="text" id="tfOffCode" inputmode="numeric" maxlength="7"></div>
+    <div class="error" id="tfOffError" hidden></div>
+    <div class="dialog-actions"><button type="button" id="tfClose3">Close</button><button type="button" class="danger" id="tfDisable">Turn off</button></div>
+  </div>
 </dialog>
 
 <div class="toast" id="toast" hidden></div>
@@ -232,8 +256,12 @@
     showError('loginError', '');
     $('loginBtn').disabled = true;
     try {
-      const result = await api('POST', '/portal/api/login', { username: $('username').value.trim(), password: $('password').value });
+      const body = { username: $('username').value.trim(), password: $('password').value };
+      if (!$('totpField').hidden) body.totp = $('totp').value.trim();
+      const result = await api('POST', '/portal/api/login', body);
       $('password').value = '';
+      $('totp').value = '';
+      $('totpField').hidden = true;
       if (result.requirePasswordChange) {
         show('changeView');
         $('newPassword').focus();
@@ -241,7 +269,15 @@
         await start();
       }
     } catch (err) {
-      showError('loginError', err.message);
+      if (err.data && err.data.requireTotp) {
+        const firstAsk = $('totpField').hidden;
+        $('totpField').hidden = false;
+        $('totp').value = '';
+        $('totp').focus();
+        showError('loginError', firstAsk ? '' : err.message);
+      } else {
+        showError('loginError', err.message);
+      }
     } finally {
       $('loginBtn').disabled = false;
     }
@@ -479,6 +515,40 @@
 
   $('mySharesBtn').addEventListener('click', async () => { await loadShares(); $('sharesDialog').showModal(); });
   $('sharesClose').addEventListener('click', () => $('sharesDialog').close());
+
+  // ── two-factor sign-in ─────────────────────────────────────────────────
+  function tfView(view) { for (const id of ['tfOff', 'tfSetup', 'tfOn']) $(id).hidden = id !== view; }
+  $('twoFactorBtn').addEventListener('click', async () => {
+    const me = await api('GET', '/portal/api/me').catch(() => ({}));
+    tfView(me.totpEnabled ? 'tfOn' : 'tfOff');
+    showError('tfError', ''); showError('tfOffError', '');
+    $('twoFactorDialog').showModal();
+  });
+  for (const id of ['tfClose1', 'tfClose2', 'tfClose3']) $(id).addEventListener('click', () => $('twoFactorDialog').close());
+  $('tfBegin').addEventListener('click', async () => {
+    try {
+      const setup = await api('POST', '/portal/api/2fa/setup');
+      $('tfQr').src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(setup.qrSvg);
+      $('tfSecret').textContent = setup.secret;
+      $('tfCode').value = '';
+      tfView('tfSetup');
+      $('tfCode').focus();
+    } catch (err) { toast(err.message); }
+  });
+  $('tfEnable').addEventListener('click', async () => {
+    try {
+      await api('POST', '/portal/api/2fa/enable', { code: $('tfCode').value.trim() });
+      $('twoFactorDialog').close();
+      toast('Two-factor sign-in is on');
+    } catch (err) { showError('tfError', err.message); }
+  });
+  $('tfDisable').addEventListener('click', async () => {
+    try {
+      await api('POST', '/portal/api/2fa/disable', { code: $('tfOffCode').value.trim() });
+      $('twoFactorDialog').close();
+      toast('Two-factor sign-in is off');
+    } catch (err) { showError('tfOffError', err.message); }
+  });
 
   // ── boot ───────────────────────────────────────────────────────────────
   async function start() {

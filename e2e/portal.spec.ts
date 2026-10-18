@@ -202,6 +202,32 @@ test('works at phone width', async () => {
   await page.setViewportSize({ width: 1280, height: 800 });
 });
 
+test('turns on two-factor sign-in and then needs a code to sign in', async () => {
+  const { totp } = require(path.join(DIST, 'totp.js'));
+  await page.click('#twoFactorBtn');
+  await page.click('#tfBegin');
+  await expect(page.locator('#tfSecret')).toHaveText(/^[A-Z2-7]{32}$/);
+  const secret = await page.locator('#tfSecret').textContent();
+  await expect.poll(() => page.locator('#tfQr').evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await page.fill('#tfCode', '000000');
+  await page.click('#tfEnable');
+  await expect(page.locator('#tfError')).toContainText('not valid');
+  await page.fill('#tfCode', totp(secret, Date.now()));
+  await page.click('#tfEnable');
+  await expect(page.locator('#twoFactorDialog')).toBeHidden();
+
+  await page.getByRole('button', { name: 'Sign out' }).click();
+  await page.fill('#username', 'pam');
+  await page.fill('#password', 'Pam-New-Pass-1');
+  await page.click('#loginBtn');
+  await expect(page.locator('#totpField')).toBeVisible();
+  await expect(page.locator('#loginError')).toBeHidden();
+  await page.fill('#password', 'Pam-New-Pass-1');
+  await page.fill('#totp', totp(secret, Date.now() + 30_000)); // next step: the setup code was consumed
+  await page.click('#loginBtn');
+  await expect(page.locator('#who')).toHaveText('pam');
+});
+
 test('signs out', async () => {
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page.locator('#loginView')).toBeVisible();

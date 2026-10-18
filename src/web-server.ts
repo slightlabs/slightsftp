@@ -17,6 +17,7 @@ import { registerPortalRoutes } from './portal';
 import { cleanAllowedIps, getLoginGuard, saveGuardSettings, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { describeShare, registerShareRoutes, shareUrl } from './shares';
 import { WebhookDispatcher, describeWebhook, validateWebhookInput } from './webhooks';
+import { beginTotpSetup, checkSecondFactor, confirmTotpSetup, disableTotp, publicUser } from './two-factor';
 
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
@@ -28,11 +29,6 @@ interface WebSession {
   mustChangePassword?: boolean;
 }
 
-/** Never send password hashes to a client. */
-function withoutPassword(user: User): Omit<User, 'password'> {
-  const { password: _hash, ...rest } = user;
-  return rest;
-}
 
 // API paths a session may use while a password change is still required
 const PASSWORD_CHANGE_ALLOWED = new Set(['/change-password', '/user', '/logout']);
@@ -236,6 +232,17 @@ export class WebServer {
           return;
         }
 
+        // Second factor (TOTP) when the user has turned it on
+        const second = checkSecondFactor(this.db, user, req.body.totp);
+        if (second !== 'ok') {
+          if (second === 'invalid') {
+            this.logActivity(username, 'WEB_LOGIN_FAILED', 'Invalid two-factor code', false);
+            guard.recordFailure(ip, 'Web GUI', username);
+          }
+          res.status(401).json({ error: second === 'required' ? 'Enter the code from your authenticator app' : 'Invalid two-factor code', requireTotp: true });
+          return;
+        }
+
         guard.recordSuccess(ip);
 
         // Create session
@@ -414,11 +421,37 @@ export class WebServer {
       res.json({ sshHostKeyFingerprint: hostKeyFingerprint() });
     });
 
+    // Two-factor sign-in for the signed-in admin
+    this.app.post('/api/2fa/setup', async (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      res.json(await beginTotpSetup(this.db, session.username));
+    });
+
+    this.app.post('/api/2fa/enable', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      if (!confirmTotpSetup(this.db, session.username, req.body?.code)) {
+        res.status(400).json({ error: 'That code is not valid. Check the time on your phone and try again.' });
+        return;
+      }
+      this.logActivity(session.username, 'WEB_2FA_ENABLED', 'Two-factor sign-in enabled', true);
+      res.json({ success: true });
+    });
+
+    this.app.post('/api/2fa/disable', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      if (!disableTotp(this.db, session.username, req.body?.code)) {
+        res.status(400).json({ error: 'Invalid two-factor code' });
+        return;
+      }
+      this.logActivity(session.username, 'WEB_2FA_DISABLED', 'Two-factor sign-in disabled', true);
+      res.json({ success: true });
+    });
+
     // Get authenticated user
     this.app.get('/api/user', (req: Request, res: Response) => {
       const session = (req as any).session as WebSession;
       const user = this.db.getUser(session.username);
-      res.json({ username: user?.username });
+      res.json({ username: user?.username, totpEnabled: !!user?.totpEnabled });
     });
 
     // Listeners
@@ -588,7 +621,7 @@ export class WebServer {
 
     // Users
     this.app.get('/api/users', (req: Request, res: Response) => {
-      res.json(this.db.getAllUsers().map(withoutPassword));
+      res.json(this.db.getAllUsers().map(u => publicUser(u)));
     });
 
     this.app.get('/api/users/:username', (req: Request, res: Response) => {
@@ -598,7 +631,7 @@ export class WebServer {
         res.status(404).json({ error: 'User not found' });
         return;
       }
-      res.json(withoutPassword(user));
+      res.json(publicUser(user));
     });
 
     this.app.get('/api/users/id/:userId/listeners', (req: Request, res: Response) => {
@@ -650,6 +683,8 @@ export class WebServer {
         
         const updates: any = { passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled };
         if (allowedIps !== undefined) updates.allowedIps = cleanAllowedIps(allowedIps);
+        // Admins can reset (turn off) a user's two-factor sign-in, never turn it on for them
+        if (req.body.totpEnabled === false) updates.totpEnabled = false;
         if (password) {
           // DatabaseManager.updateUser hashes the password itself
           updates.password = password;
@@ -1010,16 +1045,16 @@ export class WebServer {
         async invoke(channel, ...args) {
           // Map Electron IPC channels to web API endpoints
           const channelMap = {
-            'authenticate-user': async (username, password) => {
+            'authenticate-user': async (username, password, totp) => {
               const response = await fetch('/api/login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password }),
+                body: JSON.stringify({ username, password, totp }),
                 credentials: 'same-origin'
               });
               if (!response.ok) {
                 const error = await response.json();
-                return { success: false, error: error.error || 'Login failed' };
+                return { success: false, error: error.error || 'Login failed', requireTotp: !!error.requireTotp };
               }
               const result = await response.json();
               // Don't redirect here - return success and let the login page handle it
@@ -1341,6 +1376,9 @@ export class WebServer {
             'unban-ip': (ip) => api('DELETE', \`/api/security/bans/\${encodeURIComponent(ip)}\`),
             'get-security-settings': () => api('GET', '/api/security/settings'),
             'set-security-settings': (settings) => api('PUT', '/api/security/settings', settings),
+            'totp-setup': () => api('POST', '/api/2fa/setup'),
+            'totp-enable': (code) => api('POST', '/api/2fa/enable', { code }),
+            'totp-disable': (code) => api('POST', '/api/2fa/disable', { code }),
             'get-webhooks': () => api('GET', '/api/webhooks'),
             'create-webhook': (hook) => api('POST', '/api/webhooks', hook),
             'update-webhook': (id, hook) => api('PUT', \`/api/webhooks/\${id}\`, hook),
