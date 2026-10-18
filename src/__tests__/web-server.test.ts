@@ -282,22 +282,31 @@ describe('WebServer REST API', () => {
       expect(res.status).toBe(404);
     });
 
-    test('POST /api/users — creates user and hashes password', async () => {
+    test('POST /api/users — passes the plain password to the DB layer (which hashes it exactly once)', async () => {
       const res = await request(app).post('/api/users').set('Cookie', cookie)
         .send({ username: 'newuser', password: 'pass', passwordEnabled: true, guiEnabled: false });
       expect(res.status).toBe(200);
       expect(mockDb.createUser).toHaveBeenCalledWith(
-        expect.objectContaining({ username: 'newuser', password: expect.not.stringContaining('pass') })
+        expect.objectContaining({ username: 'newuser', password: 'pass' })
       );
+      expect(res.body.password).toBeUndefined();
     });
 
-    test('PUT /api/users/:username — updates and hashes password', async () => {
+    test('PUT /api/users/:username — passes the plain password to the DB layer (which hashes it exactly once)', async () => {
       const res = await request(app).put('/api/users/admin').set('Cookie', cookie)
         .send({ password: 'newPass', passwordEnabled: true, guiEnabled: true });
       expect(res.status).toBe(200);
       expect(mockDb.updateUser).toHaveBeenCalledWith(
-        'admin', expect.objectContaining({ password: expect.not.stringContaining('newPass') })
+        'admin', expect.objectContaining({ password: 'newPass' })
       );
+    });
+
+    test('PUT /api/users/:username — unknown user → 404', async () => {
+      mockDb.getUser.mockReturnValueOnce(undefined);
+      const res = await request(app).put('/api/users/ghost').set('Cookie', cookie)
+        .send({ passwordEnabled: true });
+      expect(res.status).toBe(404);
+      expect(mockDb.updateUser).not.toHaveBeenCalled();
     });
 
     test('PUT /api/users/:username — no password field does not hash', async () => {

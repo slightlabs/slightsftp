@@ -217,9 +217,9 @@ export class CustomFileSystem extends FileSystem {
     const resolvedPath = inputPath.replace(/\\/g, '/');
     
     // Join cwd with new path
-    const joinedPath = path.isAbsolute(resolvedPath)
-      ? path.normalize(resolvedPath)
-      : path.join('/', this.cwd, resolvedPath);
+    const joinedPath = path.posix.normalize(path.posix.isAbsolute(resolvedPath)
+      ? resolvedPath
+      : path.posix.join('/', this.cwd, resolvedPath));
     
     // Map through our virtual path system
     let fsPath: string;
@@ -229,7 +229,7 @@ export class CustomFileSystem extends FileSystem {
       for (const vp of this.virtualPaths) {
         if (resolvedPath.startsWith(vp.localPath) || resolvedPath.replace(/\\/g, '/').startsWith(vp.localPath.replace(/\\/g, '/'))) {
           // Already correctly resolved
-          fsPath = resolvedPath;
+          fsPath = this.confine(resolvedPath);
           return {
             clientPath: joinedPath.replace(/\\/g, '/'),
             fsPath: fsPath
@@ -242,7 +242,7 @@ export class CustomFileSystem extends FileSystem {
     for (const vp of this.virtualPaths) {
       if (joinedPath.startsWith(vp.virtualPath)) {
         const relativePath = joinedPath.substring(vp.virtualPath.length);
-        fsPath = path.join(vp.localPath, relativePath);
+        fsPath = this.confine(path.join(vp.localPath, relativePath));
         return {
           clientPath: joinedPath.replace(/\\/g, '/'),
           fsPath: fsPath
@@ -251,9 +251,9 @@ export class CustomFileSystem extends FileSystem {
     }
     
     // Default: use first virtual path or root
-    fsPath = this.virtualPaths.length > 0
+    fsPath = this.confine(this.virtualPaths.length > 0
       ? path.join(this.virtualPaths[0].localPath, joinedPath)
-      : path.join(this.root as string, joinedPath);
+      : path.join(this.root as string, joinedPath));
     
     return {
       clientPath: joinedPath.replace(/\\/g, '/'),
@@ -274,30 +274,48 @@ export class CustomFileSystem extends FileSystem {
         
         if (normalizedVirtualPath.startsWith(normalizedLocalPath) || 
             normalizedVirtualPath.startsWith(normalizedLocalPath.replace(/\//g, '\\'))) {
-          // Already a valid absolute path within virtual path - return as-is
-          return virtualPath;
+          // Already an absolute local path - only accept it if it stays inside the root
+          return this.confine(virtualPath);
         }
       }
       
       // If root is set and path starts with it, also return as-is
       const rootPath = this.root as string;
       if (rootPath && (virtualPath.startsWith(rootPath) || virtualPath.startsWith(rootPath.replace(/\\/g, '/')))) {
-        return virtualPath;
+        return this.confine(virtualPath);
       }
     }
     
-    // Handle relative/virtual paths
+    // Handle relative/virtual paths: resolve against the cwd and collapse ".."
+    // so a client can never climb above the virtual root
+    const virtual = path.posix.normalize(
+      normalizedPath.startsWith('/') ? normalizedPath : path.posix.join('/', (this as any).cwd || '/', normalizedPath)
+    );
     for (const vp of this.virtualPaths) {
-      if (normalizedPath.startsWith(vp.virtualPath)) {
-        const relativePath = normalizedPath.substring(vp.virtualPath.length);
-        return path.join(vp.localPath, relativePath);
+      if (virtual.startsWith(vp.virtualPath)) {
+        const relativePath = virtual.substring(vp.virtualPath.length);
+        return this.confine(path.join(vp.localPath, relativePath));
       }
     }
     
     // Default mapping
-    return this.virtualPaths.length > 0
-      ? path.join(this.virtualPaths[0].localPath, normalizedPath)
-      : path.join(this.root as string, normalizedPath);
+    return this.confine(this.virtualPaths.length > 0
+      ? path.join(this.virtualPaths[0].localPath, virtual)
+      : path.join(this.root as string, virtual));
+  }
+
+  /** Throw unless fsPath lies inside one of the user's local roots. */
+  private confine(fsPath: string): string {
+    const resolved = path.resolve(fsPath);
+    const roots = [...this.virtualPaths.map(vp => vp.localPath), this.root as string].filter(Boolean);
+    for (const rootPath of roots) {
+      const root = path.resolve(rootPath);
+      if (resolved === root || resolved.startsWith(root + path.sep)) {
+        return resolved;
+      }
+    }
+    this.logCallback('PATH_ESCAPE_DENIED', fsPath, false);
+    throw new Error('Permission denied');
   }
 
   private findVirtualPath(virtualPath: string) {

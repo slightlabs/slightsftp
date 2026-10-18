@@ -211,7 +211,7 @@ describe('Fix 1: dirHandles are isolated per connection', () => {
 // ══════════════════════════════════════════════════════════════════════════
 // Fix 2: WRITE permission checks canCreate
 // ══════════════════════════════════════════════════════════════════════════
-describe('Fix 2: WRITE handler checks canCreate in addition to canEdit/canAppend', () => {
+describe('Fix 2: WRITE handler honours the write access granted at OPEN (canCreate/canEdit/canAppend)', () => {
   let server: SFTPServer;
   let mockDb: jest.Mocked<DatabaseManager>;
   let mockSSHSrv: any;
@@ -226,18 +226,23 @@ describe('Fix 2: WRITE handler checks canCreate in addition to canEdit/canAppend
 
   afterEach(async () => { await server.stop(); });
 
-  function emitWrite(sftp: any) {
+  // SFTP open flags: WRITE=0x02, APPEND=0x04, CREAT=0x08
+  function emitWrite(sftp: any, openFlags = 0x02 | 0x08) {
+    // WRITE is only accepted on a handle that OPEN granted write access to
+    sftp.emit('OPEN', 0, '/file.txt', openFlags, {});
     const handle = Buffer.alloc(4);
     handle.writeUInt32BE(3, 0); // fd 3 (openSync returns 3)
     sftp.emit('WRITE', 1, handle, 0, Buffer.from('data'));
   }
 
+  const writeStatuses = (sftp: any) =>
+    (sftp.status as jest.Mock).mock.calls.filter(([reqId]: any[]) => reqId === 1).map(([, code]: any[]) => code);
+
   test('WRITE allowed when canCreate=true, canEdit=false, canAppend=false', () => {
     mockDb.getPermission.mockReturnValue({ ...FULL_PERM, canCreate: true, canEdit: false, canAppend: false });
     const { sftp } = simulateFullSession(mockSSHSrv._clientHandler, mockDb);
     emitWrite(sftp);
-    const denied = (sftp.status as jest.Mock).mock.calls.filter(([, c]: any[]) => c === 3);
-    expect(denied).toHaveLength(0);
+    expect(writeStatuses(sftp)).not.toContain(3);
     expect(fs.writeSync).toHaveBeenCalled();
   });
 
@@ -245,24 +250,22 @@ describe('Fix 2: WRITE handler checks canCreate in addition to canEdit/canAppend
     mockDb.getPermission.mockReturnValue({ ...FULL_PERM, canCreate: false, canEdit: true, canAppend: false });
     const { sftp } = simulateFullSession(mockSSHSrv._clientHandler, mockDb);
     emitWrite(sftp);
-    const denied = (sftp.status as jest.Mock).mock.calls.filter(([, c]: any[]) => c === 3);
-    expect(denied).toHaveLength(0);
+    expect(writeStatuses(sftp)).not.toContain(3);
   });
 
   test('WRITE allowed when canAppend=true, canCreate=false, canEdit=false', () => {
     mockDb.getPermission.mockReturnValue({ ...FULL_PERM, canCreate: false, canEdit: false, canAppend: true });
     const { sftp } = simulateFullSession(mockSSHSrv._clientHandler, mockDb);
-    emitWrite(sftp);
-    const denied = (sftp.status as jest.Mock).mock.calls.filter(([, c]: any[]) => c === 3);
-    expect(denied).toHaveLength(0);
+    emitWrite(sftp, 0x02 | 0x04); // WRITE | APPEND
+    expect(writeStatuses(sftp)).not.toContain(3);
   });
 
   test('WRITE denied when canCreate=false, canEdit=false, canAppend=false', () => {
     mockDb.getPermission.mockReturnValue({ ...FULL_PERM, canCreate: false, canEdit: false, canAppend: false });
     const { sftp } = simulateFullSession(mockSSHSrv._clientHandler, mockDb);
     emitWrite(sftp);
-    const denied = (sftp.status as jest.Mock).mock.calls.filter(([, c]: any[]) => c === 3);
-    expect(denied).toHaveLength(1);
+    expect(writeStatuses(sftp)).toEqual([3]);
+    expect(fs.writeSync).not.toHaveBeenCalled();
   });
 });
 
