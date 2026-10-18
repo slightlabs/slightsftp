@@ -45,5 +45,5 @@ Items are implemented in order. Each ships with tests and is marked here when do
 - [x] Dark mode.
 - [x] macOS build (unsigned .dmg, Intel and Apple Silicon).
 - [ ] winget / Homebrew / Flatpak listings (need the maintainer to submit to those catalogues).
-- [ ] Cloud storage virtual paths (S3, Azure Blob).
+- [x] Cloud storage virtual paths (Amazon S3 and S3-compatible services, Azure Blob) over SFTP, FTP, the portal and share links.
 - [x] LDAP / Active Directory users.

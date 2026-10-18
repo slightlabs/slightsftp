@@ -8,6 +8,11 @@ Multi-user FTP/SFTP server with GUI management interface.
 - Desktop GUI (Electron) and a browser-based admin GUI, optionally over HTTPS
 - Multi-user support with password and public key authentication
 - Virtual path mapping with granular per-user, per-path permissions
+- Cloud storage folders: point a virtual path at an Amazon S3 bucket (or MinIO, Wasabi,
+  Cloudflare R2, Backblaze B2, ...) or an Azure Blob container (*Cloud Storage* panel)
+- Browser file portal (`/files`) and share links, LDAP / Active Directory sign-in,
+  two-factor sign-in, brute-force protection, quotas, speed limits, recycle bin,
+  webhooks, syslog export, API tokens and configuration backup
 - Users can never leave their virtual paths (`..` is confined)
 - Salted scrypt password hashing; forced password change on first login
 - Stable SFTP host key with a fingerprint you can share with users

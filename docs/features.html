@@ -35,7 +35,8 @@
                 <p>SLightSFTP supports both FTP and SFTP protocols, allowing you to serve clients using either protocol. You can configure multiple listeners with different protocols, ports, and binding addresses.</p>
                 <ul>
                     <li>FTP (File Transfer Protocol) for legacy clients</li>
-                    <li>SFTP (SSH File Transfer Protocol) for secure transfers</li>
+                    <li>FTPS (explicit TLS) per listener, optional or required</li>
+                    <li>SFTP (SSH File Transfer Protocol) for secure transfers, with a stable host key</li>
                     <li>Multiple listeners on different ports simultaneously</li>
                     <li>Custom binding addresses for network isolation</li>
                     <li>Individual enable/disable control per listener</li>
@@ -46,8 +47,10 @@
                 <h2>Multi-User Management</h2>
                 <p>Comprehensive user management system with flexible authentication options:</p>
                 <ul>
-                    <li>Password-based authentication with SHA-256 hashing</li>
-                    <li>SSH public key authentication for enhanced security</li>
+                    <li>Password authentication with salted scrypt hashing</li>
+                    <li>OpenSSH public keys (Ed25519, RSA, ECDSA), several per user</li>
+                    <li>LDAP / Active Directory sign-in with the user's directory password</li>
+                    <li>Two-factor sign-in (TOTP) for the GUIs and the file portal</li>
                     <li>Per-user GUI access control</li>
                     <li>User-specific virtual path mappings</li>
                     <li>Forced password change on first login with default credentials</li>
@@ -60,11 +63,58 @@
                 <p>Map virtual paths to real filesystem locations with granular control:</p>
                 <ul>
                     <li>Create custom virtual paths for each user</li>
-                    <li>Map to any directory on the filesystem</li>
+                    <li>Map to any directory on the filesystem, or to an S3 bucket / Azure Blob container</li>
                     <li>Isolate users to specific directories</li>
                     <li>Support for complex directory structures</li>
                     <li>Automatic directory creation for mapped paths</li>
                     <li>Permission inheritance options for subdirectories</li>
+                </ul>
+            </div>
+
+            <div class="feature-detail-card">
+                <h2>Cloud Storage: S3 &amp; Azure Blob</h2>
+                <p>Point any virtual path at a bucket instead of a local folder. Users keep using SFTP, FTP, the web portal and share links as usual; the files live in the cloud.</p>
+                <ul>
+                    <li>Amazon S3 and S3-compatible services: MinIO, Wasabi, Cloudflare R2, Backblaze B2, DigitalOcean Spaces, ...</li>
+                    <li>Azure Blob Storage (connection string, or account name and key)</li>
+                    <li>One bucket can hold many users: give each one their own folder in it</li>
+                    <li><em>Test connection</em> checks listing, upload, download and delete before you save</li>
+                    <li>A file appears in the bucket when its upload finishes (an abandoned SFTP upload is discarded); quotas, speed limits, checksums and webhooks work as for local folders</li>
+                    <li>Large files use multi-part uploads; SFTP downloads start while the file is still arriving from the bucket</li>
+                    <li>Deletes in a bucket are permanent (the recycle bin covers local folders)</li>
+                </ul>
+            </div>
+
+            <div class="feature-detail-card">
+                <h2>Browser File Portal &amp; Share Links</h2>
+                <p>End users manage their files in a browser at <code>/files</code>, with the same folders and permissions as over SFTP/FTP.</p>
+                <ul>
+                    <li>Upload (drag and drop), download, create folders, rename and delete</li>
+                    <li>Share links for files and folders: expiry, password, download limit, QR code, revoke</li>
+                    <li>"Request files" links let outsiders upload into a folder without seeing its contents</li>
+                    <li>Works on phones</li>
+                </ul>
+            </div>
+
+            <div class="feature-detail-card">
+                <h2>Storage Controls</h2>
+                <p>Keep disk usage and bandwidth under control:</p>
+                <ul>
+                    <li>Per-user storage quotas (local folders and cloud buckets), enforced over every protocol</li>
+                    <li>Per-user upload and download speed limits, shared across all of a user's sessions</li>
+                    <li>Recycle bin with restore and automatic purge after a retention period</li>
+                </ul>
+            </div>
+
+            <div class="feature-detail-card">
+                <h2>Automation &amp; Integration</h2>
+                <p>Fit SLightSFTP into the rest of your systems:</p>
+                <ul>
+                    <li>REST API for everything the GUI does, with personal access tokens for scripts</li>
+                    <li>Webhooks to Slack, Teams or any URL on uploads, downloads, deletes and sign-ins</li>
+                    <li>Syslog / SIEM forwarding (RFC 5424) and a SHA-256 checksum for every upload</li>
+                    <li>Configuration backup and restore, including the SFTP host key and TLS certificate</li>
+                    <li>Docker image for headless servers</li>
                 </ul>
             </div>
 
@@ -94,6 +144,7 @@
                     <li>Real-time connection monitoring</li>
                     <li>Activity log viewer with export functionality</li>
                     <li>Session management with disconnect capabilities</li>
+                    <li>First-run setup wizard, dark mode and update notifications</li>
                 </ul>
             </div>
 
@@ -138,15 +189,15 @@
 
             <div class="feature-detail-card">
                 <h2>Security Features</h2>
-                <p>Enterprise-grade security capabilities:</p>
+                <p>Security that is on by default:</p>
                 <ul>
-                    <li>SHA-256 password hashing</li>
-                    <li>SSH public key authentication support</li>
-                    <li>Forced password change on first login</li>
-                    <li>GUI access control per user</li>
-                    <li>Generic error messages for authentication failures</li>
-                    <li>Secure session management</li>
-                    <li>Listener-level access control</li>
+                    <li>Encryption everywhere: SFTP, FTPS and HTTPS for the web GUI</li>
+                    <li>Salted scrypt password hashing; forced password change on first login</li>
+                    <li>Brute-force protection: repeated failed logins ban the address for a while</li>
+                    <li>Per-user IP allow-lists (CIDR)</li>
+                    <li>Two-factor sign-in (TOTP)</li>
+                    <li>Users can never leave their folders (<code>..</code> paths are refused)</li>
+                    <li>GUI access control per user; listener-level access control</li>
                 </ul>
             </div>
 

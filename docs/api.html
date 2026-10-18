@@ -292,6 +292,102 @@ curl -k -b jar -H 'Content-Type: application/json' \
                 </div>
             </div>
             <div class="api-section">
+                <h2>Cloud storage</h2>
+                <p>Connections to Amazon S3 (or S3-compatible services such as MinIO, Wasabi, Cloudflare R2, Backblaze B2) and Azure Blob containers. A virtual path whose local path is <code>cloud://&lt;id&gt;/&lt;folder&gt;</code> lives in that bucket. Secrets are never returned; <code>hasSecretAccessKey</code>, <code>hasConnectionString</code> and <code>hasAccountKey</code> say whether one is saved.</p>
+                <div class="api-item">
+                    <h3><code>GET /api/storage</code></h3>
+                    <p>All connections, each with <code>url</code> (<code>cloud://&lt;id&gt;</code>) and <code>usedBy</code> (the virtual paths that use it).</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/storage</code></h3>
+                    <p>S3: <code>{ name, type: 's3', config: { bucket, region?, endpoint?, accessKeyId, secretAccessKey, forcePathStyle? } }</code>. Azure: <code>{ name, type: 'azure', config: { container, connectionString } }</code> or <code>config: { container, accountName, accountKey, endpoint? }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>PUT /api/storage/:id</code></h3>
+                    <p>Update; fields you leave out, and secrets you send empty, keep their saved values.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>DELETE /api/storage/:id</code></h3>
+                    <p>Delete the connection (not the files). Answers <code>409</code> while a virtual path still uses it.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/storage/test</code></h3>
+                    <p>Body: a connection as for <code>POST</code>, or <code>{ id }</code> for a saved one. Lists, uploads, reads back and deletes a probe object: <code>{ ok, message }</code>.</p>
+                </div>
+            </div>
+            <div class="api-section">
+                <h2>Directory sign-in (LDAP)</h2>
+                <div class="api-item">
+                    <h3><code>GET /api/ldap</code></h3>
+                    <p><code>{ enabled, url, bindDn, baseDn, userFilter, tlsVerify, hasBindPassword }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>PUT /api/ldap</code></h3>
+                    <p>Same fields plus <code>bindPassword</code> (empty keeps the saved one). <code>userFilter</code> must contain <code>{username}</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/ldap/test</code></h3>
+                    <p>Body <code>{ username? }</code>: bind with the service account and optionally look a user up.</p>
+                </div>
+            </div>
+            <div class="api-section">
+                <h2>API tokens</h2>
+                <div class="api-item">
+                    <h3><code>GET /api/tokens</code></h3>
+                    <p>Your tokens (never the token itself): <code>{ id, name, hint, createdAt, lastUsedAt, expiresAt }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/tokens</code></h3>
+                    <p>Body <code>{ name, expiresInDays? }</code>. The response includes <code>token</code> once; only its hash is stored.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>DELETE /api/tokens/:id</code></h3>
+                    <p>Revoke one of your tokens.</p>
+                </div>
+            </div>
+            <div class="api-section">
+                <h2>Recycle bin</h2>
+                <div class="api-item">
+                    <h3><code>GET /api/trash</code></h3>
+                    <p><code>{ settings: { enabled, retentionDays }, items }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>PUT /api/trash/settings</code></h3>
+                    <p>Body <code>{ enabled?, retentionDays? }</code> (1–3650 days).</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/trash/:id/restore</code></h3>
+                    <p>Put a deleted file back where it was.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>DELETE /api/trash/:id · DELETE /api/trash</code></h3>
+                    <p>Delete one item, or empty the recycle bin, permanently.</p>
+                </div>
+            </div>
+            <div class="api-section">
+                <h2>Audit export, backup and updates</h2>
+                <div class="api-item">
+                    <h3><code>GET /api/audit/settings · PUT /api/audit/settings</code></h3>
+                    <p><code>{ syslog: { enabled, host, port, protocol: 'udp'|'tcp', facility }, checksumUploads }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/audit/test-syslog</code></h3>
+                    <p>Send a test message to the syslog server: <code>{ ok, error? }</code>.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/backup</code></h3>
+                    <p>Download the whole configuration (database, SFTP host key, TLS certificate) as a JSON bundle. It contains password hashes and cloud storage keys: store it safely.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>POST /api/backup/restore</code></h3>
+                    <p>Body: a bundle from <code>GET /api/backup</code>. Replaces the configuration and restarts the listeners.</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /api/update</code></h3>
+                    <p><code>{ currentVersion, latestVersion, updateAvailable, url }</code> from GitHub Releases (<code>?force=1</code> skips the cache).</p>
+                </div>
+            </div>
+            <div class="api-section">
                 <h2>Share links</h2>
                 <p>Created by users in the file portal; admins can list and revoke all of them.</p>
                 <div class="api-item">

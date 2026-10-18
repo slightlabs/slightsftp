@@ -54,6 +54,10 @@
       "src/share.html",
       "assets/**/*",
       "node_modules/**/*",
+      "!node_modules/@azure/*/dist/{browser,esm,react-native}/**",
+      "!node_modules/@aws-sdk/*/dist-{es,types}/**",
+      "!node_modules/@smithy/*/dist-{es,types}/**",
+      "!node_modules/**/*.map",
       "package.json"
     ],
     "extraResources": [
@@ -119,6 +123,9 @@
     }
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1152.0",
+    "@aws-sdk/lib-storage": "^3.1152.0",
+    "@azure/storage-blob": "^12.34.0",
     "basic-ftp": "^5.0.4",
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
@@ -144,6 +151,7 @@
     "@types/ssh2-sftp-client": "^9.0.6",
     "@types/supertest": "^7.2.1",
     "@types/ws": "^8.18.1",
+    "azurite": "^3.37.0",
     "electron": "^28.1.0",
     "electron-builder": "^26.0.12",
     "ftp": "^0.3.10",

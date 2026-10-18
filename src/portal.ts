@@ -23,6 +23,8 @@ import { QuotaExceededError, getQuotaManager, quotaLimiter } from './quota';
 import { getLimiter, sendFileThrottled, throttle } from './bandwidth';
 import { isDirectoryUser, verifyUserPassword } from './credentials';
 import { deleteFile, purgeItem, restoreItem } from './recycle-bin';
+import { checksumsEnabled } from './checksum';
+import { cloudPath, cloudTarget, isCloudPath, parentKey, parseCloudPath, receiveCloudFile, sendCloudFile } from './cloud-storage';
 
 export const PORTAL_COOKIE = 'portalSession';
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
@@ -115,6 +117,8 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
         res.status(err.status).json({ error: err.message });
       } else if (err?.code === 'ENOENT') {
         res.status(404).json({ error: 'Not found' });
+      } else if (err?.code === 'ENOTDIR' || err?.code === 'EISDIR') {
+        res.status(400).json({ error: err.code === 'ENOTDIR' ? 'Not a folder' : 'This is a folder' });
       } else if (err?.code === 'EEXIST' || err?.code === 'ENOTEMPTY') {
         res.status(409).json({ error: err.code === 'EEXIST' ? 'Already exists' : 'Folder is not empty' });
       } else {
@@ -226,6 +230,16 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     }
 
     const target = resolveFor(user, virtual, 'canList');
+    const cloud = cloudTarget(db, target.localPath);
+    if (cloud) {
+      const entries = await cloud.backend.list(cloud.key);
+      const files = entries
+        .map(e => ({ name: e.name, type: e.isDir ? 'directory' : 'file', size: e.isDir ? 0 : e.size, modified: e.isDir ? null : e.mtime }))
+        .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'directory' ? -1 : 1));
+      options.logActivity(user.username, 'PORTAL_LIST', virtual, true);
+      res.json({ path: virtual, permissions: permissionsAt(user, virtual), files });
+      return;
+    }
     const stat = await fs.promises.stat(target.localPath);
     if (!stat.isDirectory()) throw new HttpError(400, 'Not a folder');
     const names = await fs.promises.readdir(target.localPath);
@@ -244,6 +258,15 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
   router.get('/download', handle(async (req, res) => {
     const user: User = (req as any).portalUser;
     const target = resolveFor(user, req.query.path, 'canRead');
+    const cloud = cloudTarget(db, target.localPath);
+    if (cloud) {
+      const entry = await cloud.backend.stat(cloud.key);
+      if (!entry) throw new HttpError(404, 'Not found');
+      if (entry.isDir) throw new HttpError(400, 'Cannot download a folder');
+      options.logActivity(user.username, 'PORTAL_DOWNLOAD', target.virtual, true);
+      await sendCloudFile(res, cloud.backend, cloud.key, entry, getLimiter(db, user, 'download'));
+      return;
+    }
     const stat = await fs.promises.stat(target.localPath);
     if (stat.isDirectory()) throw new HttpError(400, 'Cannot download a folder');
     options.logActivity(user.username, 'PORTAL_DOWNLOAD', target.virtual, true);
@@ -254,6 +277,41 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     const user: User = (req as any).portalUser;
     const target = resolveFor(user, req.query.path, 'canWrite');
     if (target.virtual === '/' || path.basename(target.localPath) === '') throw new HttpError(400, 'A file name is required');
+    const cloud = cloudTarget(db, target.localPath);
+    if (cloud) {
+      const { backend, key } = cloud;
+      if (!(await backend.stat(parentKey(key)))?.isDir) throw new HttpError(404, 'Folder not found');
+      const existing = await backend.stat(key);
+      if (existing?.isDir) throw new HttpError(409, 'A folder with that name exists');
+      const quota = getQuotaManager(db);
+      const replaced = existing?.size || 0;
+      if (user.quotaBytes) {
+        try {
+          await quota.assertRoom(user, Number(req.headers['content-length'] || 0) - replaced);
+        } catch (err) {
+          if (err instanceof QuotaExceededError) throw new HttpError(413, err.message);
+          throw err;
+        }
+      }
+      const stages: NodeJS.ReadWriteStream[] = [];
+      if (user.quotaBytes) stages.push(quotaLimiter(quota, user, replaced));
+      const limiter = getLimiter(db, user, 'upload');
+      if (limiter) stages.push(throttle(limiter));
+      let stored: { size: number; sha256: string };
+      try {
+        stored = await receiveCloudFile(req, stages, backend, key);
+      } catch (err) {
+        if (err instanceof QuotaExceededError) {
+          quota.invalidate(user.username);
+          options.logActivity(user.username, 'PORTAL_UPLOAD_DENIED (quota exceeded)', target.virtual, false);
+          throw new HttpError(413, err.message);
+        }
+        throw err;
+      }
+      options.logActivity(user.username, 'PORTAL_UPLOAD', target.virtual, true, { bytes: stored.size, checksum: checksumsEnabled(db) ? stored.sha256 : undefined });
+      res.status(201).json({ success: true, path: target.virtual, size: stored.size });
+      return;
+    }
     const parent = path.dirname(target.localPath);
     if (!(await fs.promises.stat(parent).catch(() => null))?.isDirectory()) throw new HttpError(404, 'Folder not found');
     if ((await fs.promises.stat(target.localPath).catch(() => null))?.isDirectory()) throw new HttpError(409, 'A folder with that name exists');
@@ -297,7 +355,14 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
   router.post('/mkdir', handle(async (req, res) => {
     const user: User = (req as any).portalUser;
     const target = resolveFor(user, req.body?.path, 'canCreateDir');
-    await fs.promises.mkdir(target.localPath);
+    const cloud = cloudTarget(db, target.localPath);
+    if (cloud) {
+      if (await cloud.backend.stat(cloud.key)) throw new HttpError(409, 'Already exists');
+      if (!(await cloud.backend.stat(parentKey(cloud.key)))?.isDir) throw new HttpError(404, 'Folder not found');
+      await cloud.backend.mkdir(cloud.key);
+    } else {
+      await fs.promises.mkdir(target.localPath);
+    }
     options.logActivity(user.username, 'PORTAL_MKDIR', target.virtual, true);
     res.status(201).json({ success: true });
   }));
@@ -306,6 +371,17 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     const user: User = (req as any).portalUser;
     const from = resolveFor(user, req.body?.from, 'canRename');
     const to = resolveFor(user, req.body?.to, 'canRename');
+    if (isCloudPath(from.localPath) || isCloudPath(to.localPath)) {
+      const a = cloudTarget(db, from.localPath);
+      const b = cloudTarget(db, to.localPath);
+      if (!a || !b || a.connectionId !== b.connectionId) throw new HttpError(400, 'Cannot move between different storage locations');
+      const root = parseCloudPath(from.virtualPath.localPath);
+      if (!a.key || (root && cloudPath(root.connectionId, root.prefix) === from.localPath)) throw new HttpError(403, 'Cannot rename a shared root folder');
+      await a.backend.rename(a.key, b.key);
+      options.logActivity(user.username, 'PORTAL_RENAME', `${from.virtual} -> ${to.virtual}`, true);
+      res.json({ success: true });
+      return;
+    }
     if (await fs.promises.stat(to.localPath).catch(() => null)) throw new HttpError(409, 'Already exists');
     await fs.promises.rename(from.localPath, to.localPath);
     options.logActivity(user.username, 'PORTAL_RENAME', `${from.virtual} -> ${to.virtual}`, true);
@@ -315,6 +391,20 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
   router.delete('/file', handle(async (req, res) => {
     const user: User = (req as any).portalUser;
     const target = resolveFor(user, req.query.path, 'canDelete');
+    const cloud = cloudTarget(db, target.localPath);
+    if (cloud) {
+      const root = parseCloudPath(target.virtualPath.localPath);
+      if (root && cloudPath(root.connectionId, root.prefix) === target.localPath) throw new HttpError(403, 'Cannot delete a shared root folder');
+      const entry = await cloud.backend.stat(cloud.key);
+      if (!entry) throw new HttpError(404, 'Not found');
+      // cloud files are deleted directly (the recycle bin is for local folders)
+      if (entry.isDir) await cloud.backend.rmdir(cloud.key);
+      else await cloud.backend.remove(cloud.key);
+      getQuotaManager(db).invalidate(user.username);
+      options.logActivity(user.username, 'PORTAL_DELETE', target.virtual, true);
+      res.json({ success: true });
+      return;
+    }
     if (target.localPath === path.resolve(target.virtualPath.localPath)) throw new HttpError(403, 'Cannot delete a shared root folder');
     const stat = await fs.promises.stat(target.localPath);
     if (stat.isDirectory()) {
@@ -361,10 +451,10 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     res.json(db.listShares(user.username).map(sh => describeShare(sh, shareUrl(req, sh.token))));
   });
 
-  router.post('/shares', handle((req, res) => {
+  router.post('/shares', handle(async (req, res) => {
     const user: User = (req as any).portalUser;
     try {
-      const share = createShare(db, user, req.body || {});
+      const share = await createShare(db, user, req.body || {});
       options.logActivity(user.username, share.type === 'upload' ? 'SHARE_CREATED_UPLOAD' : 'SHARE_CREATED', share.virtualPath, true);
       res.status(201).json(describeShare(share, shareUrl(req, share.token)));
     } catch (err) {

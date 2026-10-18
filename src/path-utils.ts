@@ -1,5 +1,6 @@
 import * as path from 'path';
 import { VirtualPath } from './types';
+import { cloudPath, isCloudPath, joinKey, parseCloudPath } from './cloud-storage';
 
 export interface ResolvedUserPath {
   virtualPath: VirtualPath;
@@ -12,7 +13,8 @@ export interface ResolvedUserPath {
  *
  * Returns null when no virtual path matches, when the request contains ".."
  * segments, or when the resolved path would escape the matched local root.
- * The most specific (longest) virtual path wins.
+ * The most specific (longest) virtual path wins. Cloud virtual paths resolve
+ * to "cloud://<connectionId>/<key>" (see cloud-storage.ts).
  */
 export function resolveUserPath(virtualPaths: VirtualPath[], requestedPath: string): ResolvedUserPath | null {
   const raw = (requestedPath || '/').replace(/\\/g, '/');
@@ -27,6 +29,12 @@ export function resolveUserPath(virtualPaths: VirtualPath[], requestedPath: stri
     if (!matches) continue;
 
     const relative = vpNorm === '/' ? normalized : normalized.slice(vpNorm.length);
+    if (isCloudPath(vp.localPath)) {
+      // cloud folders: "cloud://<id>/<prefix>/<relative>" (".." was refused above)
+      const cloud = parseCloudPath(vp.localPath);
+      if (!cloud) return null;
+      return { virtualPath: vp, localPath: cloudPath(cloud.connectionId, joinKey(cloud.prefix, relative)) };
+    }
     const root = path.resolve(vp.localPath);
     const localPath = path.resolve(root, '.' + (relative || '/'));
     if (localPath !== root && !localPath.startsWith(root + path.sep)) return null;

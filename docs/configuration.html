@@ -87,6 +87,34 @@
             </div>
 
             <div class="config-section">
+                <h2>Cloud Storage (S3 &amp; Azure Blob)</h2>
+                <p>A virtual path can live in a cloud bucket instead of a folder on this computer.</p>
+
+                <div class="config-item">
+                    <h3>Connect a bucket</h3>
+                    <ul>
+                        <li>Open <em>Cloud Storage → Add Connection</em></li>
+                        <li><strong>Amazon S3:</strong> bucket, region, access key ID and secret access key</li>
+                        <li><strong>S3-compatible services</strong> (MinIO, Wasabi, Cloudflare R2, Backblaze B2, DigitalOcean Spaces, ...): also set the service's <em>endpoint</em>; tick <em>Path-style URLs</em> for MinIO</li>
+                        <li><strong>Azure Blob Storage:</strong> the container and a connection string (or the storage account name and key)</li>
+                        <li>Click <em>Test connection</em>: it lists the bucket, uploads, reads back and deletes a small probe file</li>
+                    </ul>
+                </div>
+
+                <div class="config-item">
+                    <h3>Give a user a folder in it</h3>
+                    <ul>
+                        <li>In <em>Edit User → Add Virtual Path</em>, set <em>Storage</em> to the bucket</li>
+                        <li><em>Folder in the bucket</em> is optional: <code>users/alice</code> keeps each user in their own folder; leave it empty to share the whole bucket</li>
+                        <li>Permissions, quotas, speed limits, checksums and webhooks work as for local folders</li>
+                        <li>Files cannot be moved between a bucket and a local folder in one rename; copy them instead</li>
+                        <li>Deleting in a bucket is permanent; the recycle bin covers local folders</li>
+                        <li>The access keys are stored in the configuration database (and in configuration backups); give SLightSFTP a key that can only reach this bucket</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="config-section">
                 <h2>Permission System</h2>
                 <p>Granular permissions can be set per user and per virtual path:</p>
                 

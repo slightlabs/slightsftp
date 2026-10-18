@@ -1,12 +1,14 @@
 /**
  * Per-user storage quotas. A user's usage is the total size of the files in
- * the local folders their virtual paths map to (each folder counted once).
+ * the folders their virtual paths map to (each folder counted once), local or
+ * in cloud storage.
  * Usage is measured on demand, cached briefly, and adjusted as uploads land.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import { DatabaseManager } from './database';
 import { User } from './types';
+import { getBackend, isCloudPath, parseCloudPath } from './cloud-storage';
 
 const CACHE_MS = 30_000;
 
@@ -56,6 +58,16 @@ function distinctRoots(localPaths: string[]): string[] {
   return out;
 }
 
+/** The same for cloud://<id>/<prefix> roots. */
+function distinctCloudRoots(paths: string[]): string[] {
+  const sorted = Array.from(new Set(paths.map(p => p.replace(/\/+$/, '')))).sort((a, b) => a.length - b.length);
+  const out: string[] = [];
+  for (const p of sorted) {
+    if (!out.some(r => p === r || p.startsWith(r + '/'))) out.push(p);
+  }
+  return out;
+}
+
 export interface QuotaUsage {
   usedBytes: number;
   quotaBytes: number | null;
@@ -71,9 +83,19 @@ export class QuotaManager {
     if (cached && Date.now() - cached.at < CACHE_MS) {
       return { usedBytes: cached.used, quotaBytes: user.quotaBytes ?? null };
     }
-    const roots = distinctRoots(this.db.getVirtualPaths(user.id!).map(vp => vp.localPath));
+    const localPaths = this.db.getVirtualPaths(user.id!).map(vp => vp.localPath);
+    const roots = distinctRoots(localPaths.filter(p => !isCloudPath(p)));
     let used = 0;
     for (const root of roots) used += await folderSize(root);
+    for (const root of distinctCloudRoots(localPaths.filter(isCloudPath))) {
+      const target = parseCloudPath(root);
+      if (!target) continue;
+      try {
+        used += await getBackend(this.db, target.connectionId).usage(target.prefix);
+      } catch {
+        // an unreachable bucket counts as empty rather than blocking every upload
+      }
+    }
     this.cache.set(user.username, { used, at: Date.now() });
     return { usedBytes: used, quotaBytes: user.quotaBytes ?? null };
   }

@@ -328,6 +328,9 @@ function loadPanelData(panelId) {
     case 'webhooks':
       loadWebhooks();
       break;
+    case 'storage':
+      loadStorage();
+      break;
     case 'security':
       loadSecurity();
       break;
@@ -954,6 +957,165 @@ document.getElementById('addWebhookForm').addEventListener('submit', async (e) =
   }
 });
 
+// Cloud storage connections
+let storageConnections = [];
+const STORAGE_TYPE_LABELS = { s3: 'S3', azure: 'Azure Blob' };
+
+function storageLocation(conn) {
+  const c = conn.config || {};
+  if (conn.type === 's3') return `${c.bucket}${c.endpoint ? ' @ ' + c.endpoint : c.region ? ' (' + c.region + ')' : ''}`;
+  return `${c.container}${c.accountName ? ' @ ' + c.accountName : ''}`;
+}
+
+async function loadStorage() {
+  storageConnections = await ipcRenderer.invoke('get-storage-connections');
+  const tbody = document.getElementById('storage-table');
+  if (!tbody) return storageConnections;
+  if (!storageConnections.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No cloud storage yet</td></tr>';
+    return storageConnections;
+  }
+  tbody.innerHTML = storageConnections.map(c => `
+    <tr>
+      <td><strong>${escapeHtml(c.name)}</strong></td>
+      <td>${escapeHtml(STORAGE_TYPE_LABELS[c.type] || c.type)}</td>
+      <td style="word-break: break-all;">${escapeHtml(storageLocation(c))}</td>
+      <td>${c.usedBy && c.usedBy.length ? c.usedBy.map(escapeHtml).join('<br>') : '<span style="color: #888;">not used</span>'}</td>
+      <td style="white-space: nowrap;">
+        <button class="btn" onclick="testStorage(${Number(c.id)})">Test</button>
+        <button class="btn" onclick="showStorageModal(${Number(c.id)})">Edit</button>
+        <button class="btn btn-danger" onclick="deleteStorage(${Number(c.id)})">Delete</button>
+      </td>
+    </tr>
+  `).join('');
+  return storageConnections;
+}
+
+function updateStorageTypeFields() {
+  const type = document.getElementById('storageType').value;
+  document.getElementById('storage-s3-fields').style.display = type === 's3' ? '' : 'none';
+  document.getElementById('storage-azure-fields').style.display = type === 'azure' ? '' : 'none';
+}
+
+function showStorageModal(id) {
+  const form = document.getElementById('storageForm');
+  form.reset();
+  const conn = id ? storageConnections.find(c => c.id === id) : null;
+  document.getElementById('storageModalTitle').textContent = conn ? 'Edit Cloud Storage' : 'Add Cloud Storage';
+  document.getElementById('storageTestResult').textContent = '';
+  form.elements.id.value = conn ? conn.id : '';
+  form.elements.type.disabled = !!conn;
+  if (conn) {
+    form.elements.name.value = conn.name;
+    form.elements.type.value = conn.type;
+    const c = conn.config || {};
+    const fields = conn.type === 's3' ? ['bucket', 'region', 'endpoint', 'accessKeyId'] : ['container', 'accountName'];
+    for (const field of fields) form.elements[field].value = c[field] || '';
+    form.elements.forcePathStyle.checked = !!c.forcePathStyle;
+    // secrets are never sent back; leaving them empty keeps the saved ones
+    form.elements.secretAccessKey.placeholder = c.hasSecretAccessKey ? '•••••• (saved — leave empty to keep)' : '';
+    form.elements.connectionString.placeholder = c.hasConnectionString ? '•••••• (saved — leave empty to keep)' : 'DefaultEndpointsProtocol=https;AccountName=...';
+    form.elements.accountKey.placeholder = c.hasAccountKey ? '•••••• (saved — leave empty to keep)' : '';
+  } else {
+    form.elements.secretAccessKey.placeholder = '';
+    form.elements.connectionString.placeholder = 'DefaultEndpointsProtocol=https;AccountName=...';
+    form.elements.accountKey.placeholder = '';
+  }
+  updateStorageTypeFields();
+  showModal('storageModal');
+}
+
+function storageFormData() {
+  const form = document.getElementById('storageForm');
+  const f = form.elements;
+  const type = f.type.value;
+  const config = type === 's3'
+    ? { bucket: f.bucket.value, region: f.region.value, endpoint: f.endpoint.value, accessKeyId: f.accessKeyId.value, secretAccessKey: f.secretAccessKey.value, forcePathStyle: f.forcePathStyle.checked }
+    : { container: f.container.value, connectionString: f.connectionString.value, accountName: f.accountName.value, accountKey: f.accountKey.value };
+  return { id: f.id.value ? Number(f.id.value) : null, input: { name: f.name.value, type, config } };
+}
+
+async function testStorageForm() {
+  const out = document.getElementById('storageTestResult');
+  out.style.color = '#666';
+  out.textContent = 'Testing…';
+  const { id, input } = storageFormData();
+  try {
+    const result = await ipcRenderer.invoke('test-storage-connection', input, id);
+    out.style.color = result.ok ? '#28a745' : '#dc3545';
+    out.textContent = result.ok ? `✓ ${result.message}` : `✗ ${result.message}`;
+  } catch (err) {
+    out.style.color = '#dc3545';
+    out.textContent = `✗ ${err.message}`;
+  }
+}
+
+async function testStorage(id) {
+  const conn = storageConnections.find(c => c.id === id);
+  try {
+    const result = await ipcRenderer.invoke('test-storage-connection', { name: conn.name }, id);
+    alert(result.ok ? `"${conn.name}": ${result.message}` : `"${conn.name}" failed: ${result.message}`);
+  } catch (err) {
+    alert(`Test failed: ${err.message}`);
+  }
+}
+
+async function deleteStorage(id) {
+  if (!confirm('Delete this cloud storage connection? Files in the bucket are not touched.')) return;
+  try {
+    await ipcRenderer.invoke('delete-storage-connection', id);
+  } catch (err) {
+    alert(`Failed to delete: ${err.message}`);
+  }
+  loadStorage();
+}
+
+document.getElementById('storageForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const { id, input } = storageFormData();
+  try {
+    if (id) await ipcRenderer.invoke('update-storage-connection', id, input);
+    else await ipcRenderer.invoke('create-storage-connection', input);
+    closeModal('storageModal');
+    loadStorage();
+  } catch (err) {
+    const out = document.getElementById('storageTestResult');
+    out.style.color = '#dc3545';
+    out.textContent = `✗ ${err.message}`;
+  }
+});
+
+/** "cloud://3/team/docs" -> { id: 3, prefix: "team/docs" } */
+function parseCloudLocation(localPath) {
+  const m = /^cloud:\/\/(\d+)(?:\/(.*))?$/.exec(localPath || '');
+  return m ? { id: Number(m[1]), prefix: m[2] || '' } : null;
+}
+
+function describeLocalPath(localPath) {
+  const cloud = parseCloudLocation(localPath);
+  if (!cloud) return localPath;
+  const conn = storageConnections.find(c => c.id === cloud.id);
+  return `☁ ${conn ? conn.name : 'missing connection #' + cloud.id}${cloud.prefix ? ' / ' + cloud.prefix : ''}`;
+}
+
+async function fillVpStorageOptions(selected) {
+  try { await loadStorage(); } catch { storageConnections = []; }
+  const select = document.getElementById('vpStorage');
+  select.innerHTML = '<option value="local">This computer</option>' + storageConnections.map(c =>
+    `<option value="${Number(c.id)}">☁ ${escapeHtml(c.name)} (${escapeHtml(STORAGE_TYPE_LABELS[c.type] || c.type)})</option>`).join('');
+  select.value = selected && storageConnections.some(c => String(c.id) === String(selected)) ? String(selected) : 'local';
+  updateVpStorageFields();
+}
+
+function updateVpStorageFields() {
+  const cloud = document.getElementById('vpStorage').value !== 'local';
+  const input = document.getElementById('vpRealPath');
+  document.getElementById('vpRealPathLabel').textContent = cloud ? 'Folder in the bucket (optional)' : 'Real Path';
+  document.getElementById('vpBrowseBtn').style.display = cloud ? 'none' : '';
+  input.required = !cloud;
+  input.placeholder = cloud ? 'e.g. users/alice (empty = the whole bucket)' : 'C:\\data';
+}
+
 // Shared links
 async function loadShares() {
   const shares = await ipcRenderer.invoke('get-shares');
@@ -1228,7 +1390,7 @@ function renderVirtualPaths() {
   const html = currentUserVirtualPaths.map((vp, index) => `
     <div class="virtual-path-item">
       <div>
-        <strong>${escapeHtml(vp.virtualPath)}</strong> → ${escapeHtml(vp.localPath)}
+        <strong>${escapeHtml(vp.virtualPath)}</strong> → ${escapeHtml(describeLocalPath(vp.localPath))}
         <div style="font-size: 0.85em; color: #666; margin-top: 5px;">
           Permissions: ${[
             vp.canRead ? 'Read' : null,
@@ -1257,6 +1419,7 @@ function addVirtualPath() {
   document.getElementById('vpIndex').value = '-1';
   document.getElementById('vpVirtualPath').value = '';
   document.getElementById('vpRealPath').value = '';
+  fillVpStorageOptions('local');
   document.getElementById('vpCanRead').checked = true;
   document.getElementById('vpCanWrite').checked = true;
   document.getElementById('vpCanAppend').checked = true;
@@ -1273,7 +1436,9 @@ function editVirtualPath(index) {
   document.getElementById('virtualPathModalTitle').textContent = 'Edit Virtual Path';
   document.getElementById('vpIndex').value = index;
   document.getElementById('vpVirtualPath').value = vp.virtualPath;
-  document.getElementById('vpRealPath').value = vp.localPath;
+  const cloudLocation = parseCloudLocation(vp.localPath);
+  document.getElementById('vpRealPath').value = cloudLocation ? cloudLocation.prefix : vp.localPath;
+  fillVpStorageOptions(cloudLocation ? cloudLocation.id : 'local');
   document.getElementById('vpCanRead').checked = vp.canRead !== false;
   document.getElementById('vpCanWrite').checked = vp.canWrite !== false;
   document.getElementById('vpCanAppend').checked = vp.canAppend !== false;
@@ -1771,12 +1936,20 @@ document.getElementById('addUserForm').addEventListener('submit', async (e) => {
   }
 });
 
+function virtualPathTarget() {
+  const storage = document.getElementById('vpStorage').value;
+  const value = document.getElementById('vpRealPath').value.trim();
+  if (storage === 'local') return value;
+  const prefix = value.replace(/\\/g, '/').split('/').filter(p => p && p !== '.' && p !== '..').join('/');
+  return `cloud://${Number(storage)}${prefix ? '/' + prefix : ''}`;
+}
+
 document.getElementById('virtualPathForm').addEventListener('submit', (e) => {
   e.preventDefault();
   const index = parseInt(document.getElementById('vpIndex').value);
   const vp = {
     virtualPath: document.getElementById('vpVirtualPath').value,
-    localPath: document.getElementById('vpRealPath').value,
+    localPath: virtualPathTarget(),
     userId: currentEditingUser.id,
     canRead: document.getElementById('vpCanRead').checked,
     canWrite: document.getElementById('vpCanWrite').checked,

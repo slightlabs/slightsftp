@@ -20,6 +20,8 @@ import { uploadChecksum } from './checksum';
 import { QuotaExceededError, getQuotaManager, quotaLimiter } from './quota';
 import { getLimiter, sendFileThrottled, throttle } from './bandwidth';
 import { getLoginGuard, TOO_MANY_ATTEMPTS } from './login-guard';
+import { checksumsEnabled } from './checksum';
+import { cloudTarget, isCloudPath, joinKey, receiveCloudFile, sendCloudFile, statPath } from './cloud-storage';
 
 const UNLOCK_TTL_MS = 60 * 60 * 1000;
 
@@ -44,12 +46,13 @@ export interface CreateShareInput {
 }
 
 /** Validate and store a new share for `owner`. Throws ShareError on bad input. */
-export function createShare(db: DatabaseManager, owner: User, input: CreateShareInput): Share {
+export async function createShare(db: DatabaseManager, owner: User, input: CreateShareInput): Promise<Share> {
   const type: ShareType = input.type === 'upload' ? 'upload' : 'download';
   const virtual = normalizeVirtual(input.path);
   const resolved = resolveUserPath(db.getVirtualPaths(owner.id!), virtual);
-  if (!resolved || !fs.existsSync(resolved.localPath)) throw new ShareError(404, 'File or folder not found');
-  const isDir = fs.statSync(resolved.localPath).isDirectory();
+  const found = resolved ? await statPath(db, resolved.localPath) : null;
+  if (!resolved || !found) throw new ShareError(404, 'File or folder not found');
+  const isDir = found.isDir;
 
   if (type === 'upload') {
     if (!isDir) throw new ShareError(400, 'Upload links must point to a folder');
@@ -115,7 +118,7 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
   const router = express.Router({ mergeParams: true });
 
   /** Look the share up and confirm it is usable right now. */
-  const load = (req: Request, opts: { unlock?: boolean } = {}) => {
+  const load = async (req: Request, opts: { unlock?: boolean } = {}) => {
     const share = db.getShareByToken(String(req.params.token));
     if (!share || share.revoked) throw new ShareError(404, 'This link does not exist or was revoked');
     const status = shareStatus(share);
@@ -125,7 +128,8 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
     const owner = db.getUser(share.owner);
     const resolved = owner ? resolveUserPath(db.getVirtualPaths(owner.id!), share.virtualPath) : null;
     const stillAllowed = resolved && (share.type === 'upload' ? resolved.virtualPath.canWrite : resolved.virtualPath.canRead);
-    if (!owner || !resolved || !stillAllowed || !fs.existsSync(resolved.localPath)) {
+    const found = owner && resolved && stillAllowed ? await statPath(db, resolved.localPath).catch(() => null) : null;
+    if (!owner || !resolved || !stillAllowed || !found) {
       throw new ShareError(404, 'This link is no longer available');
     }
 
@@ -135,17 +139,20 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
         throw new ShareError(401, 'Password required');
       }
     }
-    return { share, owner, resolved, isDir: fs.statSync(resolved.localPath).isDirectory() };
+    return { share, owner, resolved, isDir: found.isDir, found };
   };
+  type ShareContext = Awaited<ReturnType<typeof load>>;
 
   /** Map a path inside a shared folder to disk, refusing anything outside it. */
-  const inside = (ctx: ReturnType<typeof load>, rel: unknown) => {
+  const inside = (ctx: ShareContext, rel: unknown) => {
     const relative = normalizeVirtual(rel);
     if (!ctx.isDir) return { virtual: ctx.share.virtualPath, localPath: ctx.resolved.localPath, relative: '/' };
     const virtual = path.posix.join(ctx.share.virtualPath, relative);
     const target = resolveUserPath(db.getVirtualPaths(ctx.owner.id!), virtual);
-    const root = path.resolve(ctx.resolved.localPath);
-    if (!target || (target.localPath !== root && !target.localPath.startsWith(root + path.sep))) {
+    const cloud = isCloudPath(ctx.resolved.localPath);
+    const root = cloud ? ctx.resolved.localPath : path.resolve(ctx.resolved.localPath);
+    const sep = cloud ? '/' : path.sep;
+    if (!target || (target.localPath !== root && !target.localPath.startsWith(root + sep))) {
       throw new ShareError(403, 'Invalid path');
     }
     return { virtual, localPath: target.localPath, relative };
@@ -168,15 +175,14 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
     res.sendFile(path.join(__dirname, 'share.html'));
   });
 
-  router.get('/info', handle((req, res) => {
-    const ctx = load(req, { unlock: false });
-    const locked = !!ctx.share.passwordHash && (() => { try { load(req); return false; } catch { return true; } })();
-    const stat = fs.statSync(ctx.resolved.localPath);
+  router.get('/info', handle(async (req, res) => {
+    const ctx = await load(req, { unlock: false });
+    const locked = !!ctx.share.passwordHash && await load(req).then(() => false, () => true);
     res.json({
       type: ctx.share.type,
-      name: path.basename(ctx.resolved.localPath) || ctx.share.virtualPath,
+      name: ctx.found.name || path.posix.basename(ctx.share.virtualPath) || ctx.share.virtualPath,
       isDirectory: ctx.isDir,
-      size: ctx.isDir ? null : stat.size,
+      size: ctx.isDir ? null : ctx.found.size,
       owner: ctx.share.owner,
       expiresAt: ctx.share.expiresAt,
       remainingDownloads: ctx.share.maxDownloads ? ctx.share.maxDownloads - (ctx.share.downloadCount || 0) : null,
@@ -185,8 +191,8 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
     });
   }));
 
-  router.post('/unlock', handle((req, res) => {
-    const ctx = load(req, { unlock: false });
+  router.post('/unlock', handle(async (req, res) => {
+    const ctx = await load(req, { unlock: false });
     if (!ctx.share.passwordHash) {
       res.json({ success: true });
       return;
@@ -207,9 +213,17 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
   }));
 
   router.get('/list', handle(async (req, res) => {
-    const ctx = load(req);
+    const ctx = await load(req);
     if (ctx.share.type !== 'download' || !ctx.isDir) throw new ShareError(400, 'Not a shared folder');
     const target = inside(ctx, req.query.path);
+    const cloud = cloudTarget(db, target.localPath);
+    if (cloud) {
+      const files = (await cloud.backend.list(cloud.key))
+        .map(e => ({ name: e.name, type: e.isDir ? 'directory' : 'file', size: e.isDir ? 0 : e.size, modified: e.isDir ? null : e.mtime }))
+        .sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'directory' ? -1 : 1));
+      res.json({ path: target.relative, files });
+      return;
+    }
     const names = await fs.promises.readdir(target.localPath);
     const files = [];
     for (const name of names) {
@@ -221,9 +235,19 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
   }));
 
   router.get('/download', handle(async (req, res) => {
-    const ctx = load(req);
+    const ctx = await load(req);
     if (ctx.share.type !== 'download') throw new ShareError(400, 'This is an upload link');
     const target = inside(ctx, req.query.path);
+    const cloud = cloudTarget(db, target.localPath);
+    if (cloud) {
+      const entry = await cloud.backend.stat(cloud.key);
+      if (!entry) throw new ShareError(404, 'Not found');
+      if (entry.isDir) throw new ShareError(400, 'Cannot download a folder');
+      db.recordShareDownload(ctx.share.id!);
+      options.logActivity(ctx.share.owner, 'SHARE_DOWNLOAD', target.virtual, true);
+      await sendCloudFile(res, cloud.backend, cloud.key, entry, getLimiter(db, ctx.owner, 'download'));
+      return;
+    }
     const stat = await fs.promises.stat(target.localPath);
     if (stat.isDirectory()) throw new ShareError(400, 'Cannot download a folder');
     db.recordShareDownload(ctx.share.id!);
@@ -232,10 +256,16 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
   }));
 
   router.put('/upload', handle(async (req, res) => {
-    const ctx = load(req);
+    const ctx = await load(req);
     if (ctx.share.type !== 'upload') throw new ShareError(400, 'This link does not accept uploads');
     const name = safeFileName(req.query.name);
     if (!name) throw new ShareError(400, 'A valid file name is required');
+
+    const cloud = cloudTarget(db, ctx.resolved.localPath);
+    if (cloud) {
+      await uploadToCloud(req, res, ctx, cloud, name);
+      return;
+    }
 
     // Never overwrite: "report.pdf" becomes "report (1).pdf", ...
     const ext = path.extname(name);
@@ -276,6 +306,42 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
     });
     res.status(201).json({ success: true, name: finalName, size: fs.statSync(finalPath).size });
   }));
+
+  /** Drop-box upload into a cloud folder (same rules: never overwrite, owner's quota). */
+  const uploadToCloud = async (req: Request, res: Response, ctx: ShareContext, cloud: NonNullable<ReturnType<typeof cloudTarget>>, name: string) => {
+    const ext = path.extname(name);
+    const stem = name.slice(0, name.length - ext.length);
+    let finalName = name;
+    for (let i = 1; await cloud.backend.stat(joinKey(cloud.key, finalName)); i++) finalName = `${stem} (${i})${ext}`;
+    const quota = getQuotaManager(db);
+    const stages: NodeJS.ReadWriteStream[] = [];
+    if (ctx.owner.quotaBytes) {
+      try {
+        await quota.assertRoom(ctx.owner, Number(req.headers['content-length'] || 0));
+      } catch (err) {
+        if (err instanceof QuotaExceededError) throw new ShareError(413, 'This folder is full');
+        throw err;
+      }
+      stages.push(quotaLimiter(quota, ctx.owner));
+    }
+    const limiter = getLimiter(db, ctx.owner, 'upload');
+    if (limiter) stages.push(throttle(limiter));
+    let stored: { size: number; sha256: string };
+    try {
+      stored = await receiveCloudFile(req, stages, cloud.backend, joinKey(cloud.key, finalName));
+    } catch (err) {
+      if (err instanceof QuotaExceededError) {
+        quota.invalidate(ctx.owner.username);
+        throw new ShareError(413, 'This folder is full');
+      }
+      throw err;
+    }
+    options.logActivity(ctx.share.owner, 'SHARE_UPLOAD', path.posix.join(ctx.share.virtualPath, finalName), true, {
+      bytes: stored.size,
+      checksum: checksumsEnabled(db) ? stored.sha256 : undefined,
+    });
+    res.status(201).json({ success: true, name: finalName, size: stored.size });
+  };
 
   app.use('/s/:token', router);
 }

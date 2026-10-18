@@ -23,6 +23,7 @@ import { createBackup, restoreBackup } from './backup';
 import { checkForUpdate } from './update-check';
 import { isDirectoryUser, verifyUserPassword } from './credentials';
 import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from './ldap-auth';
+import { cloudTarget, deleteConnection, listConnectionsForAdmin, saveConnection, testConnectionInput } from './cloud-storage';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -715,6 +716,29 @@ function setupIpcHandlers(): void {
     }
   });
 
+  // Cloud storage connections
+  ipcMain.handle('get-storage-connections', async () => listConnectionsForAdmin(db));
+
+  ipcMain.handle('create-storage-connection', async (event, input) => {
+    const conn = saveConnection(db, input || {});
+    db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'STORAGE_CREATED', path: conn.name, success: true });
+    return conn;
+  });
+
+  ipcMain.handle('update-storage-connection', async (event, id, input) => {
+    const conn = saveConnection(db, input || {}, Number(id));
+    db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'STORAGE_UPDATED', path: conn.name, success: true });
+    return conn;
+  });
+
+  ipcMain.handle('delete-storage-connection', async (event, id) => {
+    const conn = deleteConnection(db, Number(id));
+    db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'STORAGE_DELETED', path: conn.name, success: true });
+    return { success: true };
+  });
+
+  ipcMain.handle('test-storage-connection', async (event, input, id) => testConnectionInput(db, input || {}, id));
+
   // Webhooks
   ipcMain.handle('get-webhooks', async () => db.listWebhooks().map(describeWebhook));
 
@@ -1157,6 +1181,12 @@ function setupIpcHandlers(): void {
     const resolved = resolveUserPath(virtualPaths, path);
     if (!resolved) throw new Error('No access to this path');
     const realPath = resolved.localPath;
+
+    const cloud = cloudTarget(db, realPath);
+    if (cloud) {
+      const entries = await cloud.backend.list(cloud.key).catch(() => { throw new Error('Path not found'); });
+      return { files: entries.map(e => ({ name: e.name, size: e.size, mtime: e.mtime, isDirectory: e.isDir })) };
+    }
     
     if (!fs.existsSync(realPath) || !fs.statSync(realPath).isDirectory()) {
       throw new Error('Path not found');
@@ -1192,6 +1222,17 @@ function setupIpcHandlers(): void {
     const resolved = resolveUserPath(virtualPaths, filePath);
     if (!resolved) throw new Error('No access to this path');
     const realPath = resolved.localPath;
+
+    const cloud = cloudTarget(db, realPath);
+    if (cloud) {
+      const entry = await cloud.backend.stat(cloud.key);
+      if (!entry || entry.isDir) throw new Error('File not found');
+      const saveTo = await dialog.showSaveDialog({ defaultPath: entry.name, filters: [{ name: 'All Files', extensions: ['*'] }] });
+      if (saveTo.canceled || !saveTo.filePath) return { success: false };
+      const { pipeline } = require('stream/promises');
+      await pipeline(await cloud.backend.read(cloud.key), fs.createWriteStream(saveTo.filePath));
+      return { success: true, savedPath: saveTo.filePath };
+    }
     
     if (!fs.existsSync(realPath) || fs.statSync(realPath).isDirectory()) {
       throw new Error('File not found');

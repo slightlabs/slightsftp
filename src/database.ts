@@ -1,7 +1,8 @@
 import initSqlJs, { Database } from 'sql.js';
 import * as path from 'path';
 import * as fs from 'fs';
-import { User, VirtualPath, Permission, Listener, UserListener, ServerActivity, FtpTlsMode, Share, Webhook } from './types';
+import { assertCloudTarget } from './cloud-storage';
+import { User, VirtualPath, Permission, Listener, UserListener, ServerActivity, FtpTlsMode, Share, Webhook, StorageConnection } from './types';
 import { hashPassword, verifyPasswordHash } from './password';
 
 function normalizeTlsMode(mode: unknown): FtpTlsMode {
@@ -183,6 +184,14 @@ export class DatabaseManager {
         createdAt TEXT NOT NULL,
         lastUsedAt TEXT,
         expiresAt TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS storage_connections (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL,
+        config TEXT NOT NULL,
+        createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE INDEX IF NOT EXISTS idx_activities_listener ON server_activities(listenerId);
@@ -379,6 +388,7 @@ export class DatabaseManager {
   // Virtual path operations
   addVirtualPath(vpath: VirtualPath): number {
     if (!this.db) throw new Error('Database not initialized');
+    assertCloudTarget(this, vpath.localPath);
     
     this.db.run(`
       INSERT INTO virtual_paths (userId, virtualPath, localPath, canRead, canWrite, canAppend, canDelete, canList, canCreateDir, canRename, applyToSubdirs)
@@ -423,6 +433,7 @@ export class DatabaseManager {
   updateVirtualPath(vpath: VirtualPath): void {
     if (!this.db) throw new Error('Database not initialized');
     if (!vpath.id) throw new Error('Virtual path ID is required');
+    assertCloudTarget(this, vpath.localPath);
     
     this.db.run(`
       UPDATE virtual_paths 
@@ -843,6 +854,58 @@ export class DatabaseManager {
       const obj: any = {};
       result[0].columns.forEach((col, i) => { obj[col] = row[i]; });
       return { ...obj, events: String(obj.events || '').split(',').filter(Boolean), enabled: obj.enabled === 1 } as Webhook;
+    });
+  }
+
+  /** Every cloud:// local path used by a virtual path. */
+  getCloudVirtualPathTargets(): string[] {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = this.db.exec("SELECT DISTINCT localPath FROM virtual_paths WHERE localPath LIKE 'cloud://%'");
+    return result.length ? result[0].values.map(r => String(r[0])) : [];
+  }
+
+  // Cloud storage connections (config is JSON: bucket, credentials, ...)
+  createStorageConnection(conn: StorageConnection): number {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('INSERT INTO storage_connections (name, type, config) VALUES (?, ?, ?)', [conn.name, conn.type, JSON.stringify(conn.config || {})]);
+    const result = this.db.exec('SELECT last_insert_rowid() as id');
+    this.save();
+    return result[0].values[0][0] as number;
+  }
+
+  updateStorageConnection(id: number, conn: Partial<StorageConnection>): void {
+    if (!this.db) throw new Error('Database not initialized');
+    const fields: Record<string, any> = { name: conn.name, type: conn.type, config: conn.config === undefined ? undefined : JSON.stringify(conn.config) };
+    const keys = Object.keys(fields).filter(k => fields[k] !== undefined);
+    if (!keys.length) return;
+    this.db.run(`UPDATE storage_connections SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`, [...keys.map(k => fields[k]), id]);
+    this.save();
+  }
+
+  deleteStorageConnection(id: number): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('DELETE FROM storage_connections WHERE id = ?', [id]);
+    this.save();
+  }
+
+  getStorageConnection(id: number): StorageConnection | undefined {
+    return this.queryStorageConnections('SELECT * FROM storage_connections WHERE id = ?', [id])[0];
+  }
+
+  listStorageConnections(): StorageConnection[] {
+    return this.queryStorageConnections('SELECT * FROM storage_connections ORDER BY id', []);
+  }
+
+  private queryStorageConnections(sql: string, params: any[]): StorageConnection[] {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = this.db.exec(sql, params);
+    if (result.length === 0) return [];
+    return result[0].values.map(row => {
+      const obj: any = {};
+      result[0].columns.forEach((col, i) => { obj[col] = row[i]; });
+      let config = {};
+      try { config = JSON.parse(obj.config || '{}'); } catch { /* corrupt row: treat as empty */ }
+      return { ...obj, config } as StorageConnection;
     });
   }
 

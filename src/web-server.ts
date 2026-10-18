@@ -29,6 +29,7 @@ import { createBackup, restoreBackup } from './backup';
 import { checkForUpdate } from './update-check';
 import { isDirectoryUser, verifyUserPassword } from './credentials';
 import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from './ldap-auth';
+import { cloudTarget, deleteConnection, listConnectionsForAdmin, saveConnection, sendCloudFile, testConnectionInput } from './cloud-storage';
 
 const APP_VERSION: string = require('../package.json').version;
 
@@ -407,6 +408,49 @@ export class WebServer {
 
     this.app.post('/api/ldap/test', async (req: Request, res: Response) => {
       res.json(await testLdap(readLdapSettings(this.db), req.body?.username || undefined));
+    });
+
+    // Cloud storage connections (S3 / Azure Blob) for cloud virtual paths
+    this.app.get('/api/storage', (req: Request, res: Response) => {
+      res.json(listConnectionsForAdmin(this.db));
+    });
+
+    this.app.post('/api/storage', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      try {
+        const conn = saveConnection(this.db, req.body || {});
+        this.logActivity(session.username, 'WEB_STORAGE_CREATED', conn.name, true);
+        res.status(201).json(conn);
+      } catch (error: any) {
+        res.status(400).json({ error: error.message });
+      }
+    });
+
+    this.app.put('/api/storage/:id', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      try {
+        const conn = saveConnection(this.db, req.body || {}, parseInt(req.params.id));
+        this.logActivity(session.username, 'WEB_STORAGE_UPDATED', conn.name, true);
+        res.json(conn);
+      } catch (error: any) {
+        res.status(error.message === 'Connection not found' ? 404 : 400).json({ error: error.message });
+      }
+    });
+
+    this.app.delete('/api/storage/:id', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      try {
+        const conn = deleteConnection(this.db, parseInt(req.params.id));
+        this.logActivity(session.username, 'WEB_STORAGE_DELETED', conn.name, true);
+        res.json({ success: true });
+      } catch (error: any) {
+        res.status(error.message === 'Connection not found' ? 404 : 409).json({ error: error.message });
+      }
+    });
+
+    this.app.post('/api/storage/test', async (req: Request, res: Response) => {
+      const { id, ...input } = req.body || {};
+      res.json(await testConnectionInput(this.db, input, id));
     });
 
     // Update notifications
@@ -1115,7 +1159,7 @@ export class WebServer {
     });
 
     // File browsing
-    this.app.get('/api/files/browse', (req: Request, res: Response) => {
+    this.app.get('/api/files/browse', async (req: Request, res: Response) => {
       try {
         const username = req.query.username as string;
         const virtualPath = req.query.path as string || '/';
@@ -1138,6 +1182,20 @@ export class WebServer {
           return;
         }
         const localPath = resolved.localPath;
+
+        const cloud = cloudTarget(this.db, localPath);
+        if (cloud) {
+          const entries = await cloud.backend.list(cloud.key).catch((err: any) => {
+            if (err?.code === 'ENOENT' || err?.code === 'ENOTDIR') return null;
+            throw err;
+          });
+          if (!entries) {
+            res.status(404).json({ error: 'Path not found' });
+            return;
+          }
+          res.json({ files: entries.map(e => ({ name: e.name, type: e.isDir ? 'directory' : 'file', size: e.size, modified: e.mtime })), currentPath: virtualPath });
+          return;
+        }
 
         // Check if path exists and list files
         if (!fs.existsSync(localPath)) {
@@ -1169,7 +1227,7 @@ export class WebServer {
       }
     });
 
-    this.app.get('/api/files/download', (req: Request, res: Response) => {
+    this.app.get('/api/files/download', async (req: Request, res: Response) => {
       try {
         const session = (req as any).session as WebSession;
         const username = req.query.username as string;
@@ -1188,6 +1246,17 @@ export class WebServer {
         const resolved = resolveUserPath(this.db.getVirtualPaths(user.id), filePath);
         if (!resolved) {
           res.status(403).json({ error: 'No access to this path' });
+          return;
+        }
+        const cloud = cloudTarget(this.db, resolved.localPath);
+        if (cloud) {
+          const entry = await cloud.backend.stat(cloud.key);
+          if (!entry || entry.isDir) {
+            res.status(entry ? 400 : 404).json({ error: entry ? 'Path is a directory' : 'File not found' });
+            return;
+          }
+          this.logActivity(session.username, 'WEB_FILE_DOWNLOAD', `${username}:${filePath}`, true);
+          await sendCloudFile(res, cloud.backend, cloud.key, entry, null);
           return;
         }
         if (!fs.existsSync(resolved.localPath)) {
@@ -1645,6 +1714,11 @@ export class WebServer {
             'test-ldap': (username) => api('POST', '/api/ldap/test', { username }),
             'check-for-update': () => api('GET', '/api/update'),
             'open-external': async (url) => { window.open(url, '_blank', 'noopener'); return true; },
+            'get-storage-connections': () => api('GET', '/api/storage'),
+            'create-storage-connection': (input) => api('POST', '/api/storage', input),
+            'update-storage-connection': (id, input) => api('PUT', \`/api/storage/\${id}\`, input),
+            'delete-storage-connection': (id) => api('DELETE', \`/api/storage/\${id}\`),
+            'test-storage-connection': (input, id) => api('POST', '/api/storage/test', { ...input, id }),
             'get-webhooks': () => api('GET', '/api/webhooks'),
             'create-webhook': (hook) => api('POST', '/api/webhooks', hook),
             'update-webhook': (id, hook) => api('PUT', \`/api/webhooks/\${id}\`, hook),

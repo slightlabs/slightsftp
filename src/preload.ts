@@ -26,6 +26,7 @@ const INVOKE_CHANNELS = [
   'get-trash', 'set-trash-settings', 'restore-trash-item', 'purge-trash-item', 'empty-trash',
   'get-audit-settings', 'set-audit-settings', 'test-syslog',
   'get-webhooks', 'create-webhook', 'update-webhook', 'delete-webhook', 'test-webhook',
+  'get-storage-connections', 'create-storage-connection', 'update-storage-connection', 'delete-storage-connection', 'test-storage-connection',
 ];
 
 const EVENT_CHANNELS = ['activity', 'activity-update', 'listener-started', 'listener-stopped'];

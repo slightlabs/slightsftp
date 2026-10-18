@@ -13,6 +13,9 @@ import { deleteFile } from './recycle-bin';
 import { verifyUserPassword } from './credentials';
 import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { SessionTransferStats, TransferDirection, TransferHandle, TransferTracker } from './transfers';
+import { Readable, Transform, Writable } from 'stream';
+import { resolveUserPath } from './path-utils';
+import { CloudEntry, CloudTarget, cloudTarget, entryMode, isCloudPath, stagingFile } from './cloud-storage';
 
 interface ClientSession {
   connection: any;
@@ -128,8 +131,8 @@ export class FTPServer extends EventEmitter {
           this.listener,
           userPermissions || this.createDefaultPermission(user.id!, this.listener.id!),
           virtualPaths,
-          (action: string, filePath: string, success: boolean) => {
-            this.logActivity(action, username, filePath, success);
+          (action: string, filePath: string, success: boolean, bytes?: number, checksum?: string) => {
+            this.logActivity(action, username, filePath, success, bytes, checksum);
           },
           (filePath, direction) => this.transfers.start(sessionId, filePath, direction)
         );
@@ -140,7 +143,7 @@ export class FTPServer extends EventEmitter {
 
         // Completed transfers: one UPLOAD / DOWNLOAD entry with the file size
         const logTransfer = (action: 'UPLOAD' | 'DOWNLOAD') => async (err: any, localPath: string) => {
-          if (err || !localPath) return;
+          if (err || !localPath || isCloudPath(localPath)) return;
           const virtual = toVirtualPath(virtualPaths, localPath);
           const size = await fs.promises.stat(localPath).then(st => st.size).catch(() => undefined);
           const checksum = action === 'UPLOAD' ? await uploadChecksum(this.db, localPath) : undefined;
@@ -325,13 +328,97 @@ export function toVirtualPath(virtualPaths: Array<{ virtualPath: string; localPa
   return path.basename(localPath);
 }
 
+/** ftp-srv expects fs.Stats-like objects in listings. */
+function cloudStat(entry: CloudEntry, name: string) {
+  return {
+    name,
+    size: entry.size,
+    mtime: entry.mtime,
+    mode: entryMode(entry),
+    uid: 0,
+    gid: 0,
+    isDirectory: () => entry.isDir,
+    isFile: () => !entry.isDir,
+  };
+}
+
+/**
+ * An FTP upload into cloud storage: bytes go to a local staging file, and the
+ * file is uploaded before 'finish' (so the client's 226 means it is stored).
+ */
+class CloudUploadStream extends Writable {
+  private temp = stagingFile();
+  private fd: number | null = null;
+  private position = 0;
+  private finished = false;
+  bytes = 0;
+
+  constructor(
+    private db: DatabaseManager,
+    private target: CloudTarget,
+    /** what ftp-srv reports as the server path (kept as cloud:// so the STOR logger skips it) */
+    public path: string,
+    private keep: { from?: Readable; position?: number },
+    private onStored: (bytes: number, checksum?: string) => void
+  ) {
+    super();
+  }
+
+  _construct(callback: (err?: Error | null) => void): void {
+    this.fd = fs.openSync(this.temp, 'w+', 0o600);
+    if (!this.keep.from) return callback();
+    // append / resume: start from the existing object
+    const out = fs.createWriteStream('', { fd: this.fd, autoClose: false });
+    this.keep.from.pipe(out);
+    out.once('finish', () => {
+      this.position = this.keep.position ?? out.bytesWritten;
+      fs.ftruncateSync(this.fd!, this.position);
+      callback();
+    });
+    out.once('error', callback);
+    this.keep.from.once('error', callback);
+  }
+
+  _write(chunk: Buffer, _enc: BufferEncoding, callback: (err?: Error | null) => void): void {
+    fs.write(this.fd!, chunk, 0, chunk.length, this.position, err => {
+      if (!err) {
+        this.position += chunk.length;
+        this.bytes += chunk.length;
+      }
+      callback(err);
+    });
+  }
+
+  _final(callback: (err?: Error | null) => void): void {
+    fs.closeSync(this.fd!);
+    this.fd = null;
+    uploadChecksum(this.db, this.temp)
+      .then(sum => this.target.backend.write(this.target.key, fs.createReadStream(this.temp)).then(() => sum))
+      .then(sum => {
+        this.finished = true;
+        fs.rmSync(this.temp, { force: true });
+        this.onStored(this.bytes, sum);
+        callback();
+      }, err => callback(err));
+  }
+
+  _destroy(err: Error | null, callback: (err?: Error | null) => void): void {
+    if (this.fd !== null) {
+      try { fs.closeSync(this.fd); } catch { /* ignore */ }
+      this.fd = null;
+    }
+    if (!this.finished) fs.rmSync(this.temp, { force: true });
+    callback(err);
+  }
+}
+
 export class CustomFileSystem extends FileSystem {
   private db: DatabaseManager;
   private user: User;
   private listener: Listener;
   private permissions: Permission;
   private virtualPaths: any[];
-  private logCallback: (action: string, path: string, success: boolean) => void;
+  private logCallback: (action: string, path: string, success: boolean, bytes?: number, checksum?: string) => void;
   private track?: (path: string, direction: TransferDirection) => TransferHandle;
 
   constructor(
@@ -342,7 +429,7 @@ export class CustomFileSystem extends FileSystem {
     listener: Listener,
     permissions: Permission,
     virtualPaths: any[],
-    logCallback: (action: string, path: string, success: boolean) => void,
+    logCallback: (action: string, path: string, success: boolean, bytes?: number, checksum?: string) => void,
     track?: (path: string, direction: TransferDirection) => TransferHandle
   ) {
     super(connection, options);
@@ -382,7 +469,11 @@ export class CustomFileSystem extends FileSystem {
       }
     }
     
-    // Otherwise map the virtual path to local path
+    // Otherwise map the virtual path to local path (the most specific virtual path wins)
+    const best = resolveUserPath(this.virtualPaths, joinedPath);
+    if (best && !isCloudPath(best.localPath)) {
+      return { clientPath: joinedPath.replace(/\\/g, '/'), fsPath: this.confine(best.localPath) };
+    }
     for (const vp of this.virtualPaths) {
       if (joinedPath.startsWith(vp.virtualPath)) {
         const relativePath = joinedPath.substring(vp.virtualPath.length);
@@ -435,6 +526,8 @@ export class CustomFileSystem extends FileSystem {
     const virtual = path.posix.normalize(
       normalizedPath.startsWith('/') ? normalizedPath : path.posix.join('/', (this as any).cwd || '/', normalizedPath)
     );
+    const best = resolveUserPath(this.virtualPaths, virtual);
+    if (best && !isCloudPath(best.localPath)) return this.confine(best.localPath);
     for (const vp of this.virtualPaths) {
       if (virtual.startsWith(vp.virtualPath)) {
         const relativePath = virtual.substring(vp.virtualPath.length);
@@ -462,7 +555,24 @@ export class CustomFileSystem extends FileSystem {
     throw new Error('Permission denied');
   }
 
+  /** The absolute virtual path for a client path (which may be relative to the cwd). */
+  private toVirtual(clientPath: string = '.'): string {
+    const p = (clientPath || '.').replace(/\\/g, '/');
+    return path.posix.normalize(p.startsWith('/') ? p : path.posix.join('/', (this as any).cwd || '/', p));
+  }
+
+  /** Where a path lives when it is inside a cloud virtual path (null for local paths). */
+  private cloud(clientPath?: string): { target: CloudTarget; virtual: string; url: string } | null {
+    const virtual = this.toVirtual(clientPath);
+    const resolved = resolveUserPath(this.virtualPaths, virtual);
+    if (!resolved || !isCloudPath(resolved.localPath)) return null;
+    return { target: cloudTarget(this.db, resolved.localPath)!, virtual, url: resolved.localPath };
+  }
+
   private findVirtualPath(virtualPath: string) {
+    // relative names count against the folder they are in, and the most specific virtual path wins
+    const resolved = resolveUserPath(this.virtualPaths, this.toVirtual(virtualPath));
+    if (resolved) return resolved.virtualPath as any;
     for (const vp of this.virtualPaths) {
       if (virtualPath.startsWith(vp.virtualPath) || vp.virtualPath === '/') {
         return vp;
@@ -503,6 +613,15 @@ export class CustomFileSystem extends FileSystem {
       return Promise.reject(new Error('Permission denied'));
     }
 
+    const cloud = this.cloud(fileName);
+    if (cloud) {
+      return cloud.target.backend.stat(cloud.target.key).then(entry => {
+        if (!entry) throw Object.assign(new Error('No such file or directory'), { code: 'ENOENT' });
+        this.logCallback('GET', fileName, true);
+        return cloudStat(entry, fileName);
+      });
+    }
+
     const realPath = this.mapPath(fileName);
     this.logCallback('GET', fileName, true);
     return super.get(realPath);
@@ -515,6 +634,16 @@ export class CustomFileSystem extends FileSystem {
     }
 
     this.logCallback('LIST', dirPath, true);
+
+    const cloud = this.cloud(dirPath);
+    if (cloud) {
+      return cloud.target.backend.list(cloud.target.key)
+        .then(entries => entries.map(e => cloudStat(e, e.name)))
+        .catch((err: Error) => {
+          this.logCallback('LIST_FAILED', dirPath, false);
+          throw err;
+        });
+    }
     
     // Use parent's list method which properly returns stat objects with methods
     return super.list(dirPath).catch((err: Error) => {
@@ -523,11 +652,24 @@ export class CustomFileSystem extends FileSystem {
     });
   }
 
+  chdir(dirPath: string = '.'): Promise<any> {
+    const cloud = this.cloud(dirPath);
+    if (!cloud) return super.chdir(dirPath);
+    return cloud.target.backend.stat(cloud.target.key).then(entry => {
+      if (!entry?.isDir) throw new Error('Not a valid directory');
+      (this as any).cwd = cloud.virtual;
+      return cloud.virtual;
+    });
+  }
+
   write(fileName: string, options?: any): Promise<any> {
     if (!this.checkVpPermission('canCreate', fileName) && !this.checkVpPermission('canEdit', fileName)) {
       this.logCallback('WRITE_DENIED', fileName, false);
       return Promise.reject(new Error('Permission denied'));
     }
+
+    const cloud = this.cloud(fileName);
+    if (cloud) return this.writeCloud(fileName, cloud, options);
 
     const realPath = this.mapPath(fileName);
     this.logCallback('WRITE', fileName, true);
@@ -562,6 +704,9 @@ export class CustomFileSystem extends FileSystem {
       return Promise.reject(new Error('Permission denied'));
     }
 
+    const cloud = this.cloud(fileName);
+    if (cloud) return this.readCloud(fileName, cloud, options);
+
     const realPath = this.mapPath(fileName);
     this.logCallback('READ', fileName, true);
 
@@ -582,6 +727,19 @@ export class CustomFileSystem extends FileSystem {
     if (!this.checkVpPermission('canDelete', fileName)) {
       this.logCallback('DELETE_DENIED', fileName, false);
       return Promise.reject(new Error('Permission denied'));
+    }
+
+    const cloud = this.cloud(fileName);
+    if (cloud) {
+      const { backend, key } = cloud.target;
+      // cloud files are deleted directly (the recycle bin is for local folders)
+      return backend.stat(key)
+        .then(entry => (entry?.isDir ? backend.rmdir(key) : backend.remove(key)))
+        .then(() => { this.logCallback('DELETE', fileName, true); })
+        .catch((err: Error) => {
+          this.logCallback('DELETE_FAILED', fileName, false);
+          throw err;
+        });
     }
 
     const realPath = this.mapPath(fileName);
@@ -624,6 +782,17 @@ export class CustomFileSystem extends FileSystem {
       return Promise.reject(new Error('Permission denied'));
     }
 
+    const cloud = this.cloud(dirPath);
+    if (cloud) {
+      return cloud.target.backend.mkdir(cloud.target.key).then(() => {
+        this.logCallback('MKDIR', dirPath, true);
+        return cloud.virtual;
+      }, (err: Error) => {
+        this.logCallback('MKDIR_FAILED', dirPath, false);
+        throw err;
+      });
+    }
+
     const realPath = this.mapPath(dirPath);
     this.logCallback('MKDIR', dirPath, true);
 
@@ -644,6 +813,21 @@ export class CustomFileSystem extends FileSystem {
       return Promise.reject(new Error('Permission denied'));
     }
 
+    const cloudFrom = this.cloud(fromPath);
+    const cloudTo = this.cloud(toPath);
+    if (cloudFrom || cloudTo) {
+      if (!cloudFrom || !cloudTo || cloudFrom.target.connectionId !== cloudTo.target.connectionId) {
+        this.logCallback('RENAME_FAILED', `${fromPath} -> ${toPath}`, false);
+        return Promise.reject(new Error('Cannot move between different storage locations'));
+      }
+      return cloudFrom.target.backend.rename(cloudFrom.target.key, cloudTo.target.key).then(() => {
+        this.logCallback('RENAME', `${fromPath} -> ${toPath}`, true);
+      }, (err: Error) => {
+        this.logCallback('RENAME_FAILED', `${fromPath} -> ${toPath}`, false);
+        throw err;
+      });
+    }
+
     const realFromPath = this.mapPath(fromPath);
     const realToPath = this.mapPath(toPath);
     this.logCallback('RENAME', `${fromPath} -> ${toPath}`, true);
@@ -660,7 +844,8 @@ export class CustomFileSystem extends FileSystem {
   }
 
   chmod(fileName: string, mode: string): Promise<any> {
-    // For simplicity, always allow chmod
+    // For simplicity, always allow chmod (cloud objects have no permissions to change)
+    if (this.cloud(fileName)) return Promise.resolve(undefined);
     const realPath = this.mapPath(fileName);
     return new Promise((resolve, reject) => {
       fs.chmod(realPath, parseInt(mode, 8), (err) => {
@@ -669,4 +854,54 @@ export class CustomFileSystem extends FileSystem {
       });
     });
   }
+
+  private async writeCloud(fileName: string, cloud: { target: CloudTarget; virtual: string; url: string }, options?: any): Promise<any> {
+    const { backend, key } = cloud.target;
+    const quota = getQuotaManager(this.db);
+    const hasQuota = !!this.user.quotaBytes;
+    if (hasQuota) await quota.usage(this.user).catch(() => undefined);
+    const existing = await backend.stat(key);
+    if (existing?.isDir) throw new Error('Cannot overwrite a folder');
+    // an overwrite (not append) frees the old file's space
+    if (hasQuota && existing && !options?.append) quota.adjust(this.user.username, -existing.size);
+    const keepExisting = !!existing && (options?.append || options?.start > 0);
+    const from = keepExisting ? await backend.read(key) : undefined;
+    this.logCallback('WRITE', fileName, true);
+
+    const stream = new CloudUploadStream(this.db, cloud.target, cloud.url,
+      { from, position: options?.append ? undefined : options?.start },
+      (bytes, checksum) => this.logCallback('UPLOAD', cloud.virtual, true, bytes, checksum));
+    countBytes(stream, this.track?.(fileName, 'upload'), 'write');
+    if (hasQuota) enforceQuota(stream, this.user, quota, () => this.logCallback('WRITE_DENIED (quota exceeded)', fileName, false));
+    paceStream(stream, getLimiter(this.db, this.user, 'upload'), 'upload');
+    stream.on('error', () => this.logCallback('WRITE_FAILED', fileName, false));
+    return { stream, clientPath: cloud.virtual };
+  }
+
+  private async readCloud(fileName: string, cloud: { target: CloudTarget; virtual: string; url: string }, options?: any): Promise<any> {
+    const { backend, key } = cloud.target;
+    const entry = await backend.stat(key);
+    if (!entry) throw Object.assign(new Error('No such file or directory'), { code: 'ENOENT' });
+    if (entry.isDir) throw new Error('Cannot read a directory');
+    const source = await backend.read(key, options?.start || 0);
+    this.logCallback('READ', fileName, true);
+
+    // ftp-srv drives this stream (pause / resume per chunk); the source is piped in
+    let bytes = 0;
+    const stream: any = new Transform({
+      transform(chunk: Buffer, _enc: BufferEncoding, cb: (err?: Error | null, data?: Buffer) => void) {
+        bytes += chunk.length;
+        cb(null, chunk);
+      },
+    });
+    stream.path = cloud.url;
+    source.once('error', (err: Error) => stream.destroy(err));
+    source.pipe(stream);
+    countBytes(stream, this.track?.(fileName, 'download'), 'push');
+    paceStream(stream, getLimiter(this.db, this.user, 'download'), 'download');
+    stream.once('end', () => this.logCallback('DOWNLOAD', cloud.virtual, true, bytes));
+    stream.once('error', () => this.logCallback('READ_FAILED', fileName, false));
+    return { stream, clientPath: cloud.virtual };
+  }
+
 }

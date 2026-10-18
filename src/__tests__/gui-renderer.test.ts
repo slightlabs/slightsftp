@@ -54,6 +54,7 @@ const model = {
     { id: 2, username: 'carol', virtualPath: '/old.txt', size: 10, deletedAt: new Date().toISOString() },
   ] as any[],
   webhooks: [] as any[],
+  storage: [] as any[],
   audit: { checksumUploads: true, syslog: { enabled: false, host: '', port: 514, protocol: 'udp', facility: 16 } } as any,
   security: { enabled: true, maxFailures: 5, windowMinutes: 10, banMinutes: 15, allowlist: '127.0.0.0/8, ::1' },
   bans: [{ ip: '203.0.113.9', reason: `5 failed logins in 10 min (last: SFTP as ${XSS})`, bannedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 900_000).toISOString() }] as any[],
@@ -105,6 +106,21 @@ const backend: Record<string, Handler> = {
   'update-webhook': (id: number, u: any) => { Object.assign(model.webhooks.find(h => h.id === id)!, u); return model.webhooks.find(h => h.id === id); },
   'delete-webhook': (id: number) => { model.webhooks = model.webhooks.filter(h => h.id !== id); return { success: true }; },
   'test-webhook': () => ({ ok: true, status: 200, attempts: 1 }),
+  'get-storage-connections': () => model.storage,
+  'create-storage-connection': (input: any) => {
+    const { secretAccessKey, connectionString, accountKey, ...rest } = input.config;
+    const conn = { id: model.storage.length + 1, name: input.name, type: input.type, config: { ...rest, hasSecretAccessKey: !!secretAccessKey }, usedBy: [] };
+    model.storage.push(conn);
+    return conn;
+  },
+  'update-storage-connection': (id: number, input: any) => { const c = model.storage.find(x => x.id === id)!; c.name = input.name; return c; },
+  'delete-storage-connection': (id: number) => {
+    const c = model.storage.find(x => x.id === id)!;
+    if (c.usedBy.length) throw new Error("Error invoking remote method 'delete-storage-connection': Error: Still used by carol → /cloud");
+    model.storage = model.storage.filter(x => x.id !== id);
+    return { success: true };
+  },
+  'test-storage-connection': (input: any) => (input.config?.bucket === 'wrong' ? { ok: false, message: 'NoSuchBucket' } : { ok: true, message: 'Connected: listing, upload, download and delete all work' }),
   'revoke-share': (id: number) => { model.shares.find(x => x.id === id)!.status = 'revoked'; return { success: true }; },
   'logout': () => ({ success: true }),
   'get-all-listener-statuses': () => [
@@ -753,6 +769,128 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       await flush();
       expect(lastCall('delete-webhook')).toEqual([1]);
       expect($('#webhooks-table').textContent).toContain('No webhooks yet');
+    });
+  });
+
+  describe('cloud storage panel', () => {
+    beforeAll(() => openPanel('storage'));
+
+    test('starts empty; Add Connection tests and saves an S3 bucket', async () => {
+      expect($('#storage-table').textContent).toContain('No cloud storage yet');
+      buttonByText($('#storage'), 'Add Connection').click();
+      expect($('#storageModal').classList.contains('active')).toBe(true);
+      const form = $<HTMLFormElement>('#storageForm');
+      expect($('#storage-s3-fields').style.display).toBe('');
+      expect($('#storage-azure-fields').style.display).toBe('none');
+      setField(form, 'name', `Team ${XSS}`);
+      setField(form, 'bucket', 'wrong');
+      setField(form, 'accessKeyId', 'AKIA1');
+      setField(form, 'secretAccessKey', 'SECRET1');
+      buttonByText(form, 'Test connection').click();
+      await flush();
+      expect($('#storageTestResult').textContent).toBe('✗ NoSuchBucket');
+
+      setField(form, 'bucket', 'team-files');
+      setField(form, 'endpoint', 'https://s3.example.com');
+      $<HTMLInputElement>('#storage-path-style').checked = true;
+      buttonByText(form, 'Test connection').click();
+      await flush();
+      expect($('#storageTestResult').textContent).toMatch(/^✓ Connected/);
+      await submit(form);
+
+      expect(lastCall('create-storage-connection')).toEqual([{
+        name: `Team ${XSS}`, type: 's3',
+        config: { bucket: 'team-files', region: '', endpoint: 'https://s3.example.com', accessKeyId: 'AKIA1', secretAccessKey: 'SECRET1', forcePathStyle: true },
+      }]);
+      expect($('#storageModal').classList.contains('active')).toBe(false);
+      const row = $$('#storage-table tr')[0];
+      expect(row.textContent).toContain('team-files @ https://s3.example.com');
+      expect(row.textContent).toContain('not used');
+      expect(row.querySelector('img')).toBeNull();
+    });
+
+    test('switching to Azure shows the container and key fields', () => {
+      buttonByText($('#storage'), 'Add Connection').click();
+      const type = $<HTMLSelectElement>('#storageType');
+      type.value = 'azure';
+      type.dispatchEvent(new Event('change'));
+      expect($('#storage-s3-fields').style.display).toBe('none');
+      expect($('#storage-azure-fields').style.display).toBe('');
+      $<HTMLElement>('#storageModal .close-btn').click();
+    });
+
+    test('Edit pre-fills everything but the secret, which stays saved when left empty', async () => {
+      buttonByText($$('#storage-table tr')[0], 'Edit').click();
+      const form = $<HTMLFormElement>('#storageForm');
+      expect((form.elements.namedItem('bucket') as HTMLInputElement).value).toBe('team-files');
+      expect((form.elements.namedItem('secretAccessKey') as HTMLInputElement).value).toBe('');
+      expect((form.elements.namedItem('secretAccessKey') as HTMLInputElement).placeholder).toMatch(/saved/);
+      expect($<HTMLSelectElement>('#storageType').disabled).toBe(true);
+      setField(form, 'name', 'Team files');
+      await submit(form);
+      const [id, input] = lastCall('update-storage-connection')!;
+      expect(id).toBe(1);
+      expect(input).toMatchObject({ name: 'Team files', type: 's3', config: { bucket: 'team-files', secretAccessKey: '' } });
+      expect($$('#storage-table tr')[0].textContent).toContain('Team files');
+    });
+
+    test('Test on a row reports the result', async () => {
+      buttonByText($$('#storage-table tr')[0], 'Test').click();
+      await flush();
+      expect(lastCall('test-storage-connection')).toEqual([{ name: 'Team files' }, 1]);
+      expect((window.alert as jest.Mock).mock.calls.at(-1)[0]).toMatch(/^"Team files": Connected/);
+    });
+
+    test('a virtual path can point at the bucket, and shows as a cloud location', async () => {
+      await openPanel('users');
+      const carol = $$('#users-table tr').find(r => r.textContent!.includes('carol'))!;
+      buttonByText(carol, 'Edit').click();
+      await flush();
+      buttonByText($('#editUserModal'), 'Add Virtual Path').click();
+      await flush();
+      const storage = $<HTMLSelectElement>('#vpStorage');
+      expect(Array.from(storage.options).map(o => o.textContent)).toEqual(['This computer', '☁ Team files (S3)']);
+      storage.value = '1';
+      storage.dispatchEvent(new Event('change'));
+      expect($('#vpRealPathLabel').textContent).toBe('Folder in the bucket (optional)');
+      expect($('#vpBrowseBtn').style.display).toBe('none');
+      expect($<HTMLInputElement>('#vpRealPath').required).toBe(false);
+      $<HTMLInputElement>('#vpVirtualPath').value = '/cloud';
+      $<HTMLInputElement>('#vpRealPath').value = '/team//docs/../x/';
+      await submit($<HTMLFormElement>('#virtualPathForm'));
+      const item = $$('#virtualPathsList .virtual-path-item').find(i => i.textContent!.includes('/cloud'))!;
+      expect(item.textContent).toContain('☁ Team files / team/docs/x');
+
+      // editing re-selects the bucket and shows just the folder
+      buttonByText(item, 'Edit').click();
+      await flush();
+      expect($<HTMLSelectElement>('#vpStorage').value).toBe('1');
+      expect($<HTMLInputElement>('#vpRealPath').value).toBe('team/docs/x');
+      // switching back to this computer restores the local path field
+      $<HTMLSelectElement>('#vpStorage').value = 'local';
+      $<HTMLSelectElement>('#vpStorage').dispatchEvent(new Event('change'));
+      expect($('#vpRealPathLabel').textContent).toBe('Real Path');
+      expect($<HTMLInputElement>('#vpRealPath').required).toBe(true);
+      $<HTMLSelectElement>('#vpStorage').value = '1';
+      await submit($<HTMLFormElement>('#virtualPathForm'));
+
+      await submit($<HTMLFormElement>('#editUserForm'));
+      const vps = lastCall('update-user')![3];
+      expect(vps.find((v: any) => v.virtualPath === '/cloud').localPath).toBe('cloud://1/team/docs/x');
+    });
+
+    test('deleting a connection that is in use shows why it was refused', async () => {
+      model.storage[0].usedBy = ['carol → /cloud'];
+      await openPanel('storage');
+      expect($$('#storage-table tr')[0].textContent).toContain('carol → /cloud');
+      buttonByText($$('#storage-table tr')[0], 'Delete').click();
+      await flush();
+      expect((window.alert as jest.Mock).mock.calls.at(-1)[0]).toMatch(/Still used by carol/);
+      model.storage[0].usedBy = [];
+      buttonByText($$('#storage-table tr')[0], 'Delete').click();
+      await flush();
+      expect(lastCall('delete-storage-connection')).toEqual([1]);
+      expect($('#storage-table').textContent).toContain('No cloud storage yet');
     });
   });
 

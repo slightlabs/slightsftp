@@ -127,3 +127,18 @@ export interface Webhook {
   lastDeliveredAt?: string | null;
   createdAt?: string;
 }
+
+export type StorageType = 's3' | 'azure';
+
+/** A cloud bucket / container that virtual paths can point at (cloud://<id>/<prefix>). */
+export interface StorageConnection {
+  id?: number;
+  name: string;
+  type: StorageType;
+  /**
+   * s3: bucket, region, endpoint?, accessKeyId, secretAccessKey, forcePathStyle?
+   * azure: container, connectionString | (accountName, accountKey, endpoint?)
+   */
+  config: Record<string, any>;
+  createdAt?: string;
+}

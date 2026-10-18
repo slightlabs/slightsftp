@@ -521,6 +521,7 @@
       <div class="sidebar-item" data-panel="files">Files</div>
       <div class="sidebar-item" data-panel="shares">Shared Links</div>
       <div class="sidebar-item" data-panel="webhooks">Webhooks</div>
+      <div class="sidebar-item" data-panel="storage">Cloud Storage</div>
       <div class="sidebar-item" data-panel="security">Security</div>
       <div class="sidebar-item" data-panel="trash">Recycle Bin</div>
       <div class="sidebar-item" data-panel="activity">Activity Log</div>
@@ -798,6 +799,22 @@
                 <tr><th>Name</th><th>Events</th><th>Filter</th><th>Last delivery</th><th>Enabled</th><th></th></tr>
               </thead>
               <tbody id="webhooks-table"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="storage" class="panel">
+          <div class="card">
+            <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+              <h2>Cloud Storage</h2>
+              <button class="btn btn-primary" onclick="showStorageModal()">Add Connection</button>
+            </div>
+            <p style="color: #666; margin-top: 0;">Connect an Amazon S3 bucket (or MinIO, Wasabi, Cloudflare R2, Backblaze B2, ...) or an Azure Blob container, then point a user's virtual path at it: SFTP, FTP, the web portal and share links work there just like in a local folder.</p>
+            <table class="table">
+              <thead>
+                <tr><th>Name</th><th>Type</th><th>Location</th><th>Used by</th><th></th></tr>
+              </thead>
+              <tbody id="storage-table"></tbody>
             </table>
           </div>
         </div>
@@ -1109,9 +1126,15 @@
           <input type="text" id="vpVirtualPath" placeholder="/data" required>
         </div>
         <div class="form-group">
-          <label>Real Path</label>
+          <label>Storage</label>
+          <select id="vpStorage" onchange="updateVpStorageFields()">
+            <option value="local">This computer</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label id="vpRealPathLabel">Real Path</label>
           <input type="text" id="vpRealPath" placeholder="C:\\data" required>
-          <button type="button" class="btn" onclick="browseFolderForVirtualPath()" style="margin-top: 5px;">Browse...</button>
+          <button type="button" class="btn" id="vpBrowseBtn" onclick="browseFolderForVirtualPath()" style="margin-top: 5px;">Browse...</button>
         </div>
         <h3>Permission</h3>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0;">
@@ -1150,6 +1173,80 @@
         </div>
         <button type="submit" class="btn btn-primary">OK</button>
         <button type="button" class="btn" onclick="closeModal('virtualPathModal')">Cancel</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Cloud Storage Connection Modal -->
+  <div id="storageModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="storageModalTitle">Add Cloud Storage</h2>
+        <button class="close-btn" onclick="closeModal('storageModal')">&times;</button>
+      </div>
+      <form id="storageForm">
+        <input type="hidden" name="id" value="">
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" name="name" placeholder="e.g. Team bucket" required>
+        </div>
+        <div class="form-group">
+          <label>Type</label>
+          <select name="type" id="storageType" onchange="updateStorageTypeFields()">
+            <option value="s3">Amazon S3 / S3-compatible</option>
+            <option value="azure">Azure Blob Storage</option>
+          </select>
+        </div>
+        <div id="storage-s3-fields">
+          <div class="form-group">
+            <label>Bucket</label>
+            <input type="text" name="bucket" placeholder="my-bucket">
+          </div>
+          <div class="form-group">
+            <label>Region</label>
+            <input type="text" name="region" placeholder="us-east-1">
+          </div>
+          <div class="form-group">
+            <label>Endpoint (leave empty for AWS)</label>
+            <input type="text" name="endpoint" placeholder="https://s3.eu-central-1.wasabisys.com">
+          </div>
+          <div class="form-group">
+            <label>Access key ID</label>
+            <input type="text" name="accessKeyId" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label>Secret access key</label>
+            <input type="password" name="secretAccessKey" autocomplete="new-password" placeholder="">
+          </div>
+          <div class="checkbox-group">
+            <input type="checkbox" name="forcePathStyle" id="storage-path-style">
+            <label for="storage-path-style">Path-style URLs (needed by MinIO and some other services)</label>
+          </div>
+        </div>
+        <div id="storage-azure-fields" style="display: none;">
+          <div class="form-group">
+            <label>Container</label>
+            <input type="text" name="container" placeholder="files">
+          </div>
+          <div class="form-group">
+            <label>Connection string</label>
+            <input type="password" name="connectionString" autocomplete="new-password" placeholder="DefaultEndpointsProtocol=https;AccountName=...">
+          </div>
+          <p style="color: #888; font-size: 12px; margin: 0 0 10px;">Or, instead of a connection string:</p>
+          <div class="form-group">
+            <label>Storage account name</label>
+            <input type="text" name="accountName" autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label>Account key</label>
+            <input type="password" name="accountKey" autocomplete="new-password">
+          </div>
+        </div>
+        <div id="storageTestResult" style="margin: 10px 0; font-size: 13px;"></div>
+        <div style="display: flex; gap: 10px;">
+          <button type="button" class="btn" onclick="testStorageForm()">Test connection</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
       </form>
     </div>
   </div>

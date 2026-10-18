@@ -13,13 +13,16 @@ import { getLimiter } from './bandwidth';
 import { deleteFile } from './recycle-bin';
 import { verifyUserPassword } from './credentials';
 import { SessionTransferStats, TransferHandle, TransferTracker } from './transfers';
+import { resolveUserPath } from './path-utils';
+import { CloudEntry, CloudTarget, StagedDownload, cloudTarget, entryMode, isCloudPath, stagingFile } from './cloud-storage';
 // SFTP constants (from ssh2-streams)
 const SFTP_STATUS_CODE = {
   OK: 0,
   EOF: 1,
   NO_SUCH_FILE: 2,
   PERMISSION_DENIED: 3,
-  FAILURE: 4
+  FAILURE: 4,
+  OP_UNSUPPORTED: 8
 };
 
 const SFTP_OPEN_MODE = {
@@ -30,6 +33,70 @@ const SFTP_OPEN_MODE = {
   TRUNC: 0x00000010,
   EXCL: 0x00000020
 };
+
+/** An SFTP handle on a cloud file: the client reads / writes a local staging copy. */
+interface CloudFile {
+  target: CloudTarget;
+  temp: string;
+  download?: StagedDownload;
+}
+
+function withCloud<T>(db: DatabaseManager, localPath: string, fn: (t: CloudTarget) => Promise<T>): Promise<T> {
+  return Promise.resolve().then(() => fn(cloudTarget(db, localPath)!));
+}
+
+/**
+ * Open a cloud object: reads stream it into the staging file (READs wait for
+ * the bytes they need); edits that keep existing content download it first.
+ */
+async function openCloudFile(db: DatabaseManager, localPath: string, flags: number) {
+  const target = cloudTarget(db, localPath)!;
+  const write = flags & (SFTP_OPEN_MODE.WRITE | SFTP_OPEN_MODE.APPEND | SFTP_OPEN_MODE.CREAT);
+  const existing = await target.backend.stat(target.key);
+  if (existing?.isDir) throw Object.assign(new Error('Is a folder'), { code: 'EISDIR' });
+  if ((flags & SFTP_OPEN_MODE.EXCL) && existing) throw Object.assign(new Error('Already exists'), { code: 'EEXIST' });
+  if (!existing && !(write && (flags & SFTP_OPEN_MODE.CREAT))) throw Object.assign(new Error('Not found'), { code: 'ENOENT' });
+  const temp = stagingFile();
+  const fd = fs.openSync(temp, 'w+', 0o600);
+  const cloud: CloudFile = { target, temp };
+  try {
+    const keep = !!existing && !(flags & SFTP_OPEN_MODE.TRUNC);
+    if (keep && existing!.size > 0) {
+      cloud.download = new StagedDownload(fd, await target.backend.read(target.key));
+      if (write) await cloud.download.ready(Number.MAX_SAFE_INTEGER);
+    }
+    return {
+      fd,
+      cloud,
+      size: write && keep ? existing!.size : 0,
+      replacedSize: write && existing && (flags & SFTP_OPEN_MODE.TRUNC) ? existing.size : 0,
+    };
+  } catch (err) {
+    fs.closeSync(fd);
+    fs.rmSync(temp, { force: true });
+    throw err;
+  }
+}
+
+/** On CLOSE: upload a written staging file (returns its checksum), then remove it. */
+async function finishCloudFile(db: DatabaseManager, cloud: CloudFile, write: boolean): Promise<string | undefined> {
+  try {
+    if (!write) {
+      cloud.download?.cancel();
+      return undefined;
+    }
+    const sum = await uploadChecksum(db, cloud.temp);
+    await cloud.target.backend.write(cloud.target.key, fs.createReadStream(cloud.temp));
+    return sum;
+  } finally {
+    fs.rmSync(cloud.temp, { force: true });
+  }
+}
+
+function discardCloudFile(cloud: CloudFile): void {
+  cloud.download?.cancel();
+  fs.rmSync(cloud.temp, { force: true });
+}
 
 interface ClientSession {
   client: any;
@@ -43,7 +110,7 @@ export class SFTPServer extends EventEmitter {
   private listener: Listener;
   private db: DatabaseManager;
   private hostKeys: Buffer[] = [];
-  private dirHandles: Map<string, { path: string; files: string[]; sentAll: boolean; client: any }> | null = null;
+  private dirHandles: Map<string, { path: string; files: string[]; entries?: CloudEntry[]; sentAll: boolean; client: any }> | null = null;
   private idleTimeoutMs: number = 300000; // 5 minutes default
   private clientTimeouts: Map<any, NodeJS.Timeout> = new Map();
   private activeSessions: Map<string, ClientSession> = new Map();
@@ -232,11 +299,43 @@ export class SFTPServer extends EventEmitter {
               // File handles opened with write access (checked in OPEN)
               const writableHandles = new Set<number>();
               // Open files: logged as one UPLOAD / DOWNLOAD (with size) when closed
-              const openFiles = new Map<number, { path: string; localPath: string; write: boolean; bytes: number; end: number; live: TransferHandle }>();
+              const openFiles = new Map<number, { path: string; localPath: string; write: boolean; bytes: number; end: number; live: TransferHandle; cloud?: CloudFile }>();
               const quota = getQuotaManager(this.db);
+
+              // Handles left open when the client goes away: close them, and
+              // discard (never upload) half-written cloud files
+              let channelClosed = false;
+              const releaseHandles = () => {
+                channelClosed = true;
+                for (const [fd, open] of openFiles) {
+                  try { fs.closeSync(fd); } catch { /* already closed */ }
+                  open.live.end();
+                  if (open.cloud) discardCloudFile(open.cloud);
+                }
+                openFiles.clear();
+                writableHandles.clear();
+              };
+              sftp.once('end', releaseHandles);
+              sftp.once('close', releaseHandles);
+              client.once('close', releaseHandles);
+
+              const cloudAttrs = (e: CloudEntry) => {
+                const t = Math.floor(e.mtime.getTime() / 1000);
+                return { mode: entryMode(e), uid: 0, gid: 0, size: e.size, atime: t, mtime: t };
+              };
+              const cloudStatus = (reqId: number, err: any) => sftp.status(reqId,
+                err?.code === 'ENOENT' ? SFTP_STATUS_CODE.NO_SUCH_FILE : SFTP_STATUS_CODE.FAILURE, err?.code ? undefined : String(err?.message || ''));
 
               // Map virtual paths to real paths
               const pathMapper = (virtualPath: string): string => {
+                // Cloud virtual paths map to "cloud://<id>/<key>"; nothing local to create
+                const posixPath = path.posix.normalize('/' + (virtualPath || '/').replace(/\\/g, '/'));
+                const resolvedCloud = resolveUserPath(virtualPaths, posixPath);
+                if (resolvedCloud && isCloudPath(resolvedCloud.localPath)) return resolvedCloud.localPath;
+                if (!resolvedCloud && virtualPaths[0] && isCloudPath(virtualPaths[0].localPath)) {
+                  // same fallback as below (first virtual path), without touching the local disk
+                  return resolveUserPath([{ ...virtualPaths[0], virtualPath: '/' }], posixPath)?.localPath || virtualPaths[0].localPath;
+                }
                 // Normalize path and ensure it starts with /
                 let normalizedVPath = virtualPath.replace(/\\/g, '/');
                 
@@ -269,6 +368,7 @@ export class SFTPServer extends EventEmitter {
                   
                   // Handle exact match or path starting with virtual path
                   if (normalizedVPath === normalizedVpPath || normalizedVPath.startsWith(normalizedVpPath + '/') || normalizedVpPath === '/') {
+                    if (isCloudPath(vp.localPath)) return resolveUserPath([vp], normalizedVPath)?.localPath || vp.localPath;
                     let relativePath = normalizedVPath.substring(normalizedVpPath.length);
                     
                     // Remove leading slash from relative path if virtual path is not root
@@ -428,6 +528,39 @@ export class SFTPServer extends EventEmitter {
                   return sftp.status(reqId, SFTP_STATUS_CODE.PERMISSION_DENIED);
                 }
 
+                if (isCloudPath(realPath)) {
+                  const ready = writeFlag && authenticatedUser?.quotaBytes ? quota.usage(authenticatedUser).catch(() => undefined) : Promise.resolve();
+                  ready.then(() => openCloudFile(this.db, realPath, flags)).then(({ fd, cloud, size, replacedSize }) => {
+                    if (channelClosed) {
+                      // the client left while the file was being opened
+                      try { fs.closeSync(fd); } catch { /* ignore */ }
+                      discardCloudFile(cloud);
+                      return;
+                    }
+                    if (writeFlag) {
+                      writableHandles.add(fd);
+                      if (replacedSize && authenticatedUser?.quotaBytes) quota.adjust(username!, -replacedSize);
+                    }
+                    openFiles.set(fd, {
+                      path: filename,
+                      localPath: realPath,
+                      write: !!writeFlag,
+                      bytes: 0,
+                      end: size,
+                      live: this.transfers.start(sessionId, filename, writeFlag ? 'upload' : 'download'),
+                      cloud
+                    });
+                    const handleBuffer = Buffer.alloc(4);
+                    handleBuffer.writeUInt32BE(fd, 0);
+                    logActivity('OPEN', filename, true);
+                    sftp.handle(reqId, handleBuffer);
+                  }, (err: any) => {
+                    logActivity('OPEN_FAILED', filename, false);
+                    cloudStatus(reqId, err);
+                  });
+                  return;
+                }
+
                 const doOpen = () => {
                 try {
                   const openFlags = this.convertSFTPFlags(flags);
@@ -479,6 +612,15 @@ export class SFTPServer extends EventEmitter {
                 this.resetIdleTimeout(client, username!);
                 
                 const handleNum = handle.readUInt32BE(0);
+                const staged = openFiles.get(handleNum)?.cloud?.download;
+                if (staged && !staged.done && staged.written < offset + length) {
+                  // a cloud file still downloading: answer once these bytes are here
+                  staged.ready(offset + length).then(
+                    () => sftp.emit('READ', reqId, handle, offset, length),
+                    () => sftp.status(reqId, SFTP_STATUS_CODE.FAILURE, 'Cloud download failed')
+                  );
+                  return;
+                }
                 try {
                   const buffer = Buffer.alloc(length);
                   const bytesRead = fs.readSync(handleNum, buffer, 0, length, offset);
@@ -556,6 +698,19 @@ export class SFTPServer extends EventEmitter {
                 const transfer = openFiles.get(handleNum);
                 openFiles.delete(handleNum);
                 transfer?.live.end();
+                if (transfer?.cloud) {
+                  try { fs.closeSync(handleNum); } catch { /* ignore */ }
+                  finishCloudFile(this.db, transfer.cloud, transfer.write).then(sum => {
+                    if (transfer.write) logActivity('UPLOAD', transfer.path, true, transfer.bytes, sum);
+                    else logActivity('DOWNLOAD', transfer.path, true, transfer.bytes);
+                    sftp.status(reqId, SFTP_STATUS_CODE.OK);
+                  }, (err: any) => {
+                    logger.error(`Cloud upload of ${transfer.path} failed: ${err?.message || err}`);
+                    logActivity('UPLOAD_FAILED', transfer.path, false, transfer.bytes);
+                    sftp.status(reqId, SFTP_STATUS_CODE.FAILURE, 'Upload to cloud storage failed');
+                  });
+                  return;
+                }
                 try {
                   fs.closeSync(handleNum);
                   if (transfer?.write) {
@@ -589,6 +744,20 @@ export class SFTPServer extends EventEmitter {
 
                 const realPath = pathMapper(dirPath);
                 console.log(`[OPENDIR] Mapping: ${dirPath} -> ${realPath}`);
+
+                if (isCloudPath(realPath)) {
+                  withCloud(this.db, realPath, t => t.backend.list(t.key)).then(entries => {
+                    const handleId = `dir_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    if (!this.dirHandles) this.dirHandles = new Map();
+                    this.dirHandles.set(handleId, { path: realPath, files: [], entries, sentAll: false, client });
+                    logActivity('OPENDIR', dirPath, true);
+                    sftp.handle(reqId, Buffer.from(handleId));
+                  }, (err: any) => {
+                    logActivity('OPENDIR_FAILED', dirPath, false);
+                    cloudStatus(reqId, err);
+                  });
+                  return;
+                }
 
                 try {
                   console.log(`[OPENDIR] Reading directory: ${realPath}`);
@@ -640,6 +809,14 @@ export class SFTPServer extends EventEmitter {
                   const fileList: any[] = [];
                   console.log(`[READDIR] Processing ${files.length} files`);
 
+                  if (handleData.entries) {
+                    handleData.sentAll = true;
+                    return sftp.name(reqId, handleData.entries.map(e => {
+                      const attrs = cloudAttrs(e);
+                      return { filename: e.name, longname: this.formatLongname(e.name, { mode: attrs.mode, size: e.size, mtime: e.mtime } as any), attrs };
+                    }));
+                  }
+
                   for (const file of files) {
                     try {
                       const filePath = path.join(dirPath, file);
@@ -678,6 +855,17 @@ export class SFTPServer extends EventEmitter {
                 this.resetIdleTimeout(client, username!);
                 
                 const realPath = pathMapper(filePath);
+                if (isCloudPath(realPath)) {
+                  withCloud(this.db, realPath, t => t.backend.stat(t.key)).then(entry => {
+                    if (!entry) throw Object.assign(new Error('not found'), { code: 'ENOENT' });
+                    logActivity('STAT', filePath, true);
+                    sftp.attrs(reqId, cloudAttrs(entry));
+                  }).catch((err: any) => {
+                    logActivity('STAT_FAILED', filePath, false);
+                    cloudStatus(reqId, err);
+                  });
+                  return;
+                }
                 try {
                   const stats = fs.statSync(realPath);
                   logActivity('STAT', filePath, true);
@@ -700,6 +888,17 @@ export class SFTPServer extends EventEmitter {
                 this.resetIdleTimeout(client, username!);
                 
                 const realPath = pathMapper(filePath);
+                if (isCloudPath(realPath)) {
+                  withCloud(this.db, realPath, t => t.backend.stat(t.key)).then(entry => {
+                    if (!entry) throw Object.assign(new Error('not found'), { code: 'ENOENT' });
+                    logActivity('LSTAT', filePath, true);
+                    sftp.attrs(reqId, cloudAttrs(entry));
+                  }).catch((err: any) => {
+                    logActivity('LSTAT_FAILED', filePath, false);
+                    cloudStatus(reqId, err);
+                  });
+                  return;
+                }
                 try {
                   const stats = fs.lstatSync(realPath);
                   logActivity('LSTAT', filePath, true);
@@ -724,6 +923,21 @@ export class SFTPServer extends EventEmitter {
                 }
 
                 const realPath = pathMapper(filePath);
+                if (isCloudPath(realPath)) {
+                  // cloud files are deleted directly (the recycle bin is for local folders)
+                  withCloud(this.db, realPath, async t => {
+                    if ((await t.backend.stat(t.key))?.isDir) throw new Error('Is a folder');
+                    await t.backend.remove(t.key);
+                  }).then(() => {
+                    logActivity('REMOVE', filePath, true);
+                    quota.invalidate(username!);
+                    sftp.status(reqId, SFTP_STATUS_CODE.OK);
+                  }, (err: any) => {
+                    logActivity('REMOVE_FAILED', filePath, false);
+                    cloudStatus(reqId, err);
+                  });
+                  return;
+                }
                 try {
                   const outcome = deleteFile(this.db, username!, filePath, realPath);
                   logActivity(outcome === 'trashed' ? 'REMOVE (to recycle bin)' : 'REMOVE', filePath, true);
@@ -742,6 +956,16 @@ export class SFTPServer extends EventEmitter {
                 }
 
                 const realPath = pathMapper(dirPath);
+                if (isCloudPath(realPath)) {
+                  withCloud(this.db, realPath, t => t.backend.rmdir(t.key)).then(() => {
+                    logActivity('RMDIR', dirPath, true);
+                    sftp.status(reqId, SFTP_STATUS_CODE.OK);
+                  }, (err: any) => {
+                    logActivity('RMDIR_FAILED', dirPath, false);
+                    cloudStatus(reqId, err);
+                  });
+                  return;
+                }
                 try {
                   fs.rmdirSync(realPath);
                   logActivity('RMDIR', dirPath, true);
@@ -759,6 +983,16 @@ export class SFTPServer extends EventEmitter {
                 }
 
                 const realPath = pathMapper(dirPath);
+                if (isCloudPath(realPath)) {
+                  withCloud(this.db, realPath, t => t.backend.mkdir(t.key)).then(() => {
+                    logActivity('MKDIR', dirPath, true);
+                    sftp.status(reqId, SFTP_STATUS_CODE.OK);
+                  }, (err: any) => {
+                    logActivity('MKDIR_FAILED', dirPath, false);
+                    cloudStatus(reqId, err);
+                  });
+                  return;
+                }
                 try {
                   fs.mkdirSync(realPath, { recursive: true });
                   logActivity('MKDIR', dirPath, true);
@@ -777,6 +1011,23 @@ export class SFTPServer extends EventEmitter {
 
                 const realOldPath = pathMapper(oldPath);
                 const realNewPath = pathMapper(newPath);
+                if (isCloudPath(realOldPath) || isCloudPath(realNewPath)) {
+                  const from = isCloudPath(realOldPath) ? cloudTarget(this.db, realOldPath) : null;
+                  const to = isCloudPath(realNewPath) ? cloudTarget(this.db, realNewPath) : null;
+                  if (!from || !to || from.connectionId !== to.connectionId) {
+                    // moving between this computer and a bucket (or two buckets) is a copy, not a rename
+                    logActivity('RENAME_FAILED', `${oldPath} -> ${newPath}`, false);
+                    return sftp.status(reqId, SFTP_STATUS_CODE.OP_UNSUPPORTED, 'Cannot move between different storage locations');
+                  }
+                  from.backend.rename(from.key, to.key).then(() => {
+                    logActivity('RENAME', `${oldPath} -> ${newPath}`, true);
+                    sftp.status(reqId, SFTP_STATUS_CODE.OK);
+                  }, (err: any) => {
+                    logActivity('RENAME_FAILED', `${oldPath} -> ${newPath}`, false);
+                    cloudStatus(reqId, err);
+                  });
+                  return;
+                }
                 try {
                   fs.renameSync(realOldPath, realNewPath);
                   logActivity('RENAME', `${oldPath} -> ${newPath}`, true);
@@ -803,8 +1054,16 @@ export class SFTPServer extends EventEmitter {
                 normalizedPath = path.posix.normalize(normalizedPath);
                 
                 // Verify the path exists by mapping to local and checking
+                const mapped = pathMapper(normalizedPath);
+                if (isCloudPath(mapped)) {
+                  withCloud(this.db, mapped, t => t.backend.stat(t.key)).then(entry => {
+                    if (!entry) return sftp.status(reqId, SFTP_STATUS_CODE.NO_SUCH_FILE);
+                    sftp.name(reqId, [{ filename: normalizedPath, longname: normalizedPath, attrs: cloudAttrs(entry) }]);
+                  }, () => sftp.status(reqId, SFTP_STATUS_CODE.NO_SUCH_FILE));
+                  return;
+                }
                 try {
-                  const localPath = pathMapper(normalizedPath);
+                  const localPath = mapped;
                   const stats = fs.statSync(localPath);
                   
                   // Return the VIRTUAL path, not the local path
