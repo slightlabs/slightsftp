@@ -7,6 +7,7 @@ import { EventEmitter } from 'events';import logger from './logger';
 import { loadOrCreateHostKey } from './tls';
 import { getLoginGuard, userIpAllowed } from './login-guard';
 import { findAuthorizedKey, parseAuthorizedKeys } from './authorized-keys';
+import { uploadChecksum } from './checksum';
 import { SessionTransferStats, TransferHandle, TransferTracker } from './transfers';
 // SFTP constants (from ssh2-streams)
 const SFTP_STATUS_CODE = {
@@ -224,7 +225,7 @@ export class SFTPServer extends EventEmitter {
               // File handles opened with write access (checked in OPEN)
               const writableHandles = new Set<number>();
               // Open files: logged as one UPLOAD / DOWNLOAD (with size) when closed
-              const openFiles = new Map<number, { path: string; write: boolean; bytes: number; live: TransferHandle }>();
+              const openFiles = new Map<number, { path: string; localPath: string; write: boolean; bytes: number; live: TransferHandle }>();
 
               // Map virtual paths to real paths
               const pathMapper = (virtualPath: string): string => {
@@ -384,13 +385,14 @@ export class SFTPServer extends EventEmitter {
                 return hasVPathPerm;
               };
 
-              const logActivity = (action: string, filePath: string, success: boolean, bytes?: number) => {
+              const logActivity = (action: string, filePath: string, success: boolean, bytes?: number, checksum?: string) => {
                 this.emit('activity', {
                   listenerId: this.listener.id!,
                   username: username!,
                   action,
                   path: filePath,
                   bytes,
+                  checksum,
                   success
                 });
               };
@@ -426,6 +428,7 @@ export class SFTPServer extends EventEmitter {
                   }
                   openFiles.set(handle, {
                     path: filename,
+                    localPath: realPath,
                     write: !!writeFlag,
                     bytes: 0,
                     live: this.transfers.start(sessionId, filename, writeFlag ? 'upload' : 'download')
@@ -515,8 +518,12 @@ export class SFTPServer extends EventEmitter {
                 transfer?.live.end();
                 try {
                   fs.closeSync(handleNum);
-                  if (transfer) {
-                    logActivity(transfer.write ? 'UPLOAD' : 'DOWNLOAD', transfer.path, true, transfer.bytes);
+                  if (transfer?.write) {
+                    // checksum the finished file (writes may arrive out of order)
+                    uploadChecksum(this.db, transfer.localPath)
+                      .then(sum => logActivity('UPLOAD', transfer.path, true, transfer.bytes, sum));
+                  } else if (transfer) {
+                    logActivity('DOWNLOAD', transfer.path, true, transfer.bytes);
                   }
                   sftp.status(reqId, SFTP_STATUS_CODE.OK);
                 } catch (err) {

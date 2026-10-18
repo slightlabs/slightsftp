@@ -642,6 +642,28 @@
             </form>
           </div>
           <div class="card">
+            <h2>Audit Export</h2>
+            <p style="color: #666; margin-top: 0;">Forward every activity entry to a syslog server or SIEM (RFC 5424), and record a SHA-256 checksum for every uploaded file.</p>
+            <form id="auditSettingsForm">
+              <div class="form-group checkbox-group">
+                <input type="checkbox" name="checksumUploads" id="auditChecksums">
+                <label for="auditChecksums">Record SHA-256 checksums of uploads</label>
+              </div>
+              <div class="form-group checkbox-group">
+                <input type="checkbox" name="syslogEnabled" id="auditSyslog">
+                <label for="auditSyslog">Forward activity to syslog</label>
+              </div>
+              <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 12px;">
+                <div class="form-group"><label>Host</label><input type="text" name="syslogHost" placeholder="siem.example.com"></div>
+                <div class="form-group"><label>Port</label><input type="number" name="syslogPort" min="1" max="65535"></div>
+                <div class="form-group"><label>Protocol</label><select name="syslogProtocol"><option value="udp">UDP</option><option value="tcp">TCP</option></select></div>
+                <div class="form-group"><label>Facility</label><input type="number" name="syslogFacility" min="0" max="23"></div>
+              </div>
+              <button type="submit" class="btn btn-primary">Save</button>
+              <button type="button" class="btn" onclick="testSyslog()">Send test message</button>
+            </form>
+          </div>
+          <div class="card">
             <h2>Banned Addresses</h2>
             <table class="table">
               <thead><tr><th>IP address</th><th>Reason</th><th>Banned</th><th>Until</th><th></th></tr></thead>

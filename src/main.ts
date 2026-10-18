@@ -13,6 +13,8 @@ import { WebhookDispatcher, describeWebhook, validateWebhookInput } from './webh
 import { cleanAllowedIps, getLoginGuard, saveGuardSettings } from './login-guard';
 import { beginTotpSetup, checkSecondFactor, confirmTotpSetup, disableTotp, publicUser } from './two-factor';
 import { cleanAuthorizedKeys } from './authorized-keys';
+import { SyslogForwarder, formatSyslog, readSyslogSettings, saveSyslogSettings } from './syslog';
+import { checksumsEnabled } from './checksum';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -25,6 +27,7 @@ let isLoggingOut = false;
 let authenticatedUser: any = null;
 let pendingPasswordChangeUser: any = null;
 let webhooks: WebhookDispatcher;
+let syslog: SyslogForwarder;
 
 // Get application directories
 function getAppDirectories() {
@@ -434,7 +437,7 @@ async function createWebServer(port: number): Promise<WebServer> {
       keyPath: db.getSetting('tlsKeyPath')
     });
   }
-  const server = new WebServer(db, serverManager, port, { tls, webhooks });
+  const server = new WebServer(db, serverManager, port, { tls, webhooks, syslog });
   await server.start();
   return server;
 }
@@ -584,6 +587,24 @@ function setupIpcHandlers(): void {
   ipcMain.handle('set-security-settings', async (event, settings) => {
     saveGuardSettings(db, settings || {});
     return getLoginGuard(db).settings();
+  });
+
+  // Audit export
+  ipcMain.handle('get-audit-settings', async () => ({ syslog: readSyslogSettings(db), checksumUploads: checksumsEnabled(db) }));
+
+  ipcMain.handle('set-audit-settings', async (event, input) => {
+    if (input?.syslog) saveSyslogSettings(db, input.syslog);
+    if (input?.checksumUploads !== undefined) db.setSetting('checksumUploads', input.checksumUploads ? 'true' : 'false');
+    return { syslog: readSyslogSettings(db), checksumUploads: checksumsEnabled(db) };
+  });
+
+  ipcMain.handle('test-syslog', async () => {
+    try {
+      await syslog.send(formatSyslog({ listenerId: null, username: authenticatedUser?.username || 'admin', action: 'SYSLOG_TEST', path: '/', success: true, timestamp: new Date().toISOString() }, readSyslogSettings(db).facility));
+      return { ok: true };
+    } catch (err: any) {
+      return { ok: false, error: err.message };
+    }
   });
 
   // Webhooks
@@ -1170,6 +1191,7 @@ app.whenReady().then(async () => {
   
   await initializeDatabase();
   webhooks = new WebhookDispatcher(db);
+  syslog = new SyslogForwarder(db);
   
   // Cleanup old activity logs based on retention settings
   const deletedCount = db.cleanupOldActivities();

@@ -235,7 +235,7 @@ test('Activity Log shows server events and its settings can be changed', async (
   const downloadPromise = page.waitForEvent('download');
   await page.getByRole('button', { name: '💾 Save' }).click();
   const csv = fs.readFileSync((await (await downloadPromise).path())!, 'utf8');
-  expect(csv.split('\n')[0]).toBe('Timestamp,Listener,Username,Action,Path,Success');
+  expect(csv.split('\n')[0]).toBe('Timestamp,Listener,Username,Action,Path,Success,Bytes,SHA256');
   expect(csv).toContain('webuser');
 });
 

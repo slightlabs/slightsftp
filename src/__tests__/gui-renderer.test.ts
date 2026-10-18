@@ -40,13 +40,14 @@ const model = {
       transfers: [{ path: `/${XSS}.iso`, direction: 'upload', bytes: 1024 * 1024, startedAt: new Date().toISOString(), bytesPerSecond: 256 * 1024 }] },
   ],
   activities: [
-    { id: 1, listenerId: 1, username: 'carol', action: 'UPLOAD', path: `/${XSS}.txt`, success: true, timestamp: nowSql() },
+    { id: 1, listenerId: 1, username: 'carol', action: 'UPLOAD', path: `/${XSS}.txt`, success: true, timestamp: nowSql(), bytes: 2048, checksum: 'a'.repeat(64) },
     { id: 2, listenerId: 1, username: 'carol', action: 'LOGIN_FAILED', path: '/', success: false, timestamp: nowSql() },
     { id: 3, listenerId: null, username: 'admin', action: 'GUI_LOGIN', path: '/', success: true, timestamp: nowSql() },
   ],
   settings: { logRetentionDays: '30' } as Record<string, string>,
   adminTotp: false,
   webhooks: [] as any[],
+  audit: { checksumUploads: true, syslog: { enabled: false, host: '', port: 514, protocol: 'udp', facility: 16 } } as any,
   security: { enabled: true, maxFailures: 5, windowMinutes: 10, banMinutes: 15, allowlist: '127.0.0.0/8, ::1' },
   bans: [{ ip: '203.0.113.9', reason: `5 failed logins in 10 min (last: SFTP as ${XSS})`, bannedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 900_000).toISOString() }] as any[],
   shares: [
@@ -74,6 +75,9 @@ const backend: Record<string, Handler> = {
   'get-security-settings': () => model.security,
   'set-security-settings': (u: any) => { Object.assign(model.security, u); return model.security; },
   'get-ip-bans': () => model.bans,
+  'get-audit-settings': () => model.audit,
+  'set-audit-settings': (u: any) => { model.audit = { ...model.audit, ...u, syslog: { ...model.audit.syslog, ...(u.syslog || {}) } }; return model.audit; },
+  'test-syslog': () => ({ ok: false, error: 'connect ECONNREFUSED' }),
   'unban-ip': (ip: string) => { model.bans = model.bans.filter(b => b.ip !== ip); return { success: true }; },
   'create-webhook': (h: any) => { const hook = { id: model.webhooks.length + 1, enabled: true, lastStatus: null, hasSecret: !!h.secret, ...h }; model.webhooks.push(hook); return hook; },
   'update-webhook': (id: number, u: any) => { Object.assign(model.webhooks.find(h => h.id === id)!, u); return model.webhooks.find(h => h.id === id); },
@@ -229,6 +233,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       const upload = $$('#dashboard-activity .activity-item')[0];
       expect(upload.querySelector('img')).toBeNull();
       expect(upload.textContent).toContain(XSS);
+      expect(upload.textContent).toContain('(2 KB) sha256:aaaaaaaaaaaa…');
       expect((window as any).__pwned).toBeUndefined();
     });
 
@@ -502,6 +507,20 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       expect(row.querySelector('img')).toBeNull();
     });
 
+    test('audit export settings load, save and test', async () => {
+      const f = $<HTMLFormElement>('#auditSettingsForm');
+      expect((f.elements as any).namedItem('checksumUploads').checked).toBe(true);
+      expect((f.elements as any).namedItem('syslogPort').value).toBe('514');
+      (f.elements as any).namedItem('syslogEnabled').checked = true;
+      (f.elements as any).namedItem('syslogHost').value = 'siem.example.com';
+      (f.elements as any).namedItem('syslogProtocol').value = 'tcp';
+      await submit(f);
+      expect(lastCall('set-audit-settings')).toEqual([{ checksumUploads: true, syslog: { enabled: true, host: 'siem.example.com', port: 514, protocol: 'tcp', facility: 16 } }]);
+      buttonByText(f, 'Send test message').click();
+      await flush();
+      expect((window.alert as jest.Mock).mock.calls.at(-1)[0]).toBe('Could not send: connect ECONNREFUSED');
+    });
+
     test('saving sends typed settings; Unban removes the row', async () => {
       const f = $<HTMLFormElement>('#securitySettingsForm');
       (f.elements as any).namedItem('maxFailures').value = '8';
@@ -736,7 +755,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       buttonByText($('#activity'), '💾 Save').click();
       await flush();
       const [csv] = lastCall('save-activity-log')!;
-      expect(csv.split('\n')[0]).toBe('Timestamp,Listener,Username,Action,Path,Success');
+      expect(csv.split('\n')[0]).toBe('Timestamp,Listener,Username,Action,Path,Success,Bytes,SHA256');
       expect(csv).toContain('"Main SFTP","carol","UPLOAD"');
       expect(csv).toContain(`"/${XSS.replace(/"/g, '""')}.txt"`);
     });

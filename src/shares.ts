@@ -16,6 +16,7 @@ import { resolveUserPath } from './path-utils';
 import { hashPassword, verifyPasswordHash } from './password';
 import { Share, ShareType, User } from './types';
 import logger from './logger';
+import { uploadChecksum } from './checksum';
 import { getLoginGuard, TOO_MANY_ATTEMPTS } from './login-guard';
 
 const UNLOCK_TTL_MS = 60 * 60 * 1000;
@@ -103,7 +104,7 @@ export function safeFileName(name: unknown): string | null {
 }
 
 export interface ShareRouteOptions {
-  logActivity: (username: string, action: string, filePath: string, success: boolean) => void;
+  logActivity: (username: string, action: string, filePath: string, success: boolean, extra?: { bytes?: number; checksum?: string }) => void;
   secureCookies: () => boolean;
 }
 
@@ -249,7 +250,10 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
       await fs.promises.rm(temp, { force: true });
       throw err;
     }
-    options.logActivity(ctx.share.owner, 'SHARE_UPLOAD', path.posix.join(ctx.share.virtualPath, finalName), true);
+    options.logActivity(ctx.share.owner, 'SHARE_UPLOAD', path.posix.join(ctx.share.virtualPath, finalName), true, {
+      bytes: fs.statSync(finalPath).size,
+      checksum: await uploadChecksum(db, finalPath),
+    });
     res.status(201).json({ success: true, name: finalName, size: fs.statSync(finalPath).size });
   }));
 

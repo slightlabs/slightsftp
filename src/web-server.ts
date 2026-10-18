@@ -19,6 +19,8 @@ import { describeShare, registerShareRoutes, shareUrl } from './shares';
 import { WebhookDispatcher, describeWebhook, validateWebhookInput } from './webhooks';
 import { beginTotpSetup, checkSecondFactor, confirmTotpSetup, disableTotp, publicUser } from './two-factor';
 import { cleanAuthorizedKeys } from './authorized-keys';
+import { SyslogForwarder, formatSyslog, readSyslogSettings, saveSyslogSettings } from './syslog';
+import { checksumsEnabled } from './checksum';
 
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
@@ -39,6 +41,8 @@ export interface WebServerOptions {
   tls?: { key: string; cert: string };
   /** the app's webhook dispatcher (used for "send test event") */
   webhooks?: WebhookDispatcher;
+  /** the app's syslog forwarder (used for "send test message") */
+  syslog?: SyslogForwarder;
 }
 
 export class WebServer {
@@ -51,6 +55,7 @@ export class WebServer {
   private port: number;
   private tls?: { key: string; cert: string };
   private webhooks?: WebhookDispatcher;
+  private syslog?: SyslogForwarder;
 
   constructor(db: DatabaseManager, serverManager: ServerManager, port: number = 3000, options: WebServerOptions = {}) {
     this.db = db;
@@ -58,6 +63,7 @@ export class WebServer {
     this.port = port;
     this.tls = options.tls;
     this.webhooks = options.webhooks;
+    this.syslog = options.syslog;
     this.app = express();
     this.server = this.tls
       ? https.createServer({ key: this.tls.key, cert: this.tls.cert }, this.app)
@@ -122,13 +128,15 @@ export class WebServer {
     next();
   }
 
-  private logActivity(username: string, action: string, path: string, success: boolean, listenerId?: number): void {
+  private logActivity(username: string, action: string, path: string, success: boolean, listenerId?: number, extra: { bytes?: number; checksum?: string } = {}): void {
     const activity = {
       listenerId: listenerId || 0,
       username,
       action,
       path,
       success,
+      bytes: extra.bytes,
+      checksum: extra.checksum,
       timestamp: new Date().toISOString()
     };
     this.db.logActivity(activity);
@@ -179,11 +187,11 @@ export class WebServer {
       res.sendFile(path.join(__dirname, 'portal.html'));
     });
     registerPortalRoutes(this.app, this.db, {
-      logActivity: (username, action, filePath, success) => this.logActivity(username, action, filePath, success),
+      logActivity: (username, action, filePath, success, extra) => this.logActivity(username, action, filePath, success, undefined, extra),
       secureCookies: () => this.isHttps(),
     });
     registerShareRoutes(this.app, this.db, {
-      logActivity: (username, action, filePath, success) => this.logActivity(username, action, filePath, success),
+      logActivity: (username, action, filePath, success, extra) => this.logActivity(username, action, filePath, success, undefined, extra),
       secureCookies: () => this.isHttps(),
     });
 
@@ -340,6 +348,36 @@ export class WebServer {
         res.json(getLoginGuard(this.db).settings());
       } catch (error: any) {
         res.status(400).json({ error: error.message });
+      }
+    });
+
+    // Audit export (syslog forwarding, upload checksums)
+    this.app.get('/api/audit/settings', (req: Request, res: Response) => {
+      res.json({ syslog: readSyslogSettings(this.db), checksumUploads: checksumsEnabled(this.db) });
+    });
+
+    this.app.put('/api/audit/settings', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      try {
+        if (req.body?.syslog) saveSyslogSettings(this.db, req.body.syslog);
+        if (req.body?.checksumUploads !== undefined) this.db.setSetting('checksumUploads', req.body.checksumUploads ? 'true' : 'false');
+        this.logActivity(session.username, 'WEB_AUDIT_SETTINGS_UPDATED', 'audit export', true);
+        res.json({ syslog: readSyslogSettings(this.db), checksumUploads: checksumsEnabled(this.db) });
+      } catch (error: any) {
+        res.status(400).json({ error: error.message });
+      }
+    });
+
+    this.app.post('/api/audit/test-syslog', async (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      const forwarder = this.syslog ?? new SyslogForwarder(this.db);
+      try {
+        await forwarder.send(formatSyslog({ listenerId: null, username: session.username, action: 'SYSLOG_TEST', path: '/', success: true, timestamp: new Date().toISOString() }, readSyslogSettings(this.db).facility));
+        res.json({ ok: true });
+      } catch (error: any) {
+        res.json({ ok: false, error: error.message });
+      } finally {
+        if (!this.syslog) forwarder.stop();
       }
     });
 
@@ -1381,6 +1419,9 @@ export class WebServer {
             'totp-setup': () => api('POST', '/api/2fa/setup'),
             'totp-enable': (code) => api('POST', '/api/2fa/enable', { code }),
             'totp-disable': (code) => api('POST', '/api/2fa/disable', { code }),
+            'get-audit-settings': () => api('GET', '/api/audit/settings'),
+            'set-audit-settings': (settings) => api('PUT', '/api/audit/settings', settings),
+            'test-syslog': () => api('POST', '/api/audit/test-syslog'),
             'get-webhooks': () => api('GET', '/api/webhooks'),
             'create-webhook': (hook) => api('POST', '/api/webhooks', hook),
             'update-webhook': (id, hook) => api('PUT', \`/api/webhooks/\${id}\`, hook),

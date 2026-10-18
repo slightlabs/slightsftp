@@ -194,6 +194,7 @@ export class DatabaseManager {
     addColumn('users', 'totpEnabled', 'INTEGER NOT NULL DEFAULT 0');
     addColumn('users', 'totpSecret', 'TEXT');
     addColumn('users', 'totpPendingSecret', 'TEXT');
+    addColumn('server_activities', 'checksum', 'TEXT');
   }
 
   // User operations
@@ -787,15 +788,16 @@ export class DatabaseManager {
     if (!this.db) throw new Error('Database not initialized');
     
     this.db.run(`
-      INSERT INTO server_activities (listenerId, username, action, path, success, bytes)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO server_activities (listenerId, username, action, path, success, bytes, checksum)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [
       activity.listenerId,
       activity.username,
       activity.action,
       activity.path,
       activity.success ? 1 : 0,
-      activity.bytes ?? null
+      activity.bytes ?? null,
+      activity.checksum ?? null
     ]);
     
     this.save();
@@ -845,7 +847,8 @@ export class DatabaseManager {
       path: row[4] as string,
       timestamp: row[5] as string,
       success: (row[6] as number) === 1,
-      bytes: (row[7] as number | null) ?? null
+      bytes: (row[7] as number | null) ?? null,
+      checksum: (row[8] as string | null) ?? null
     }));
   }
 

@@ -520,6 +520,7 @@ async function editListener(id) {
 
 // Security (brute-force protection)
 async function loadSecurity() {
+  loadAuditSettings();
   const [settings, bans] = await Promise.all([
     ipcRenderer.invoke('get-security-settings'),
     ipcRenderer.invoke('get-ip-bans')
@@ -541,6 +542,43 @@ async function loadSecurity() {
       <td><button class="btn" onclick="unbanIp(${jsArg(b.ip)})">Unban</button></td>
     </tr>
   `).join('') : '<tr><td colspan="5" class="empty-state">No banned addresses</td></tr>';
+}
+
+async function loadAuditSettings() {
+  const audit = await ipcRenderer.invoke('get-audit-settings');
+  const f = document.getElementById('auditSettingsForm').elements;
+  f.namedItem('checksumUploads').checked = audit.checksumUploads;
+  f.namedItem('syslogEnabled').checked = audit.syslog.enabled;
+  f.namedItem('syslogHost').value = audit.syslog.host;
+  f.namedItem('syslogPort').value = audit.syslog.port;
+  f.namedItem('syslogProtocol').value = audit.syslog.protocol;
+  f.namedItem('syslogFacility').value = audit.syslog.facility;
+}
+
+document.getElementById('auditSettingsForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target.elements;
+  try {
+    await ipcRenderer.invoke('set-audit-settings', {
+      checksumUploads: f.namedItem('checksumUploads').checked,
+      syslog: {
+        enabled: f.namedItem('syslogEnabled').checked,
+        host: f.namedItem('syslogHost').value.trim(),
+        port: parseInt(f.namedItem('syslogPort').value),
+        protocol: f.namedItem('syslogProtocol').value,
+        facility: parseInt(f.namedItem('syslogFacility').value)
+      }
+    });
+    alert('Audit settings saved.');
+  } catch (err) {
+    alert(`Failed to save audit settings: ${errorText(err)}`);
+  }
+  loadAuditSettings();
+});
+
+async function testSyslog() {
+  const result = await ipcRenderer.invoke('test-syslog');
+  alert(result.ok ? 'Test message sent.' : `Could not send: ${result.error}`);
 }
 
 async function unbanIp(ip) {
@@ -1245,7 +1283,7 @@ async function saveActivityLog() {
     const activities = await ipcRenderer.invoke('get-recent-activities', undefined, 10000);
     
     // Create CSV content
-    const csvHeader = 'Timestamp,Listener,Username,Action,Path,Success\n';
+    const csvHeader = 'Timestamp,Listener,Username,Action,Path,Success,Bytes,SHA256\n';
     const csvRows = activities.map(a => {
       const date = new Date(a.timestamp + 'Z');
       const timestamp = date.toLocaleString('en-US', {
@@ -1266,7 +1304,7 @@ async function saveActivityLog() {
       // Escape CSV values
       const escapeCSV = (val) => `"${String(val).replace(/"/g, '""')}"`;
       
-      return `${escapeCSV(timestamp)},${escapeCSV(listenerName)},${escapeCSV(a.username)},${escapeCSV(a.action)},${escapeCSV(a.path)},${a.success}`;
+      return `${escapeCSV(timestamp)},${escapeCSV(listenerName)},${escapeCSV(a.username)},${escapeCSV(a.action)},${escapeCSV(a.path)},${a.success},${a.bytes ?? ''},${a.checksum ?? ''}`;
     }).join('\n');
     
     const csvContent = csvHeader + csvRows;
@@ -1308,7 +1346,9 @@ function displayActivities(elementId, activities) {
       listenerName = listenerNamesCache[a.listenerId] || `Listener ${a.listenerId}`;
     }
     
-    return `<div class="activity-item ${cssClass}">[${timestamp}] [${escapeHtml(listenerName)}] ${escapeHtml(a.username)}: ${escapeHtml(a.action)} ${escapeHtml(a.path)}</div>`;
+    const size = a.bytes ? ` (${formatBytes(a.bytes)})` : '';
+    const sum = a.checksum ? ` <span title="SHA-256 ${escapeHtml(a.checksum)}" style="color: #888;">sha256:${escapeHtml(a.checksum.slice(0, 12))}…</span>` : '';
+    return `<div class="activity-item ${cssClass}">[${timestamp}] [${escapeHtml(listenerName)}] ${escapeHtml(a.username)}: ${escapeHtml(a.action)} ${escapeHtml(a.path)}${size}${sum}</div>`;
   }).join('');
   
   document.getElementById(elementId).innerHTML = html || '<div class="empty-state">No activity yet</div>';

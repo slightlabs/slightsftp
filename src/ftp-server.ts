@@ -6,6 +6,7 @@ import { Listener, User, Permission } from './types';
 import { EventEmitter } from 'events';
 import logger from './logger';
 import { getServerCertificate } from './tls';
+import { uploadChecksum } from './checksum';
 import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { SessionTransferStats, TransferDirection, TransferHandle, TransferTracker } from './transfers';
 
@@ -130,11 +131,12 @@ export class FTPServer extends EventEmitter {
         });
 
         // Completed transfers: one UPLOAD / DOWNLOAD entry with the file size
-        const logTransfer = (action: 'UPLOAD' | 'DOWNLOAD') => (err: any, localPath: string) => {
+        const logTransfer = (action: 'UPLOAD' | 'DOWNLOAD') => async (err: any, localPath: string) => {
           if (err || !localPath) return;
-          fs.promises.stat(localPath)
-            .then(st => this.logActivity(action, username, toVirtualPath(virtualPaths, localPath), true, st.size))
-            .catch(() => this.logActivity(action, username, toVirtualPath(virtualPaths, localPath), true));
+          const virtual = toVirtualPath(virtualPaths, localPath);
+          const size = await fs.promises.stat(localPath).then(st => st.size).catch(() => undefined);
+          const checksum = action === 'UPLOAD' ? await uploadChecksum(this.db, localPath) : undefined;
+          this.logActivity(action, username, virtual, true, size, checksum);
         };
         connection.on('STOR', logTransfer('UPLOAD'));
         connection.on('RETR', logTransfer('DOWNLOAD'));
@@ -219,13 +221,14 @@ export class FTPServer extends EventEmitter {
     };
   }
 
-  private logActivity(action: string, username: string, filePath: string, success: boolean, bytes?: number): void {
+  private logActivity(action: string, username: string, filePath: string, success: boolean, bytes?: number, checksum?: string): void {
     this.emit('activity', {
       listenerId: this.listener.id!,
       username: username,
       action,
       path: filePath,
       bytes,
+      checksum,
       success
     });
   }

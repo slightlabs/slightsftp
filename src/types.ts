@@ -79,6 +79,8 @@ export interface ServerActivity {
   success: boolean;
   /** size of a completed transfer, when known */
   bytes?: number | null;
+  /** SHA-256 of an uploaded file (hex) */
+  checksum?: string | null;
 }
 
 export type ShareType = 'download' | 'upload';

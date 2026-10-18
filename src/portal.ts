@@ -14,6 +14,7 @@ import { resolveUserPath, ResolvedUserPath } from './path-utils';
 import { requiresPasswordChange, validateNewPassword } from './password';
 import { User, VirtualPath } from './types';
 import logger from './logger';
+import { uploadChecksum } from './checksum';
 import QRCode from 'qrcode';
 import { createShare, describeShare, shareUrl, ShareError } from './shares';
 import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
@@ -32,7 +33,7 @@ interface PortalSession {
 
 export interface PortalOptions {
   /** record an activity entry (and push it to admin GUIs) */
-  logActivity: (username: string, action: string, filePath: string, success: boolean) => void;
+  logActivity: (username: string, action: string, filePath: string, success: boolean, extra?: { bytes?: number; checksum?: string }) => void;
   secureCookies: () => boolean;
 }
 
@@ -260,7 +261,7 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
       throw err;
     }
     const size = (await fs.promises.stat(target.localPath)).size;
-    options.logActivity(user.username, 'PORTAL_UPLOAD', target.virtual, true);
+    options.logActivity(user.username, 'PORTAL_UPLOAD', target.virtual, true, { bytes: size, checksum: await uploadChecksum(db, target.localPath) });
     res.status(201).json({ success: true, path: target.virtual, size });
   }));
 
