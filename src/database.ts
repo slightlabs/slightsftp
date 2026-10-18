@@ -1,8 +1,12 @@
 import initSqlJs, { Database } from 'sql.js';
 import * as path from 'path';
 import * as fs from 'fs';
-import { User, VirtualPath, Permission, Listener, UserListener, ServerActivity } from './types';
+import { User, VirtualPath, Permission, Listener, UserListener, ServerActivity, FtpTlsMode } from './types';
 import { hashPassword, verifyPasswordHash } from './password';
+
+function normalizeTlsMode(mode: unknown): FtpTlsMode {
+  return mode === 'optional' || mode === 'required' ? mode : 'none';
+}
 
 export class DatabaseManager {
   private db: Database | null = null;
@@ -146,6 +150,7 @@ export class DatabaseManager {
       }
     };
     addColumn('users', 'mustChangePassword', 'INTEGER NOT NULL DEFAULT 0');
+    addColumn('listeners', 'tlsMode', "TEXT NOT NULL DEFAULT 'none'");
   }
 
   // User operations
@@ -334,14 +339,15 @@ export class DatabaseManager {
     if (!this.db) throw new Error('Database not initialized');
     
     this.db.run(`
-      INSERT INTO listeners (name, protocol, bindingIp, port, enabled)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO listeners (name, protocol, bindingIp, port, enabled, tlsMode)
+      VALUES (?, ?, ?, ?, ?, ?)
     `, [
       listener.name,
       listener.protocol,
       listener.bindingIp,
       listener.port,
-      listener.enabled ? 1 : 0
+      listener.enabled ? 1 : 0,
+      normalizeTlsMode(listener.tlsMode)
     ]);
     
     const result = this.db.exec('SELECT last_insert_rowid() as id');
@@ -392,6 +398,10 @@ export class DatabaseManager {
     if (listener.enabled !== undefined) {
       updates.push('enabled = ?');
       values.push(listener.enabled ? 1 : 0);
+    }
+    if (listener.tlsMode !== undefined) {
+      updates.push('tlsMode = ?');
+      values.push(normalizeTlsMode(listener.tlsMode));
     }
 
     if (updates.length === 0) return;
@@ -737,6 +747,7 @@ export class DatabaseManager {
       bindingIp: obj.bindingIp,
       port: obj.port,
       enabled: obj.enabled === 1,
+      tlsMode: normalizeTlsMode(obj.tlsMode),
       createdAt: obj.createdAt
     };
   }

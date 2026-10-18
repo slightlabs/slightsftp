@@ -47,8 +47,12 @@ export interface Listener {
   port: number;
   enabled: boolean;
   maxConnections?: number;
+  /** FTP only: explicit TLS (AUTH TLS). 'optional' allows plain FTP, 'required' refuses it. */
+  tlsMode?: FtpTlsMode;
   createdAt?: string;
 }
+
+export type FtpTlsMode = 'none' | 'optional' | 'required';
 
 export interface UserListener {
   id?: number;

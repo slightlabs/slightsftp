@@ -25,6 +25,12 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+// "FTP", "FTPS (TLS required)", "SFTP", ...
+function protocolLabel(listener) {
+  if (listener.protocol !== 'FTP' || !listener.tlsMode || listener.tlsMode === 'none') return listener.protocol;
+  return listener.tlsMode === 'required' ? 'FTPS (TLS required)' : 'FTP / FTPS (TLS optional)';
+}
+
 // Encode a value as a JS literal for use inside an inline onclick="..." attribute
 function jsArg(value) {
   return escapeHtml(JSON.stringify(value));
@@ -331,7 +337,7 @@ async function loadListeners() {
       <div class="listener-card">
         <h3>${escapeHtml(s.listener.name)}</h3>
         <div class="listener-info">
-          <div><strong>Protocol:</strong> ${escapeHtml(s.listener.protocol)}</div>
+          <div><strong>Protocol:</strong> ${escapeHtml(protocolLabel(s.listener))}</div>
           <div><strong>Address:</strong> ${escapeHtml(s.listener.bindingIp)}:${escapeHtml(s.listener.port)}</div>
           ${!isWebGUI ? `<div><strong>Enabled:</strong> ${s.listener.enabled ? 'Yes' : 'No'}</div>` : ''}
           <div>
@@ -437,6 +443,9 @@ async function editListener(id) {
     fields.namedItem('bindingIp').value = listener.bindingIp;
     fields.namedItem('port').value = listener.port;
     fields.namedItem('enabled').checked = listener.enabled;
+    fields.namedItem('tlsMode').value = listener.tlsMode || 'none';
+    // Encryption choice only applies to FTP listeners (SFTP is always encrypted)
+    fields.namedItem('tlsMode').closest('[data-ftp-only]').style.display = listener.protocol === 'FTP' ? '' : 'none';
     
     showModal('editListenerModal');
   } catch (err) {
@@ -1109,6 +1118,11 @@ function showAddUserModal() {
   showModal('addUserModal');
 }
 
+// Encryption choice only applies to FTP listeners (SFTP is always encrypted)
+document.querySelector('#addListenerForm [name=protocol]').addEventListener('change', (e) => {
+  document.querySelector('#addListenerForm [data-ftp-only]').style.display = e.target.value === 'FTP' ? '' : 'none';
+});
+
 // Form submissions
 document.getElementById('addListenerForm').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -1118,7 +1132,8 @@ document.getElementById('addListenerForm').addEventListener('submit', async (e) 
     protocol: formData.get('protocol'),
     bindingIp: formData.get('bindingIp'),
     port: parseInt(formData.get('port')),
-    enabled: formData.get('enabled') === 'on'
+    enabled: formData.get('enabled') === 'on',
+    tlsMode: formData.get('protocol') === 'FTP' ? (formData.get('tlsMode') || 'none') : 'none'
   };
   
   try {
@@ -1140,7 +1155,8 @@ document.getElementById('editListenerForm').addEventListener('submit', async (e)
     name: formData.get('name'),
     bindingIp: formData.get('bindingIp'),
     port: parseInt(formData.get('port')),
-    enabled: formData.get('enabled') === 'on'
+    enabled: formData.get('enabled') === 'on',
+    tlsMode: formData.get('tlsMode') || 'none'
   };
   
   try {

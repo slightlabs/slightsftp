@@ -258,13 +258,16 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
 
       const form = $<HTMLFormElement>('#addListenerForm');
       setField(form, 'name', 'Partner SFTP');
-      (form.querySelector('[name=protocol]') as HTMLSelectElement).value = 'SFTP';
+      const protocol = form.querySelector('[name=protocol]') as HTMLSelectElement;
+      protocol.value = 'SFTP';
+      protocol.dispatchEvent(new Event('change'));
+      expect((form.querySelector('[data-ftp-only]') as HTMLElement).style.display).toBe('none');
       setField(form, 'bindingIp', '127.0.0.1');
       setField(form, 'port', '2022');
       setField(form, 'enabled', false);
       await submit(form);
 
-      expect(lastCall('create-listener')).toEqual([{ name: 'Partner SFTP', protocol: 'SFTP', bindingIp: '127.0.0.1', port: 2022, enabled: false }]);
+      expect(lastCall('create-listener')).toEqual([{ name: 'Partner SFTP', protocol: 'SFTP', bindingIp: '127.0.0.1', port: 2022, enabled: false, tlsMode: 'none' }]);
       expect($('#addListenerModal').classList.contains('active')).toBe(false);
       expect(card('Partner SFTP')).toBeTruthy();
     });
@@ -278,9 +281,12 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       expect((form.querySelector('[name=name]') as HTMLInputElement).value).toBe('Legacy FTP');
       expect((form.querySelector('[name=port]') as HTMLInputElement).value).toBe('2121');
 
+      expect((form.querySelector('[data-ftp-only]') as HTMLElement).style.display).toBe('');
       setField(form, 'port', '2100');
+      (form.querySelector('[name=tlsMode]') as HTMLSelectElement).value = 'required';
       await submit(form);
-      expect(lastCall('update-listener')).toEqual([2, { name: 'Legacy FTP', bindingIp: '0.0.0.0', port: 2100, enabled: true }]);
+      expect(lastCall('update-listener')).toEqual([2, { name: 'Legacy FTP', bindingIp: '0.0.0.0', port: 2100, enabled: true, tlsMode: 'required' }]);
+      expect(card('Legacy FTP').textContent).toContain('FTPS (TLS required)');
       expect(card('Legacy FTP').textContent).toContain('0.0.0.0:2100');
     });
 

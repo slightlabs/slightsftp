@@ -5,6 +5,7 @@ import { DatabaseManager } from './database';
 import { Listener, User, Permission } from './types';
 import { EventEmitter } from 'events';
 import logger from './logger';
+import { getServerCertificate } from './tls';
 
 interface ClientSession {
   connection: any;
@@ -25,12 +26,20 @@ export class FTPServer extends EventEmitter {
     this.db = db;
   }
 
-  start(): Promise<void> {
+  async start(): Promise<void> {
+    // Explicit FTPS: clients upgrade the control (and data) channel with AUTH TLS / PROT P
+    const tlsMode = this.listener.tlsMode || 'none';
+    const tls = tlsMode === 'none' ? false : await getServerCertificate({
+      certPath: this.db.getSetting('tlsCertPath'),
+      keyPath: this.db.getSetting('tlsKeyPath')
+    }).then(c => ({ key: c.key, cert: c.cert }));
+
     return new Promise((resolve, reject) => {
       this.server = new FtpSrv({
         url: `ftp://${this.listener.bindingIp}:${this.listener.port}`,
         pasv_url: this.listener.bindingIp,
         anonymous: false,
+        tls,
         greeting: ['Welcome to SLightSFTP Server']
       });
 
@@ -39,6 +48,11 @@ export class FTPServer extends EventEmitter {
         const sessionId = `ftp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const ipAddress = connection.ip || 'unknown';
         const remotePort = (connection as any).socket?.remotePort || 0;
+
+        if (tlsMode === 'required' && !connection.secure) {
+          this.logActivity(`LOGIN_FAILED (TLS required) [${ipAddress}:${remotePort}]`, username, '/', false);
+          return reject(new Error('This server requires an encrypted connection (AUTH TLS)'));
+        }
 
         const user = this.db.getUser(username);
         if (!user) {

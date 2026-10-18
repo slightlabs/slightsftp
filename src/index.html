@@ -669,6 +669,14 @@
           <label>Port</label>
           <input type="number" name="port" required>
         </div>
+        <div class="form-group" data-ftp-only>
+          <label>Encryption (FTP only)</label>
+          <select name="tlsMode">
+            <option value="none">None — plain FTP</option>
+            <option value="optional">FTPS optional (explicit TLS)</option>
+            <option value="required">FTPS required (refuse unencrypted logins)</option>
+          </select>
+        </div>
         <div class="form-group checkbox-group">
           <input type="checkbox" name="enabled" checked>
           <label>Enabled</label>
@@ -705,6 +713,14 @@
         <div class="form-group">
           <label>Port</label>
           <input type="number" name="port" required>
+        </div>
+        <div class="form-group" data-ftp-only>
+          <label>Encryption (FTP only)</label>
+          <select name="tlsMode">
+            <option value="none">None — plain FTP</option>
+            <option value="optional">FTPS optional (explicit TLS)</option>
+            <option value="required">FTPS required (refuse unencrypted logins)</option>
+          </select>
         </div>
         <div class="form-group checkbox-group">
           <input type="checkbox" name="enabled">

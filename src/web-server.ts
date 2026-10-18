@@ -284,13 +284,14 @@ export class WebServer {
     this.app.post('/api/listeners', async (req: Request, res: Response) => {
       try {
         const session = (req as any).session as WebSession;
-        const { name, protocol, bindingIp, port, enabled } = req.body;
+        const { name, protocol, bindingIp, port, enabled, tlsMode } = req.body;
         const listener: Listener = {
           name,
           protocol,
           bindingIp,
           port,
-          enabled
+          enabled,
+          tlsMode
         };
         const id = this.db.createListener(listener);
         
@@ -312,7 +313,7 @@ export class WebServer {
       try {
         const session = (req as any).session as WebSession;
         const id = parseInt(req.params.id);
-        const { name, bindingIp, port, enabled } = req.body;
+        const { name, bindingIp, port, enabled, tlsMode } = req.body;
         
         const listener = this.db.getListener(id);
         if (!listener) {
@@ -320,7 +321,7 @@ export class WebServer {
           return;
         }
 
-        this.db.updateListener(id, { name, bindingIp, port, enabled });
+        this.db.updateListener(id, { name, bindingIp, port, enabled, tlsMode });
         this.logActivity(session.username, 'WEB_LISTENER_UPDATED', `Updated listener '${listener.name}'`, true, id);
         
         // Restart listener if running
