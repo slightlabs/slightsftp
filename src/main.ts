@@ -21,6 +21,8 @@ import { purgeExpired, purgeItem, recycleSettings, restoreItem, saveRecycleSetti
 import { createApiToken } from './api-tokens';
 import { createBackup, restoreBackup } from './backup';
 import { checkForUpdate } from './update-check';
+import { isDirectoryUser, verifyUserPassword } from './credentials';
+import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from './ldap-auth';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -494,7 +496,7 @@ function setupIpcHandlers(): void {
         return { success: false, error: 'Invalid username or password' };
       }
 
-      if (!db.checkPassword(username, password)) {
+      if (!(await verifyUserPassword(db, user, password))) {
         return { success: false, error: 'Invalid username or password' };
       }
 
@@ -512,7 +514,7 @@ function setupIpcHandlers(): void {
       }
 
       // First login with the default password, or the account was flagged by an admin
-      if (requiresPasswordChange(user, password)) {
+      if (!isDirectoryUser(user) && requiresPasswordChange(user, password)) {
         pendingPasswordChangeUser = user;
         db.logActivity({
           listenerId: null,
@@ -594,6 +596,14 @@ function setupIpcHandlers(): void {
     saveGuardSettings(db, settings || {});
     return getLoginGuard(db).settings();
   });
+
+  // Directory (LDAP / Active Directory) sign-in
+  ipcMain.handle('get-ldap-settings', async () => publicLdapSettings(db));
+  ipcMain.handle('set-ldap-settings', async (event, settings) => {
+    saveLdapSettings(db, settings || {});
+    return publicLdapSettings(db);
+  });
+  ipcMain.handle('test-ldap', async (event, username) => testLdap(readLdapSettings(db), username || undefined));
 
   // Update notifications (GitHub Releases)
   ipcMain.handle('check-for-update', async () => checkForUpdate(db, app.getVersion()));

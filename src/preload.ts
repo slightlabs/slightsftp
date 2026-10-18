@@ -19,6 +19,7 @@ const INVOKE_CHANNELS = [
   'set-first-login-password', 'get-server-identity', 'get-shares', 'revoke-share',
   'totp-setup', 'totp-enable', 'totp-disable',
   'get-ip-bans', 'unban-ip', 'get-security-settings', 'set-security-settings',
+  'get-ldap-settings', 'set-ldap-settings', 'test-ldap',
   'check-for-update', 'open-external',
   'export-backup', 'import-backup',
   'get-api-tokens', 'create-api-token', 'revoke-api-token',

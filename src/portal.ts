@@ -21,6 +21,7 @@ import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { beginTotpSetup, checkSecondFactor, confirmTotpSetup, disableTotp } from './two-factor';
 import { QuotaExceededError, getQuotaManager, quotaLimiter } from './quota';
 import { getLimiter, sendFileThrottled, throttle } from './bandwidth';
+import { isDirectoryUser, verifyUserPassword } from './credentials';
 import { deleteFile, purgeItem, restoreItem } from './recycle-bin';
 
 export const PORTAL_COOKIE = 'portalSession';
@@ -124,13 +125,13 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
   };
 
   // ── auth ────────────────────────────────────────────────────────────────
-  router.post('/login', handle((req, res) => {
+  router.post('/login', handle(async (req, res) => {
     const { username, password } = req.body || {};
     const guard = getLoginGuard(db);
     const ip = req.socket.remoteAddress;
     if (guard.isBanned(ip)) throw new HttpError(429, TOO_MANY_ATTEMPTS);
     const user = typeof username === 'string' ? db.getUser(username) : undefined;
-    if (!user || !user.portalEnabled || !user.passwordEnabled || !userIpAllowed(user, ip) || typeof password !== 'string' || !db.checkPassword(user.username, password)) {
+    if (!user || !user.portalEnabled || !user.passwordEnabled || !userIpAllowed(user, ip) || typeof password !== 'string' || !(await verifyUserPassword(db, user, password))) {
       options.logActivity(String(username || 'unknown'), 'PORTAL_LOGIN_FAILED', '/', false);
       guard.recordFailure(ip, 'file portal', String(username || ''));
       throw new HttpError(401, 'Invalid username or password');
@@ -146,7 +147,7 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     }
     guard.recordSuccess(ip);
     const id = crypto.randomBytes(32).toString('hex');
-    const mustChangePassword = requiresPasswordChange(user, password);
+    const mustChangePassword = !isDirectoryUser(user) && requiresPasswordChange(user, password);
     sessions.set(id, { username: user.username, createdAt: Date.now(), mustChangePassword });
     res.cookie(PORTAL_COOKIE, id, { httpOnly: true, sameSite: 'lax', secure: options.secureCookies(), maxAge: SESSION_TTL_MS, path: '/' });
     options.logActivity(user.username, 'PORTAL_LOGIN', '/', true);
@@ -178,6 +179,7 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     const user: User = (req as any).portalUser;
     const session: PortalSession = (req as any).portalSession;
     const { newPassword, currentPassword } = req.body || {};
+    if (isDirectoryUser(user)) throw new HttpError(400, 'Your password is managed by your organisation\'s directory');
     if (!session.mustChangePassword && !db.checkPassword(user.username, currentPassword || '')) {
       throw new HttpError(401, 'Current password is incorrect');
     }

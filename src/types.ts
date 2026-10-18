@@ -21,6 +21,8 @@ export interface User {
   /** speed limits in KB/s across all sessions (null = unlimited) */
   uploadLimitKBps?: number | null;
   downloadLimitKBps?: number | null;
+  /** where the password is checked: "local" (default) or "ldap" */
+  authSource?: 'local' | 'ldap';
   createdAt?: string;
 }
 

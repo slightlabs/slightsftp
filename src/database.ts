@@ -219,6 +219,7 @@ export class DatabaseManager {
     addColumn('users', 'quotaBytes', 'INTEGER');
     addColumn('users', 'uploadLimitKBps', 'INTEGER');
     addColumn('users', 'downloadLimitKBps', 'INTEGER');
+    addColumn('users', 'authSource', "TEXT NOT NULL DEFAULT 'local'");
   }
 
   // User operations
@@ -227,8 +228,8 @@ export class DatabaseManager {
     
     const hashedPassword = user.password ? this.hashPassword(user.password) : null;
     this.db.run(`
-      INSERT INTO users (username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps, quotaBytes, uploadLimitKBps, downloadLimitKBps)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps, quotaBytes, uploadLimitKBps, downloadLimitKBps, authSource)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       user.username,
       hashedPassword,
@@ -240,7 +241,8 @@ export class DatabaseManager {
       user.allowedIps || null,
       user.quotaBytes || null,
       user.uploadLimitKBps || null,
-      user.downloadLimitKBps || null
+      user.downloadLimitKBps || null,
+      user.authSource === 'ldap' ? 'ldap' : 'local'
     ]);
     
     const result = this.db.exec('SELECT last_insert_rowid() as id');
@@ -311,6 +313,10 @@ export class DatabaseManager {
     if (user.downloadLimitKBps !== undefined) {
       updates.push('downloadLimitKBps = ?');
       values.push(user.downloadLimitKBps || null);
+    }
+    if (user.authSource !== undefined) {
+      updates.push('authSource = ?');
+      values.push(user.authSource === 'ldap' ? 'ldap' : 'local');
     }
     if (user.totpPendingSecret !== undefined) {
       updates.push('totpPendingSecret = ?');
@@ -1076,6 +1082,7 @@ export class DatabaseManager {
       quotaBytes: obj.quotaBytes || null,
       uploadLimitKBps: obj.uploadLimitKBps || null,
       downloadLimitKBps: obj.downloadLimitKBps || null,
+      authSource: obj.authSource === 'ldap' ? 'ldap' : 'local',
       createdAt: obj.createdAt
     };
   }

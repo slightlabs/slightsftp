@@ -10,6 +10,7 @@ import { uploadChecksum } from './checksum';
 import { QuotaExceededError, QuotaManager, getQuotaManager } from './quota';
 import { RateLimiter, getLimiter } from './bandwidth';
 import { deleteFile } from './recycle-bin';
+import { verifyUserPassword } from './credentials';
 import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { SessionTransferStats, TransferDirection, TransferHandle, TransferTracker } from './transfers';
 
@@ -54,7 +55,7 @@ export class FTPServer extends EventEmitter {
         greeting: ['Welcome to SLightSFTP Server']
       });
 
-      this.server.on('login', ({ connection, username, password }, resolve, reject) => {
+      this.server.on('login', async ({ connection, username, password }, resolve, reject) => {
         logger.info(`FTP login attempt: ${username}`);
         const sessionId = `ftp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const ipAddress = connection.ip || 'unknown';
@@ -92,7 +93,7 @@ export class FTPServer extends EventEmitter {
         }
 
         // Verify password
-        if (!user.passwordEnabled || !this.db.verifyPassword(username, password)) {
+        if (!user.passwordEnabled || !(await verifyUserPassword(this.db, user, password, true))) {
           this.logActivity(`LOGIN_FAILED (Invalid password) [${ipAddress}:${remotePort}]`, username, '/', false);
           guard.recordFailure(ipAddress, 'FTP', username);
           return reject(new Error('Invalid credentials'));

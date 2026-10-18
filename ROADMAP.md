@@ -43,6 +43,7 @@ Items are implemented in order. Each ships with tests and is marked here when do
 - [x] First-run setup wizard.
 - [x] Update notifications from GitHub Releases (in-place auto-update is not supported for MSI / .deb packages).
 - [x] Dark mode.
-- [ ] macOS build; winget / Homebrew / Flatpak listings.
+- [x] macOS build (unsigned .dmg, Intel and Apple Silicon).
+- [ ] winget / Homebrew / Flatpak listings (need the maintainer to submit to those catalogues).
 - [ ] Cloud storage virtual paths (S3, Azure Blob).
-- [ ] LDAP / Active Directory users.
+- [x] LDAP / Active Directory users.

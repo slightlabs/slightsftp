@@ -713,6 +713,25 @@
             </form>
           </div>
           <div class="card">
+            <h2>Directory Sign-in (LDAP / Active Directory)</h2>
+            <p style="color: #666; margin-top: 0;">Users whose password is checked by the directory sign in with their directory password over SFTP, FTP, the web GUI and the portal. Their folders and permissions are still set here.</p>
+            <form id="ldapForm">
+              <div class="form-group checkbox-group"><input type="checkbox" name="enabled" id="ldapEnabled"><label for="ldapEnabled">Enabled</label></div>
+              <div class="form-group"><label>Server URL</label><input type="text" name="url" placeholder="ldaps://dc01.example.com"></div>
+              <div class="form-group"><label>Base DN</label><input type="text" name="baseDn" placeholder="DC=example,DC=com"></div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div class="form-group"><label>Service account DN (optional)</label><input type="text" name="bindDn" placeholder="CN=svc-sftp,OU=Service,DC=example,DC=com"></div>
+                <div class="form-group"><label>Service account password</label><input type="password" name="bindPassword" autocomplete="new-password" placeholder="unchanged"></div>
+              </div>
+              <div class="form-group"><label>User filter</label><input type="text" name="userFilter"></div>
+              <div class="form-group checkbox-group"><input type="checkbox" name="tlsVerify" id="ldapTlsVerify"><label for="ldapTlsVerify">Verify the server's TLS certificate</label></div>
+              <button type="submit" class="btn btn-primary">Save</button>
+              <button type="button" class="btn" onclick="testLdapConnection()">Test connection</button>
+              <span id="ldapTestResult" style="margin-left: 10px;"></span>
+            </form>
+          </div>
+
+          <div class="card">
             <h2>Backup &amp; Restore</h2>
             <p style="color: #666; margin-top: 0;">Save all users, listeners, permissions, settings, the SFTP host key and the TLS certificate to one file, or restore from one. ⚠️ The backup contains password hashes, two-factor secrets and keys — store it safely.</p>
             <button type="button" class="btn btn-primary" onclick="exportBackup()">Download backup</button>
@@ -984,6 +1003,13 @@
           <label>Enable web file portal (browser access to their files at <code>/files</code>)</label>
         </div>
         <div class="form-group">
+          <label>Password checked by</label>
+          <select name="authSource">
+            <option value="local">This server</option>
+            <option value="ldap">Directory (LDAP / Active Directory)</option>
+          </select>
+        </div>
+        <div class="form-group">
           <label>Allowed IP addresses (optional)</label>
           <input type="text" name="allowedIps" placeholder="anywhere — or e.g. 203.0.113.7, 10.0.0.0/8">
         </div>
@@ -1033,6 +1059,13 @@
         <div class="form-group checkbox-group">
           <input type="checkbox" name="portalEnabled">
           <label>Enable web file portal (browser access to their files at <code>/files</code>)</label>
+        </div>
+        <div class="form-group">
+          <label>Password checked by</label>
+          <select name="authSource">
+            <option value="local">This server</option>
+            <option value="ldap">Directory (LDAP / Active Directory)</option>
+          </select>
         </div>
         <div class="form-group">
           <label>Allowed IP addresses (optional)</label>

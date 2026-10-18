@@ -11,6 +11,7 @@ import { uploadChecksum } from './checksum';
 import { getQuotaManager } from './quota';
 import { getLimiter } from './bandwidth';
 import { deleteFile } from './recycle-bin';
+import { verifyUserPassword } from './credentials';
 import { SessionTransferStats, TransferHandle, TransferTracker } from './transfers';
 // SFTP constants (from ssh2-streams)
 const SFTP_STATUS_CODE = {
@@ -136,30 +137,28 @@ export class SFTPServer extends EventEmitter {
           }
 
           if (ctx.method === 'password' && user.passwordEnabled) {
-            if (this.db.verifyPassword(username, ctx.password)) {
-              
-              // Track active session
-              this.activeSessions.set(sessionId, {
-                client,
-                username: username,
-                ipAddress,
-                connectedAt: new Date()
-              });
-              console.log(`[SESSION] Added active session: ${sessionId} for user ${username} from ${ipAddress}`);
-              console.log(`[SESSION] Total active sessions: ${this.activeSessions.size}`);
-              
-              authenticatedUser = user;
-              userPermissions = this.db.getPermission(user.id!, this.listener.id!);
-              this.emit('activity', {
-                listenerId: this.listener.id!,
-                username: username,
-                action: `LOGIN (password) [${ipAddress}:${remotePort}]`,
-                path: '/',
-                success: true
-              });
-              guard.recordSuccess(ipAddress);
-              return ctx.accept();
-            } else {
+            const finish = (ok: boolean) => {
+              if (ok) {
+                // Track active session
+                this.activeSessions.set(sessionId, {
+                  client,
+                  username: username!,
+                  ipAddress,
+                  connectedAt: new Date()
+                });
+
+                authenticatedUser = user;
+                userPermissions = this.db.getPermission(user.id!, this.listener.id!);
+                this.emit('activity', {
+                  listenerId: this.listener.id!,
+                  username: username,
+                  action: `LOGIN (password${user.authSource === 'ldap' ? ', directory' : ''}) [${ipAddress}:${remotePort}]`,
+                  path: '/',
+                  success: true
+                });
+                guard.recordSuccess(ipAddress);
+                return ctx.accept();
+              }
               this.emit('activity', {
                 listenerId: this.listener.id!,
                 username: username,
@@ -169,7 +168,12 @@ export class SFTPServer extends EventEmitter {
               });
               countFailure(ctx);
               return ctx.reject();
-            }
+            };
+            // local users are checked synchronously; directory (LDAP) users asynchronously
+            const verdict = verifyUserPassword(this.db, user, ctx.password, true);
+            if (typeof verdict === 'boolean') return finish(verdict);
+            verdict.then(finish, () => finish(false));
+            return;
           } else if (ctx.method === 'publickey' && user.publicKey) {
             const key = findAuthorizedKey(parseAuthorizedKeys(user.publicKey), ctx.key.data);
             if (key) {

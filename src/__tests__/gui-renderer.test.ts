@@ -47,6 +47,7 @@ const model = {
   settings: { logRetentionDays: '30' } as Record<string, string>,
   adminTotp: false,
   tokens: [] as any[],
+  ldap: { enabled: false, url: '', baseDn: '', bindDn: '', userFilter: '(uid={username})', tlsVerify: true } as any,
   trashSettings: { enabled: true, retentionDays: 30 },
   trash: [
     { id: 1, username: 'carol', virtualPath: `/${XSS}.doc`, size: 4096, deletedAt: new Date().toISOString() },
@@ -82,6 +83,9 @@ const backend: Record<string, Handler> = {
   'set-security-settings': (u: any) => { Object.assign(model.security, u); return model.security; },
   'get-ip-bans': () => model.bans,
   'get-api-tokens': () => model.tokens,
+  'get-ldap-settings': () => ({ ...model.ldap, hasBindPassword: true }),
+  'set-ldap-settings': (u: any) => { Object.assign(model.ldap, u); return model.ldap; },
+  'test-ldap': (u: string) => ({ ok: true, message: u ? `Found uid=${u},dc=example,dc=com` : 'Connected' }),
   'check-for-update': () => ({ currentVersion: '1.5.0', latestVersion: '1.6.0', updateAvailable: true, url: 'https://github.com/slightlabs/slightsftp/releases/tag/v1.6.0' }),
   'open-external': () => true,
   'export-backup': () => ({ success: true, path: '/home/admin/slightsftp-backup.json' }),
@@ -495,7 +499,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       setField(form, 'guiEnabled', true);
       setField(form, 'mustChangePassword', true);
       await submit(form);
-      expect(lastCall('create-user')).toEqual([{ username: 'dave', password: 'p@ss', passwordEnabled: true, publicKey: undefined, guiEnabled: true, mustChangePassword: true, portalEnabled: false, allowedIps: '', quotaMb: '', uploadLimitKBps: '', downloadLimitKBps: '' }]);
+      expect(lastCall('create-user')).toEqual([{ username: 'dave', password: 'p@ss', passwordEnabled: true, publicKey: undefined, guiEnabled: true, mustChangePassword: true, portalEnabled: false, allowedIps: '', authSource: 'local', quotaMb: '', uploadLimitKBps: '', downloadLimitKBps: '' }]);
       expect(row('dave')).toBeTruthy();
     });
 
@@ -570,7 +574,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
 
         const [username, updates, listeners, vps, perms] = lastCall('update-user')!;
         expect(username).toBe('carol');
-        expect(updates).toEqual({ password: 'n3w', passwordEnabled: true, publicKey: 'AAAAB3Nza', guiEnabled: false, mustChangePassword: false, portalEnabled: false, allowedIps: '', quotaMb: '', uploadLimitKBps: '', downloadLimitKBps: '' });
+        expect(updates).toEqual({ password: 'n3w', passwordEnabled: true, publicKey: 'AAAAB3Nza', guiEnabled: false, mustChangePassword: false, portalEnabled: false, allowedIps: '', authSource: 'local', quotaMb: '', uploadLimitKBps: '', downloadLimitKBps: '' });
         expect(listeners).toEqual([1, 2]);
 
         const p1 = perms.find((p: any) => p.listenerId === 1);
@@ -605,6 +609,22 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       const row = $$('#bans-table tr')[0];
       expect(row.textContent).toContain('203.0.113.9');
       expect(row.querySelector('img')).toBeNull();
+    });
+
+    test('directory sign-in settings save (bind password only when typed) and test', async () => {
+      const f = $<HTMLFormElement>('#ldapForm');
+      expect((f.elements as any).namedItem('bindPassword').placeholder).toBe('unchanged');
+      (f.elements as any).namedItem('enabled').checked = true;
+      (f.elements as any).namedItem('url').value = 'ldaps://dc01.example.com';
+      (f.elements as any).namedItem('baseDn').value = 'DC=example,DC=com';
+      await submit(f);
+      expect(lastCall('set-ldap-settings')).toEqual([{ enabled: true, url: 'ldaps://dc01.example.com', baseDn: 'DC=example,DC=com', bindDn: '', bindPassword: '', userFilter: '(uid={username})', tlsVerify: true }]);
+
+      (window as any).prompt = jest.fn(() => 'dora');
+      buttonByText(f, 'Test connection').click();
+      await flush();
+      expect(lastCall('test-ldap')).toEqual(['dora']);
+      expect($('#ldapTestResult').textContent).toBe('✅ Found uid=dora,dc=example,dc=com');
     });
 
     test('backup and restore buttons', async () => {

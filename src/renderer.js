@@ -685,6 +685,7 @@ document.getElementById('trashSettingsForm').addEventListener('submit', async (e
 // Security (brute-force protection)
 async function loadSecurity() {
   loadAuditSettings();
+  loadLdapSettings();
   loadApiTokens();
   const [settings, bans] = await Promise.all([
     ipcRenderer.invoke('get-security-settings'),
@@ -707,6 +708,51 @@ async function loadSecurity() {
       <td><button class="btn" onclick="unbanIp(${jsArg(b.ip)})">Unban</button></td>
     </tr>
   `).join('') : '<tr><td colspan="5" class="empty-state">No banned addresses</td></tr>';
+}
+
+async function loadLdapSettings() {
+  const ldap = await ipcRenderer.invoke('get-ldap-settings');
+  const f = document.getElementById('ldapForm').elements;
+  f.namedItem('enabled').checked = ldap.enabled;
+  f.namedItem('url').value = ldap.url;
+  f.namedItem('baseDn').value = ldap.baseDn;
+  f.namedItem('bindDn').value = ldap.bindDn;
+  f.namedItem('bindPassword').value = '';
+  f.namedItem('bindPassword').placeholder = ldap.hasBindPassword ? 'unchanged' : '';
+  f.namedItem('userFilter').value = ldap.userFilter;
+  f.namedItem('tlsVerify').checked = ldap.tlsVerify;
+}
+
+function ldapFormValues() {
+  const f = document.getElementById('ldapForm').elements;
+  return {
+    enabled: f.namedItem('enabled').checked,
+    url: f.namedItem('url').value.trim(),
+    baseDn: f.namedItem('baseDn').value.trim(),
+    bindDn: f.namedItem('bindDn').value.trim(),
+    bindPassword: f.namedItem('bindPassword').value,
+    userFilter: f.namedItem('userFilter').value.trim(),
+    tlsVerify: f.namedItem('tlsVerify').checked
+  };
+}
+
+document.getElementById('ldapForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await ipcRenderer.invoke('set-ldap-settings', ldapFormValues());
+    alert('Directory settings saved.');
+  } catch (err) {
+    alert(`Failed to save directory settings: ${errorText(err)}`);
+  }
+  loadLdapSettings();
+});
+
+async function testLdapConnection() {
+  const username = prompt('Optionally enter a user name to look up (leave empty to just connect):') || '';
+  const out = document.getElementById('ldapTestResult');
+  out.textContent = 'Testing…';
+  const result = await ipcRenderer.invoke('test-ldap', username.trim());
+  out.textContent = `${result.ok ? '✅' : '❌'} ${result.message}`;
 }
 
 async function exportBackup() {
@@ -1079,6 +1125,7 @@ async function editUser(username) {
   fields.namedItem('mustChangePassword').checked = !!user.mustChangePassword;
   fields.namedItem('portalEnabled').checked = !!user.portalEnabled;
   fields.namedItem('allowedIps').value = user.allowedIps || '';
+  fields.namedItem('authSource').value = user.authSource || 'local';
   fields.namedItem('quotaMb').value = user.quotaBytes ? Math.round(user.quotaBytes / 1048576 * 100) / 100 : '';
   fields.namedItem('uploadLimitKBps').value = user.uploadLimitKBps || '';
   fields.namedItem('downloadLimitKBps').value = user.downloadLimitKBps || '';
@@ -1708,6 +1755,7 @@ document.getElementById('addUserForm').addEventListener('submit', async (e) => {
     mustChangePassword: formData.get('mustChangePassword') === 'on',
     portalEnabled: formData.get('portalEnabled') === 'on',
     allowedIps: (formData.get('allowedIps') || '').trim(),
+    authSource: formData.get('authSource') || 'local',
     quotaMb: (formData.get('quotaMb') || '').trim(),
     uploadLimitKBps: (formData.get('uploadLimitKBps') || '').trim(),
     downloadLimitKBps: (formData.get('downloadLimitKBps') || '').trim()
@@ -1763,6 +1811,7 @@ document.getElementById('editUserForm').addEventListener('submit', async (e) => 
     mustChangePassword: formData.get('mustChangePassword') === 'on',
     portalEnabled: formData.get('portalEnabled') === 'on',
     allowedIps: (formData.get('allowedIps') || '').trim(),
+    authSource: formData.get('authSource') || 'local',
     quotaMb: (formData.get('quotaMb') || '').trim(),
     uploadLimitKBps: (formData.get('uploadLimitKBps') || '').trim(),
     downloadLimitKBps: (formData.get('downloadLimitKBps') || '').trim()

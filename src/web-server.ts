@@ -27,6 +27,8 @@ import { purgeItem, recycleSettings, restoreItem, saveRecycleSettings } from './
 import { authenticateToken, createApiToken } from './api-tokens';
 import { createBackup, restoreBackup } from './backup';
 import { checkForUpdate } from './update-check';
+import { isDirectoryUser, verifyUserPassword } from './credentials';
+import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from './ldap-auth';
 
 const APP_VERSION: string = require('../package.json').version;
 
@@ -265,7 +267,7 @@ export class WebServer {
         }
 
         // Verify password
-        if (!password || !this.db.checkPassword(username, password)) {
+        if (!password || !(await verifyUserPassword(this.db, user, password))) {
           this.logActivity(username, 'WEB_LOGIN_FAILED', 'Invalid credentials', false);
           guard.recordFailure(ip, 'Web GUI', username);
           res.status(401).json({ error: 'Invalid credentials' });
@@ -287,7 +289,8 @@ export class WebServer {
 
         // Create session
         const sessionId = this.generateSessionId();
-        const mustChangePassword = requiresPasswordChange(user, password);
+        // directory users change their password in the directory, not here
+        const mustChangePassword = !isDirectoryUser(user) && requiresPasswordChange(user, password);
         this.sessions.set(sessionId, {
           username: user.username,
           loginTime: new Date(),
@@ -335,6 +338,10 @@ export class WebServer {
       const session = (req as any).session as WebSession;
       const { newPassword, currentPassword } = req.body || {};
 
+      if (isDirectoryUser(this.db.getUser(session.username))) {
+        res.status(400).json({ error: 'Your password is managed by your organisation\'s directory' });
+        return;
+      }
       if (!session.mustChangePassword && !this.db.checkPassword(session.username, currentPassword || '')) {
         res.status(401).json({ error: 'Current password is incorrect' });
         return;
@@ -380,6 +387,26 @@ export class WebServer {
       } catch (error: any) {
         res.status(400).json({ error: error.message });
       }
+    });
+
+    // Directory (LDAP / Active Directory) sign-in
+    this.app.get('/api/ldap', (req: Request, res: Response) => {
+      res.json(publicLdapSettings(this.db));
+    });
+
+    this.app.put('/api/ldap', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      try {
+        saveLdapSettings(this.db, req.body || {});
+        this.logActivity(session.username, 'WEB_LDAP_SETTINGS_UPDATED', 'directory sign-in', true);
+        res.json(publicLdapSettings(this.db));
+      } catch (error: any) {
+        res.status(400).json({ error: error.message });
+      }
+    });
+
+    this.app.post('/api/ldap/test', async (req: Request, res: Response) => {
+      res.json(await testLdap(readLdapSettings(this.db), req.body?.username || undefined));
     });
 
     // Update notifications
@@ -832,7 +859,7 @@ export class WebServer {
     this.app.post('/api/users', (req: Request, res: Response) => {
       try {
         const session = (req as any).session as WebSession;
-        const { username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps, quotaMb, uploadLimitKBps, downloadLimitKBps } = req.body;
+        const { username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps, quotaMb, uploadLimitKBps, downloadLimitKBps, authSource } = req.body;
 
         // DatabaseManager.createUser hashes the password itself
         const user: User = {
@@ -846,7 +873,8 @@ export class WebServer {
           allowedIps: cleanAllowedIps(allowedIps),
           quotaBytes: quotaFromMegabytes(quotaMb),
           uploadLimitKBps: limitFromForm(uploadLimitKBps),
-          downloadLimitKBps: limitFromForm(downloadLimitKBps)
+          downloadLimitKBps: limitFromForm(downloadLimitKBps),
+          authSource: authSource === 'ldap' ? 'ldap' : 'local'
         };
         
         const id = this.db.createUser(user);
@@ -876,6 +904,7 @@ export class WebServer {
         const updates: any = { passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled };
         if (allowedIps !== undefined) updates.allowedIps = cleanAllowedIps(allowedIps);
         if (publicKey !== undefined) updates.publicKey = cleanAuthorizedKeys(publicKey);
+        if (req.body.authSource !== undefined) updates.authSource = req.body.authSource === 'ldap' ? 'ldap' : 'local';
         if (req.body.uploadLimitKBps !== undefined) updates.uploadLimitKBps = limitFromForm(req.body.uploadLimitKBps);
         if (req.body.downloadLimitKBps !== undefined) updates.downloadLimitKBps = limitFromForm(req.body.downloadLimitKBps);
         if (req.body.quotaMb !== undefined) {
@@ -1611,6 +1640,9 @@ export class WebServer {
               };
               input.click();
             }),
+            'get-ldap-settings': () => api('GET', '/api/ldap'),
+            'set-ldap-settings': (settings) => api('PUT', '/api/ldap', settings),
+            'test-ldap': (username) => api('POST', '/api/ldap/test', { username }),
             'check-for-update': () => api('GET', '/api/update'),
             'open-external': async (url) => { window.open(url, '_blank', 'noopener'); return true; },
             'get-webhooks': () => api('GET', '/api/webhooks'),
