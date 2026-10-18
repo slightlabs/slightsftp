@@ -11,7 +11,7 @@ describe('Web GUI Listener Contracts', () => {
 
     expect(src).toContain("ipcMain.handle('get-all-listener-statuses'");
     expect(src).toContain("name: 'Web GUI Server'");
-    expect(src).toContain("protocol: 'HTTP'");
+    expect(src).toMatch(/protocol: .*'HTTPS' : 'HTTP'/);
     expect(src).toContain('id: -1');
   });
 
@@ -20,7 +20,7 @@ describe('Web GUI Listener Contracts', () => {
 
     expect(src).toContain("this.app.get('/api/listener-statuses'");
     expect(src).toContain("name: 'Web GUI Server'");
-    expect(src).toContain("protocol: 'HTTP'");
+    expect(src).toMatch(/protocol: .*'HTTPS' : 'HTTP'/);
     expect(src).toContain('id: -1');
   });
 

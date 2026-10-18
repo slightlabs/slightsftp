@@ -42,7 +42,7 @@ export interface Permission {
 export interface Listener {
   id?: number;
   name: string;
-  protocol: 'FTP' | 'SFTP' | 'HTTP';
+  protocol: 'FTP' | 'SFTP' | 'HTTP' | 'HTTPS';
   bindingIp: string;
   port: number;
   enabled: boolean;

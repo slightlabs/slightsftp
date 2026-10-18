@@ -1,5 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import * as http from 'http';
+import * as https from 'https';
 import * as WebSocket from 'ws';
 import * as path from 'path';
 const fs = require('fs');
@@ -31,21 +32,30 @@ function withoutPassword(user: User): Omit<User, 'password'> {
 // API paths a session may use while a password change is still required
 const PASSWORD_CHANGE_ALLOWED = new Set(['/change-password', '/user', '/logout']);
 
+export interface WebServerOptions {
+  /** serve the GUI over HTTPS with this key / certificate (PEM) */
+  tls?: { key: string; cert: string };
+}
+
 export class WebServer {
   private app: express.Application;
-  private server: http.Server;
+  private server: http.Server | https.Server;
   private wss: WebSocket.Server;
   private db: DatabaseManager;
   private serverManager: ServerManager;
   private sessions: Map<string, WebSession> = new Map();
   private port: number;
+  private tls?: { key: string; cert: string };
 
-  constructor(db: DatabaseManager, serverManager: ServerManager, port: number = 3000) {
+  constructor(db: DatabaseManager, serverManager: ServerManager, port: number = 3000, options: WebServerOptions = {}) {
     this.db = db;
     this.serverManager = serverManager;
     this.port = port;
+    this.tls = options.tls;
     this.app = express();
-    this.server = http.createServer(this.app);
+    this.server = this.tls
+      ? https.createServer({ key: this.tls.key, cert: this.tls.cert }, this.app)
+      : http.createServer(this.app);
     this.wss = new WebSocket.Server({ server: this.server });
 
     this.setupMiddleware();
@@ -199,7 +209,8 @@ export class WebServer {
 
         res.cookie('sessionId', sessionId, {
           httpOnly: true,
-          secure: false, // Set to true in production with HTTPS
+          secure: this.isHttps(),
+          sameSite: 'lax',
           maxAge: 24 * 60 * 60 * 1000 // 24 hours
         });
 
@@ -405,7 +416,7 @@ export class WebServer {
         listener: {
           id: -1,
           name: 'Web GUI Server',
-          protocol: 'HTTP',
+          protocol: this.isHttps() ? 'HTTPS' : 'HTTP',
           port: this.port,
           bindingIp: '0.0.0.0',
           enabled: true,
@@ -1144,7 +1155,7 @@ export class WebServer {
             },
             'get-web-server-status': async () => {
               // In web mode, the server is always running
-              return { running: true, port: window.location.port || 3000 };
+              return { running: true, port: window.location.port || 3000, https: window.location.protocol === 'https:' };
             },
             'start-web-server': async () => {
               // Already running in web mode
@@ -1290,7 +1301,7 @@ export class WebServer {
       this.server.once('error', onError);
       this.server.listen(this.port, () => {
         this.server.off('error', onError);
-        logger.info(`🌐 Web GUI server started on http://localhost:${this.port}`);
+        logger.info(`🌐 Web GUI server started on ${this.getUrl()}`);
         resolve();
       });
     });
@@ -1298,6 +1309,14 @@ export class WebServer {
 
   getPort(): number {
     return this.port;
+  }
+
+  isHttps(): boolean {
+    return !!this.tls;
+  }
+
+  getUrl(host = 'localhost'): string {
+    return `${this.isHttps() ? 'https' : 'http'}://${host}:${this.port}`;
   }
 
   getApp(): express.Application {

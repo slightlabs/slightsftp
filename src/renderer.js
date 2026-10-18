@@ -243,6 +243,7 @@ async function editWebGUIListener(id) {
     
     // Set the current port in the form
     portInput.value = currentPort;
+    document.getElementById('webServerHttps').checked = !!status.https;
     
     // Focus and select the text after a short delay to ensure modal is visible
     setTimeout(() => {
@@ -308,9 +309,13 @@ async function loadListeners() {
     }
     
     const securityNote = isWebGUI ? `
+      ${s.listener.protocol === 'HTTPS' ? `
+      <div style="background: #e8f5e9; border-left: 4px solid #27ae60; padding: 10px; margin-top: 10px; font-size: 12px;">
+        <strong>🔒 HTTPS enabled.</strong> Connections are encrypted. With the generated self-signed certificate browsers show a warning the first time; install your own certificate to avoid it.
+      </div>` : `
       <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 10px; margin-top: 10px; font-size: 12px;">
-        <strong>⚠️ Security Note:</strong> The web server uses HTTP (not HTTPS). Passwords are hashed but transmitted over an unencrypted connection. For production use, consider setting up a reverse proxy with HTTPS/TLS.
-      </div>
+        <strong>⚠️ Security Note:</strong> The web server uses HTTP, so passwords travel unencrypted. Turn on HTTPS with <em>Edit Port → Use HTTPS</em>.
+      </div>`}
       <div style="background: #f8f9fa; padding: 10px; margin-top: 10px; font-size: 12px; border-radius: 4px;">
         <p style="margin: 0 0 6px 0;"><strong>About Web GUI:</strong></p>
         <ul style="margin: 0; padding-left: 18px;">
@@ -333,7 +338,10 @@ async function loadListeners() {
             <span class="status-indicator ${s.running ? 'status-running' : 'status-stopped'}"></span>
             ${s.running ? 'Running' : 'Stopped'}
           </div>
-          ${isWebGUI && s.running ? `<div><strong>URL:</strong> <a href="http://localhost:${s.listener.port}" target="_blank" style="color: #3498db; text-decoration: none;">http://localhost:${s.listener.port}</a></div>` : ''}
+          ${isWebGUI && s.running ? (() => {
+            const url = `${s.listener.protocol === 'HTTPS' ? 'https' : 'http'}://localhost:${s.listener.port}`;
+            return `<div><strong>URL:</strong> <a href="${escapeHtml(url)}" target="_blank" style="color: #3498db; text-decoration: none;">${escapeHtml(url)}</a></div>`;
+          })() : ''}
         </div>
         ${securityNote}
         <div class="listener-actions">
@@ -357,7 +365,7 @@ async function startWebGUIServer() {
   try {
     const result = await ipcRenderer.invoke('start-web-server');
     if (result.success) {
-      alert(`Web server started successfully on port ${result.port}!\n\nYou can now access the web GUI at http://localhost:${result.port}`);
+      alert(`Web server started successfully on port ${result.port}!\n\nYou can now access the web GUI at ${result.url || `http://localhost:${result.port}`}`);
       loadListeners();
     } else {
       alert(`Failed to start web server: ${result.error}`);
@@ -1283,6 +1291,7 @@ document.getElementById('editWebPortForm').addEventListener('submit', async (e) 
   }
   
   try {
+    await ipcRenderer.invoke('set-setting', 'webHttps', document.getElementById('webServerHttps').checked ? 'true' : 'false');
     const status = await ipcRenderer.invoke('get-web-server-status');
     
     // If web server is running, stop it first
@@ -1298,7 +1307,7 @@ document.getElementById('editWebPortForm').addEventListener('submit', async (e) 
     // Start web server on new port
     const startResult = await ipcRenderer.invoke('start-web-server', newPort);
     if (startResult.success) {
-      alert(`Web server ${status.running ? 'restarted' : 'started'} successfully on port ${newPort}!\n\nYou can now access the web GUI at http://localhost:${newPort}`);
+      alert(`Web server ${status.running ? 'restarted' : 'started'} successfully on port ${newPort}!\n\nYou can now access the web GUI at ${startResult.url || `http://localhost:${newPort}`}`);
       closeModal('editWebPortModal');
       loadDashboard();
       loadListeners();

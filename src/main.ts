@@ -7,6 +7,7 @@ import { WebServer } from './web-server';
 import logger from './logger';
 import { resolveUserPath } from './path-utils';
 import { requiresPasswordChange, validateNewPassword } from './password';
+import { getServerCertificate, setCertificateDir } from './tls';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -415,6 +416,23 @@ function setupServerManager(): void {
   serverManager.startAllEnabledListeners();
 }
 
+/**
+ * Start the web GUI server; HTTPS when the `webHttps` setting is on (using the
+ * certificate from the tlsCertPath/tlsKeyPath settings, or a generated one).
+ */
+async function createWebServer(port: number): Promise<WebServer> {
+  let tls: { key: string; cert: string } | undefined;
+  if (db.getSetting('webHttps') === 'true') {
+    tls = await getServerCertificate({
+      certPath: db.getSetting('tlsCertPath'),
+      keyPath: db.getSetting('tlsKeyPath')
+    });
+  }
+  const server = new WebServer(db, serverManager, port, { tls });
+  await server.start();
+  return server;
+}
+
 /** Successful GUI sign-in: swap the login window for the dashboard. */
 function completeLogin(user: any): void {
   authenticatedUser = user;
@@ -755,7 +773,7 @@ function setupIpcHandlers(): void {
       listener: {
         id: -1,
         name: 'Web GUI Server',
-        protocol: 'HTTP' as any,
+        protocol: (webServer?.isHttps() ? 'HTTPS' : 'HTTP') as any,
         port: webServer ? webServer.getPort() : parseInt(process.env.WEB_PORT || '3000'),
         bindingIp: '0.0.0.0',
         enabled: true,
@@ -931,9 +949,7 @@ function setupIpcHandlers(): void {
       }
       
       const webPort = port || parseInt(process.env.WEB_PORT || '3000');
-      const server = new WebServer(db, serverManager, webPort);
-      await server.start();
-      webServer = server;
+      webServer = await createWebServer(webPort);
       
       db.logActivity({
         listenerId: 0,
@@ -943,7 +959,7 @@ function setupIpcHandlers(): void {
         success: true
       });
       
-      return { success: true, port: webPort };
+      return { success: true, port: webPort, https: webServer.isHttps(), url: webServer.getUrl() };
     } catch (err: any) {
       db.logActivity({
         listenerId: 0,
@@ -989,7 +1005,9 @@ function setupIpcHandlers(): void {
   ipcMain.handle('get-web-server-status', async () => {
     return { 
       running: webServer !== null,
-      port: webServer ? webServer.getPort() : null
+      port: webServer ? webServer.getPort() : null,
+      https: webServer ? webServer.isHttps() : db.getSetting('webHttps') === 'true',
+      url: webServer ? webServer.getUrl() : null
     };
   });
 
@@ -1002,9 +1020,7 @@ function setupIpcHandlers(): void {
       }
       
       // Start web server on new port
-      const server = new WebServer(db, serverManager, newPort);
-      await server.start();
-      webServer = server;
+      webServer = await createWebServer(newPort);
       
       db.logActivity({
         listenerId: 0,
@@ -1031,6 +1047,7 @@ function setupIpcHandlers(): void {
 app.whenReady().then(async () => {
   // Ensure all required directories exist
   ensureDirectories();
+  setCertificateDir(getAppDirectories().config);
   
   await initializeDatabase();
   

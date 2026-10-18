@@ -2,6 +2,7 @@ import { DatabaseManager } from './database';
 import { ServerManager } from './server-manager';
 import { WebServer } from './web-server';
 import logger from './logger';
+import { getServerCertificate, setCertificateDir } from './tls';
 
 // Initialize database and server manager
 const db = new DatabaseManager();  // Use default config.db
@@ -49,12 +50,17 @@ console.log('🚀 Starting SLightSFTP Server with Web GUI...\n');
     // Start all enabled listeners
     await serverManager.startAllEnabledListeners();
     
-    // Start web GUI server
-    const webServer = new WebServer(db, serverManager, WEB_PORT);
+    // Start web GUI server (HTTPS when WEB_HTTPS=true or the webHttps setting is on)
+    let tls: { key: string; cert: string } | undefined;
+    if (process.env.WEB_HTTPS === 'true' || (process.env.WEB_HTTPS !== 'false' && db.getSetting('webHttps') === 'true')) {
+      setCertificateDir(process.cwd());
+      tls = await getServerCertificate({ certPath: db.getSetting('tlsCertPath'), keyPath: db.getSetting('tlsKeyPath') });
+    }
+    const webServer = new WebServer(db, serverManager, WEB_PORT, { tls });
     await webServer.start();
     
     logger.info('🎯 Server is ready!');
-    logger.info(`🌐 Access the Web GUI at: http://localhost:${WEB_PORT}`);
+    logger.info(`🌐 Access the Web GUI at: ${webServer.getUrl()}`);
     logger.info('⏹️  Press Ctrl+C to stop the server\n');
     
     // Graceful shutdown

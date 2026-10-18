@@ -32,3 +32,7 @@ release/
 # Playwright
 test-results/
 playwright-report/
+
+# Generated TLS certificate
+server.crt
+server.key

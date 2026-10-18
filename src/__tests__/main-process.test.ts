@@ -454,14 +454,34 @@ describe('Electron main process (main.ts) with real backend', () => {
 
     test('start → reachable over HTTP → status → stop', async () => {
       const port = await getFreePort();
-      expect(await invoke('start-web-server', port)).toEqual({ success: true, port });
+      expect(await invoke('start-web-server', port)).toEqual({ success: true, port, https: false, url: `http://localhost:${port}` });
       expect(await get(port, '/login')).toBe(200);
-      expect(await invoke('get-web-server-status')).toEqual({ running: true, port });
+      expect(await invoke('get-web-server-status')).toMatchObject({ running: true, port, https: false });
       expect(await invoke('start-web-server', port)).toMatchObject({ success: false, error: expect.stringMatching(/already running/) });
 
       expect(await invoke('stop-web-server')).toEqual({ success: true });
-      expect(await invoke('get-web-server-status')).toEqual({ running: false, port: null });
+      expect(await invoke('get-web-server-status')).toMatchObject({ running: false, port: null });
       expect(await invoke('stop-web-server')).toMatchObject({ success: false });
+    });
+
+    test('with the webHttps setting on, the web GUI is served over HTTPS with a generated certificate', async () => {
+      const https = require('https');
+      const port = await getFreePort();
+      await invoke('set-setting', 'webHttps', 'true');
+      try {
+        expect(await invoke('start-web-server', port)).toEqual({ success: true, port, https: true, url: `https://localhost:${port}` });
+        expect(fs.existsSync(path.join(installDir, 'config', 'server.crt'))).toBe(true);
+        const status = await new Promise<number>((resolve, reject) => {
+          https.get({ host: '127.0.0.1', port, path: '/login', rejectUnauthorized: false, agent: false }, (res: any) => { res.resume(); resolve(res.statusCode); }).on('error', reject);
+        });
+        expect(status).toBe(200);
+        expect(await invoke('get-web-server-status')).toMatchObject({ running: true, https: true });
+        const web = (await invoke('get-all-listener-statuses')).find((s: any) => s.listener.id === -1);
+        expect(web.listener.protocol).toBe('HTTPS');
+      } finally {
+        await invoke('stop-web-server');
+        await invoke('set-setting', 'webHttps', 'false');
+      }
     });
 
     test('starting on a port that is already in use fails cleanly instead of hanging', async () => {
@@ -470,7 +490,7 @@ describe('Electron main process (main.ts) with real backend', () => {
       try {
         const result = await invoke('start-web-server', port);
         expect(result).toMatchObject({ success: false, error: expect.stringMatching(/EADDRINUSE/) });
-        expect(await invoke('get-web-server-status')).toEqual({ running: false, port: null });
+        expect(await invoke('get-web-server-status')).toMatchObject({ running: false, port: null });
       } finally {
         blocker.close();
       }

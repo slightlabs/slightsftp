@@ -305,6 +305,33 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
     });
   });
 
+  describe('web GUI server settings', () => {
+    beforeAll(() => openPanel('listeners'));
+    const webCard = () => $$('#listeners-list .listener-card').find(c => c.querySelector('h3')!.textContent === 'Web GUI Server')!;
+
+    test('a plain-HTTP web server shows the security warning', () => {
+      expect(webCard().textContent).toContain('passwords travel unencrypted');
+    });
+
+    test('Edit Port with "Use HTTPS" saves the setting and restarts on the new port', async () => {
+      buttonByText(webCard(), 'Edit Port').click();
+      await flush();
+      jest.advanceTimersByTime(200);
+      expect($('#editWebPortModal').classList.contains('active')).toBe(true);
+      expect($<HTMLInputElement>('#webServerHttps').checked).toBe(false);
+
+      $<HTMLInputElement>('#webServerHttps').checked = true;
+      $<HTMLInputElement>('#webServerPort').value = '3443';
+      backend['start-web-server'] = (port?: number) => { model.webRunning = true; return { success: true, port, https: true, url: `https://localhost:${port}` }; };
+      await submit($<HTMLFormElement>('#editWebPortForm'));
+
+      expect(lastCall('set-setting')).toEqual(['webHttps', 'true']);
+      expect(calls('stop-web-server').length).toBeGreaterThan(0);
+      expect(lastCall('start-web-server')).toEqual([3443]);
+      expect((window.alert as jest.Mock).mock.calls.at(-1)[0]).toContain('https://localhost:3443');
+    });
+  });
+
   describe('users panel', () => {
     beforeAll(() => openPanel('users'));
 
