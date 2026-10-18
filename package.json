@@ -3,6 +3,9 @@
   "version": "1.6.0",
   "description": "Multi-user FTP/SFTP server with GUI management",
   "main": "dist/main.js",
+  "engines": {
+    "node": ">=22.12"
+  },
   "scripts": {
     "build": "tsc && node -e \"const fs=require('fs');const path=require('path');if(!fs.existsSync('dist/assets'))fs.mkdirSync('dist/assets',{recursive:true});fs.copyFileSync('assets/icon.png','dist/assets/icon.png');fs.copyFileSync('src/index.html','dist/index.html');fs.copyFileSync('src/login.html','dist/login.html');fs.copyFileSync('src/admin.html','dist/admin.html');fs.copyFileSync('src/renderer.js','dist/renderer.js');fs.copyFileSync('src/portal.html','dist/portal.html');fs.copyFileSync('src/share.html','dist/share.html');\"",
     "start": "npm run build && electron --no-sandbox dist/main.js",
@@ -152,7 +155,7 @@
     "@types/supertest": "^7.2.1",
     "@types/ws": "^8.18.1",
     "azurite": "^3.37.0",
-    "electron": "^28.1.0",
+    "electron": "^44.9.0",
     "electron-builder": "^26.0.12",
     "ftp": "^0.3.10",
     "icon-gen": "^5.0.0",

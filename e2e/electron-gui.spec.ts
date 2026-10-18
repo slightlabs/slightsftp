@@ -7,6 +7,8 @@ import { test, expect, _electron as electron, ElectronApplication, Page } from '
 import * as fs from 'fs';
 import * as path from 'path';
 import { DIST, getFreePort, httpStatus, makeTempDir } from './helpers';
+import { startFakeS3 } from '../src/__tests__/helpers/fake-s3';
+import { createAzureContainer, startAzurite } from '../src/__tests__/helpers/cloud-servers';
 
 const SftpClient = require('ssh2-sftp-client');
 
@@ -154,6 +156,66 @@ test('a listener and user created in the desktop GUI serve real SFTP traffic', a
   await nav('files');
   await dashboard.selectOption('#fileBrowserUser', 'desk');
   await expect(dashboard.locator('#fileList')).toContainText('hello.txt');
+});
+
+test('S3 and Azure Blob connections made in the desktop app serve SFTP traffic', async () => {
+  const s3 = await startFakeS3({ bucket: 'desk-bucket' });
+  const azurite = await startAzurite();
+  await createAzureContainer(azurite.connectionString, 'desk-files');
+  try {
+    await nav('storage');
+    const addConnection = async (fill: (form: ReturnType<Page['locator']>) => Promise<void>, name: string) => {
+      await dashboard.getByRole('button', { name: 'Add Connection' }).click();
+      const form = dashboard.locator('#storageForm');
+      await form.locator('[name=name]').fill(name);
+      await fill(form);
+      await form.getByRole('button', { name: 'Test connection' }).click();
+      await expect(dashboard.locator('#storageTestResult')).toContainText('✓ Connected');
+      await form.getByRole('button', { name: 'Save' }).click();
+      await expect(dashboard.locator('#storage-table')).toContainText(name);
+    };
+    await addConnection(async form => {
+      await form.locator('[name=bucket]').fill('desk-bucket');
+      await form.locator('[name=endpoint]').fill(s3.endpoint);
+      await form.locator('[name=accessKeyId]').fill('k');
+      await form.locator('[name=secretAccessKey]').fill('s');
+      await form.locator('#storage-path-style').check();
+    }, 'Desk S3');
+    await addConnection(async form => {
+      await form.locator('[name=type]').selectOption('azure');
+      await form.locator('[name=container]').fill('desk-files');
+      await form.locator('[name=connectionString]').fill(azurite.connectionString);
+    }, 'Desk Azure');
+
+    await nav('users');
+    await dashboard.locator('#users-table tbody tr', { hasText: 'desk' }).getByRole('button', { name: 'Edit' }).click();
+    const modal = dashboard.locator('#editUserModal');
+    for (const [vpath, label] of [['/s3', '☁ Desk S3 (S3)'], ['/azure', '☁ Desk Azure (Azure Blob)']]) {
+      await modal.getByRole('button', { name: 'Add Virtual Path' }).click();
+      await dashboard.fill('#vpVirtualPath', vpath);
+      await dashboard.selectOption('#vpStorage', { label });
+      await dashboard.fill('#vpRealPath', 'desk');
+      await dashboard.locator('#virtualPathForm').getByRole('button', { name: 'OK' }).click();
+    }
+    await modal.getByRole('button', { name: 'Update User' }).click();
+    await expect(modal).not.toHaveClass(/active/);
+
+    const sftpPort = Number((await card('Desktop SFTP').textContent())!.match(/127\.0\.0\.1:(\d+)/)![1]);
+    const client = new SftpClient();
+    await client.connect({ host: '127.0.0.1', port: sftpPort, username: 'desk', password: 'desk-pass', readyTimeout: 5000 });
+    try {
+      await client.put(Buffer.from('into s3 from electron'), '/s3/a.txt');
+      await client.put(Buffer.from('into azure from electron'), '/azure/b.txt');
+      expect(s3.objects.get('desk/a.txt')?.body.toString()).toBe('into s3 from electron');
+      expect((await client.get('/azure/b.txt')).toString()).toBe('into azure from electron');
+      expect((await client.list('/azure')).map((e: any) => e.name)).toEqual(['b.txt']);
+    } finally {
+      await client.end();
+    }
+  } finally {
+    await s3.close();
+    await azurite.stop();
+  }
 });
 
 test('Logout returns to the login window; the dashboard is closed', async () => {
