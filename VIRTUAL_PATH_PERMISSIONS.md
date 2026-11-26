@@ -133,7 +133,7 @@ Added comprehensive virtual path permissions system to SLightSFTP, allowing fine
 **Usage:**
 ```bash
 npm run build
-node dist/test-vp-permissions.js
+npm run tools:build && node dist-tools/tools/test-vp-permissions.js
 ```
 
 ## Permission Model
@@ -244,7 +244,7 @@ npm test
 npm run build
 
 # Run test client
-node dist/test-vp-permissions.js
+npm run tools:build && node dist-tools/tools/test-vp-permissions.js
 ```
 
 ## Database Migration

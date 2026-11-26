@@ -162,12 +162,12 @@ The test suite expects certain operations to fail for restricted users - this is
 ## Development
 
 To add more test scenarios:
-1. Edit [src/test-client.ts](src/test-client.ts)
+1. Edit [tools/test-client.ts](tools/test-client.ts)
 2. Add new test cases in `testSFTP()` or `testFTP()` methods
 3. Rebuild: `npm run build`
 4. Run: `npm run test:client`
 
 To add more test users:
-1. Edit [src/setup-test-users.ts](src/setup-test-users.ts)
+1. Edit [tools/setup-test-users.ts](tools/setup-test-users.ts)
 2. Add user configuration to `testUsers` array
 3. Run: `npm run setup:testusers`

@@ -1,5 +1,5 @@
-import { DatabaseManager } from './database';
-import { ServerManager } from './server-manager';
+import { DatabaseManager } from '../src/database';
+import { ServerManager } from '../src/server-manager';
 
 // Initialize database and server manager
 const db = new DatabaseManager();  // Use default config.db

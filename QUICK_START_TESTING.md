@@ -33,7 +33,7 @@ npm run test:client
 ### Option 2: Use Server-Only Mode
 ```bash
 # Terminal 1: Start server without GUI
-node dist/server-only.js
+npm run tools:build && node dist-tools/tools/server-only.js
 
 # Terminal 2: Run tests
 npm run test:client
@@ -108,7 +108,7 @@ Total Time: 3200ms
 
 ### Connection Refused
 **Problem:** Tests show "Remote host refused connection"  
-**Solution:** Start the server first with `npm start` or `node dist/server-only.js`
+**Solution:** Start the server first with `npm start` or `npm run tools:build && node dist-tools/tools/server-only.js`
 
 ### Users Don't Exist
 **Problem:** Authentication failures  
