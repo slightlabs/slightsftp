@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+- Monitoring: Prometheus metrics at `GET /metrics` (API token required) — sessions,
+  listener status, sign-ins, transfers and bytes by protocol, bans, plus process and
+  Node.js runtime metrics — and health checks `GET /healthz` (liveness) and `GET /readyz`
+  (fails while an enabled listener is down). The Docker `HEALTHCHECK` now uses `/readyz`,
+  so a listener that cannot start marks the container unhealthy.
+
 ### Changed
 - Graceful shutdown. On SIGTERM / SIGINT (`docker stop`, systemd, Ctrl+C) the headless
   server stops accepting connections, gives transfers in progress up to

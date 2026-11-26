@@ -1,5 +1,6 @@
 /**
- * Docker HEALTHCHECK: is the web GUI answering on WEB_PORT?
+ * Docker HEALTHCHECK: is the server ready on WEB_PORT (GET /readyz: the
+ * database answers and every enabled listener accepts connections)?
  *
  * HTTPS can be on through WEB_HTTPS or the webHttps setting (and usually uses
  * a self-signed certificate), so try HTTPS first without certificate checks,
@@ -12,7 +13,7 @@ const port = Number(process.env.WEB_PORT) || 3000;
 
 function probe(secure: boolean): Promise<boolean> {
   return new Promise(resolve => {
-    const options = { host: '127.0.0.1', port, path: '/login', timeout: 4000, rejectUnauthorized: false };
+    const options = { host: '127.0.0.1', port, path: '/readyz', timeout: 4000, rejectUnauthorized: false };
     const req = (secure ? https : http).get(options, res => {
       res.resume();
       resolve(res.statusCode === 200);
