@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Changed
+- The configuration database has a schema version (`PRAGMA user_version`) and is upgraded
+  by numbered migrations, each in its own transaction. Before an upgrade changes an
+  existing database, a copy is saved next to it (`config.db.v<old>-<time>.bak`, newest
+  three kept). A database or backup written by a newer version is refused with a clear
+  message instead of being opened; the desktop app shows it in a dialog.
 - Web GUI and file portal sign-ins are stored in the configuration database (only a
   SHA-256 hash of each session token), so restarting or updating the server no longer
   signs everyone out. Sessions are left out of backups; restoring one keeps the current

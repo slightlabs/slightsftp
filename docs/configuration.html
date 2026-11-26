@@ -153,6 +153,10 @@
                         <li>A standard SQLite database in WAL mode: every change is written to disk as it is made
                             (config.db-wal and config.db-shm sit next to it while the server runs)</li>
                         <li>Supports standard SQLite tools for management</li>
+                        <li>Upgrades: before a new version changes the database, it saves a copy as
+                            <code>config.db.v&lt;old schema&gt;-&lt;time&gt;.bak</code> (the newest three are kept). To go back,
+                            reinstall the old version and rename the copy to config.db. A newer database is never
+                            opened by an older version</li>
                     </ul>
                 </div>
 
