@@ -3,7 +3,8 @@
 
 FROM node:22-bookworm-slim AS build
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY package.json package-lock.json .npmrc ./
+COPY vendor ./vendor
 RUN npm ci --ignore-scripts
 COPY tsconfig.json ./
 COPY src ./src
@@ -17,8 +18,9 @@ ENV NODE_ENV=production \
     FTP_PASV_MIN=30000 \
     FTP_PASV_MAX=30009
 WORKDIR /app
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+COPY package.json package-lock.json .npmrc ./
+COPY vendor ./vendor
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force && rm -rf vendor
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/assets ./assets
 

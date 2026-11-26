@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Security
+- `npm audit` reports no known vulnerabilities in the shipped dependencies. The
+  unmaintained `ip` package under `ftp-srv` (GHSA-2p57-rm9w-gvfp, no fixed release) is
+  replaced by a minimal vendored implementation of the one function `ftp-srv` uses
+  (`vendor/ip`). CI now fails on high-severity advisories in production dependencies.
 - Developer scripts no longer ship in the desktop packages and the Docker image. Among
   them was a one-off script that reset the `admin` password to `admin123`; it and three
   other obsolete scripts were removed, and the test tools moved to `tools/` (built to
