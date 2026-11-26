@@ -283,7 +283,8 @@ describe('WebServer REST API', () => {
     });
 
     test('GET /api/users/:username — 404 for missing', async () => {
-      mockDb.getUser.mockReturnValueOnce(undefined as any);
+      // the session's own user still resolves; only the target is missing
+      mockDb.getUser.mockImplementation(((u: string) => (u === ADMIN_USER.username ? ADMIN_USER : undefined)) as any);
       const res = await request(app).get('/api/users/nobody').set('Cookie', cookie);
       expect(res.status).toBe(404);
     });
@@ -308,7 +309,8 @@ describe('WebServer REST API', () => {
     });
 
     test('PUT /api/users/:username — unknown user → 404', async () => {
-      mockDb.getUser.mockReturnValueOnce(undefined);
+      // the session's own user still resolves; only the target is missing
+      mockDb.getUser.mockImplementation(((u: string) => (u === ADMIN_USER.username ? ADMIN_USER : undefined)) as any);
       const res = await request(app).put('/api/users/ghost').set('Cookie', cookie)
         .send({ passwordEnabled: true });
       expect(res.status).toBe(404);
@@ -348,7 +350,8 @@ describe('WebServer REST API', () => {
     });
 
     test('GET /api/users/:username/subscriptions — 404 for missing user', async () => {
-      mockDb.getUser.mockReturnValueOnce(undefined as any);
+      // the session's own user still resolves; only the target is missing
+      mockDb.getUser.mockImplementation(((u: string) => (u === ADMIN_USER.username ? ADMIN_USER : undefined)) as any);
       const res = await request(app).get('/api/users/ghost/subscriptions').set('Cookie', cookie);
       expect(res.status).toBe(404);
     });
@@ -379,7 +382,8 @@ describe('WebServer REST API', () => {
     });
 
     test('GET /api/users/:username/virtual-paths — 404 for missing user', async () => {
-      mockDb.getUser.mockReturnValueOnce(undefined as any);
+      // the session's own user still resolves; only the target is missing
+      mockDb.getUser.mockImplementation(((u: string) => (u === ADMIN_USER.username ? ADMIN_USER : undefined)) as any);
       const res = await request(app).get('/api/users/ghost/virtual-paths').set('Cookie', cookie);
       expect(res.status).toBe(404);
     });
@@ -481,7 +485,8 @@ describe('WebServer REST API', () => {
     });
 
     test('GET /api/files/browse — 404 for unknown user', async () => {
-      mockDb.getUser.mockReturnValueOnce(undefined as any);
+      // the session's own user still resolves; only the target is missing
+      mockDb.getUser.mockImplementation(((u: string) => (u === ADMIN_USER.username ? ADMIN_USER : undefined)) as any);
       const res = await request(app).get('/api/files/browse?username=ghost&path=/').set('Cookie', cookie);
       expect(res.status).toBe(404);
     });
@@ -490,6 +495,99 @@ describe('WebServer REST API', () => {
       mockDb.getVirtualPaths.mockReturnValue([]);
       const res = await request(app).get('/api/files/browse?username=admin&path=/secret').set('Cookie', cookie);
       expect(res.status).toBe(403);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  describe('Session lifetime and revocation', () => {
+    let cookie: string;
+    beforeEach(async () => { cookie = await getAuthCookie(); });
+
+    test('a deleted user\'s session stops working', async () => {
+      await request(app).get('/api/listeners').set('Cookie', cookie).expect(200);
+      mockDb.getUser.mockReturnValue(undefined as any);
+      await request(app).get('/api/listeners').set('Cookie', cookie).expect(401);
+      // and stays gone even if the name is reused
+      mockDb.getUser.mockReturnValue(ADMIN_USER as any);
+      await request(app).get('/api/listeners').set('Cookie', cookie).expect(401);
+    });
+
+    test('revoking GUI access ends the session', async () => {
+      mockDb.getUser.mockReturnValue({ ...ADMIN_USER, guiEnabled: false } as any);
+      await request(app).get('/api/listeners').set('Cookie', cookie).expect(401);
+    });
+
+    test('sessions expire after SESSION_TTL_MS even if the cookie is kept', async () => {
+      const { SESSION_TTL_MS } = require('../web-server');
+      const now = Date.now();
+      const spy = jest.spyOn(Date, 'now').mockReturnValue(now + SESSION_TTL_MS + 1000);
+      try {
+        await request(app).get('/api/listeners').set('Cookie', cookie).expect(401);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    test('an admin resetting a user\'s password signs that user out, but not the admin', async () => {
+      const bob = { ...ADMIN_USER, id: 2, username: 'bob' };
+      mockDb.getUser.mockImplementation(((u: string) => (u === 'bob' ? bob : u === 'admin' ? ADMIN_USER : undefined)) as any);
+      const bobLogin = await request(app).post('/api/login').send({ username: 'bob', password: PASSWORD }).expect(200);
+      const bobCookie = String(bobLogin.headers['set-cookie']).split(';')[0];
+      await request(app).get('/api/listeners').set('Cookie', bobCookie).expect(200);
+
+      await request(app).put('/api/users/bob').set('Cookie', cookie).send({ password: 'NewPassw0rd!' }).expect(200);
+      await request(app).get('/api/listeners').set('Cookie', bobCookie).expect(401);
+      await request(app).get('/api/listeners').set('Cookie', cookie).expect(200);
+    });
+
+    test('deleting a user via the API signs them out', async () => {
+      const bob = { ...ADMIN_USER, id: 2, username: 'bob' };
+      mockDb.getUser.mockImplementation(((u: string) => (u === 'bob' ? bob : u === 'admin' ? ADMIN_USER : undefined)) as any);
+      const bobLogin = await request(app).post('/api/login').send({ username: 'bob', password: PASSWORD }).expect(200);
+      const bobCookie = String(bobLogin.headers['set-cookie']).split(';')[0];
+      await request(app).delete('/api/users/bob').set('Cookie', cookie).expect(200);
+      await request(app).get('/api/listeners').set('Cookie', bobCookie).expect(401);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  describe('Login does not reveal accounts', () => {
+    test('a user without GUI access and a wrong password gets the generic 401', async () => {
+      mockDb.getUser.mockReturnValue({ ...ADMIN_USER, guiEnabled: false } as any);
+      const res = await request(app).post('/api/login').send({ username: 'admin', password: 'wrong' });
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('Invalid credentials');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  describe('Generic settings endpoints', () => {
+    let cookie: string;
+    beforeEach(async () => {
+      cookie = await getAuthCookie();
+      (mockDb as any).getAllSettings = jest.fn().mockReturnValue({ logRetentionDays: '30', ldapBindPassword: 's3cret', ldapUrl: 'ldap://x' });
+      (mockDb as any).setSetting = jest.fn();
+      mockDb.getSetting.mockImplementation(((k: string) => (k === 'ldapBindPassword' ? 's3cret' : undefined)) as any);
+    });
+
+    test('never return the LDAP bind password', async () => {
+      const all = await request(app).get('/api/settings').set('Cookie', cookie).expect(200);
+      expect(all.body).toEqual({ logRetentionDays: '30', ldapUrl: 'ldap://x' });
+      const one = await request(app).get('/api/settings/ldapBindPassword').set('Cookie', cookie).expect(200);
+      expect(one.body.value).toBeNull();
+    });
+
+    test('refuse keys that have their own validated endpoints', async () => {
+      for (const key of ['bruteForceEnabled', 'ipAllowlist', 'ldapBindPassword', 'defaultAdminSeeded']) {
+        await request(app).put(`/api/settings/${key}`).set('Cookie', cookie).send({ value: 'false' }).expect(400);
+      }
+      expect((mockDb as any).setSetting).not.toHaveBeenCalled();
+    });
+
+    test('validate values of plain settings', async () => {
+      await request(app).put('/api/settings/logRetentionDays').set('Cookie', cookie).send({ value: 'abc' }).expect(400);
+      await request(app).put('/api/settings/logRetentionDays').set('Cookie', cookie).send({ value: '45' }).expect(200);
+      expect((mockDb as any).setSetting).toHaveBeenCalledWith('logRetentionDays', '45');
     });
   });
 });

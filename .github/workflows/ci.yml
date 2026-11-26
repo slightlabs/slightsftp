@@ -90,7 +90,15 @@ jobs:
           docker run -d --name slightsftp-ci -p 3000:3000 slightsftp:ci
           for i in $(seq 1 30); do curl -fs http://127.0.0.1:3000/login >/dev/null && break; sleep 2; done
           curl -fs http://127.0.0.1:3000/login >/dev/null
+          docker exec slightsftp-ci node /app/dist/healthcheck.js
           docker rm -f slightsftp-ci
+      - name: Smoke test (HTTPS, as in docker-compose.yml)
+        run: |
+          docker run -d --name slightsftp-ci-https -e WEB_HTTPS=true -p 3001:3000 slightsftp:ci
+          for i in $(seq 1 30); do curl -kfs https://127.0.0.1:3001/login >/dev/null && break; sleep 2; done
+          curl -kfs https://127.0.0.1:3001/login >/dev/null
+          docker exec slightsftp-ci-https node /app/dist/healthcheck.js
+          docker rm -f slightsftp-ci-https
 
   build-linux:
     name: Build Linux packages

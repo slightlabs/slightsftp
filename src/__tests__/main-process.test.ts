@@ -404,7 +404,7 @@ describe('Electron main process (main.ts) with real backend', () => {
     test('clear-activities-by-date and clear-all-activities report counts', async () => {
       const byDate = await invoke('clear-activities-by-date', new Date(Date.now() + 60_000).toISOString());
       expect(byDate.count).toBeGreaterThan(0);
-      await invoke('set-setting', 'probe', '1'); // no activity
+      await invoke('set-setting', 'setupComplete', 'true'); // no activity
       expect(await invoke('clear-all-activities')).toEqual({ count: expect.any(Number) });
       expect(await invoke('get-activity-count')).toBe(0);
     });

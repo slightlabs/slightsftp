@@ -31,5 +31,5 @@ VOLUME ["/data"]
 
 EXPOSE 3000 2222 2121 30000-30009
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.WEB_PORT||3000)+'/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD ["node", "/app/dist/healthcheck.js"]
 CMD ["node", "/app/dist/web-only.js"]

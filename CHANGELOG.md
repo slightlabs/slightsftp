@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### Security
+- The live-events WebSocket of the web GUI now requires a signed-in session (or an API
+  token). Before, anyone who could reach the web port could watch the activity feed.
+- Web GUI sessions now end after 24 hours on the server, and immediately when the user is
+  deleted, loses GUI access or has their password reset (a password change also signs out
+  the user's other sessions).
+- The default `admin` / `admin123` account is only created on a fresh install. Deleting or
+  renaming it is now permanent; before, it came back with the default password on restart.
+- `GET /api/settings` no longer returns the LDAP bind password, and `PUT /api/settings/:key`
+  only accepts plain GUI settings (security settings have their own validated endpoints).
+- Web sign-in checks the password before revealing whether an account has GUI access, and
+  unknown accounts take as long to reject as a wrong password.
+- `config.db` is now readable by its owner only (existing files are fixed on start).
+- Dependency updates for published advisories (`ws`, `body-parser`, `path-to-regexp`,
+  `proxy-addr`, `lodash`, ...).
+
+### Fixes
+- `config.db` is written atomically, so a crash or power loss during a save can no longer
+  leave a truncated database. Activity log writes are batched instead of rewriting the
+  whole file for every event.
+- Each live activity event was sent to the web GUI twice.
+- Docker: the health check works with `WEB_HTTPS=true` (it always reported *unhealthy*),
+  and the headless server now prunes the activity log by its retention period.
+- Linux and macOS packages keep configuration, keys and logs in the per-user application
+  data folder (e.g. `~/.config/SLightSFTP`) instead of the read-only program folder.
+  Windows installs are unchanged.
+
 ## v1.7.0 — 2026-10-19
 
 ### New

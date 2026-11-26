@@ -6,6 +6,7 @@ import { getServerCertificate, setCertificateDir } from './tls';
 import { WebhookDispatcher } from './webhooks';
 import { SyslogForwarder } from './syslog';
 import { purgeExpired } from './recycle-bin';
+import { seedDefaultAdmin } from './default-admin';
 
 // Initialize database and server manager
 const db = new DatabaseManager();  // Use default config.db
@@ -22,25 +23,23 @@ console.log('🚀 Starting SLightSFTP Server with Web GUI...\n');
     await db.init();
     logger.info('📊 Database initialized');
     
-    // Ensure admin user exists
-    const adminUser = db.getUser('admin');
-    if (!adminUser) {
-      // DatabaseManager.createUser hashes the password itself
-      db.createUser({
-        username: 'admin',
-        password: 'admin123',
-        passwordEnabled: true,
-        publicKey: '',
-        guiEnabled: true,
-        mustChangePassword: true
-      });
-      logger.info('👤 Created default admin user (username: admin, password: admin123)');
-    } else {
-      logger.info('👤 Admin user already exists');
+    // Fresh install only: create the default admin (a password change is forced on first sign-in)
+    if (seedDefaultAdmin(db) !== null) {
+      logger.info('👤 Created default admin user (username: admin, password: admin123 — change it on first sign-in)');
     }
-    
-    logger.info('🔑 Default users available for testing');
-    
+
+    // Keep the activity log within its retention period (also daily while running)
+    const cleanupActivities = () => {
+      try {
+        const removed = db.cleanupOldActivities();
+        if (removed) logger.info(`🧹 Removed ${removed} activity log entr${removed === 1 ? 'y' : 'ies'} past the retention period`);
+      } catch (err: any) {
+        logger.error('Activity log cleanup failed:', err.message);
+      }
+    };
+    cleanupActivities();
+    setInterval(cleanupActivities, 86_400_000).unref();
+
     // Get all listeners and start them
     const listeners = db.getAllListeners();
     logger.info(`📡 Found ${listeners.length} listener(s) configured`);
@@ -84,6 +83,7 @@ console.log('🚀 Starting SLightSFTP Server with Web GUI...\n');
       await serverManager.stopAllListeners();
       logger.info('✅ All FTP/SFTP servers stopped');
       
+      db.close(); // writes any pending activity log entries
       logger.info('👋 Goodbye!\n');
       process.exit(0);
     };

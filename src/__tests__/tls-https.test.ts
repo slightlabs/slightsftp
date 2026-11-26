@@ -139,7 +139,9 @@ describe('web GUI over HTTPS', () => {
   });
 
   test('the live activity feed works over wss://', async () => {
-    const ws = new WebSocket(`wss://127.0.0.1:${port}`, { rejectUnauthorized: false });
+    const login = await get('/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+    const sessionCookie = String(login.headers['set-cookie']).split(';')[0];
+    const ws = new WebSocket(`wss://127.0.0.1:${port}`, { rejectUnauthorized: false, headers: { Cookie: sessionCookie } });
     await new Promise((resolve, reject) => { ws.once('open', resolve); ws.once('error', reject); });
     ws.close();
   });

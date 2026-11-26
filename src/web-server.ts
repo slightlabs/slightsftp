@@ -30,6 +30,8 @@ import { checkForUpdate } from './update-check';
 import { isDirectoryUser, verifyUserPassword } from './credentials';
 import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from './ldap-auth';
 import { cloudTarget, deleteConnection, listConnectionsForAdmin, saveConnection, sendCloudFile, testConnectionInput } from './cloud-storage';
+import { publicSettings, SECRET_SETTINGS, validateSetting } from './settings-policy';
+import { hashPassword, verifyPasswordHash } from './password';
 
 const APP_VERSION: string = require('../package.json').version;
 
@@ -46,6 +48,26 @@ interface WebSession {
 
 // API paths a session may use while a password change is still required
 const PASSWORD_CHANGE_ALLOWED = new Set(['/change-password', '/user', '/logout']);
+
+/** Admin sessions end this long after sign-in (matches the cookie lifetime). */
+export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const SESSION_SWEEP_MS = 10 * 60 * 1000;
+
+// Compared against when the user does not exist, so a missing account takes as
+// long to reject as a wrong password (no user enumeration by timing)
+let dummyHash: string | null = null;
+const timingDummyHash = () => (dummyHash ??= hashPassword(crypto.randomBytes(16).toString('hex')));
+
+/** Read one cookie from a raw Cookie header (WebSocket upgrades skip cookie-parser). */
+function cookieValue(header: string | undefined, name: string): string | undefined {
+  for (const part of String(header || '').split(';')) {
+    const eq = part.indexOf('=');
+    if (eq > 0 && part.slice(0, eq).trim() === name) {
+      try { return decodeURIComponent(part.slice(eq + 1).trim()); } catch { return undefined; }
+    }
+  }
+  return undefined;
+}
 
 export interface WebServerOptions {
   /** serve the GUI over HTTPS with this key / certificate (PEM) */
@@ -67,6 +89,7 @@ export class WebServer {
   private tls?: { key: string; cert: string };
   private webhooks?: WebhookDispatcher;
   private syslog?: SyslogForwarder;
+  private sweepTimer: NodeJS.Timeout;
 
   constructor(db: DatabaseManager, serverManager: ServerManager, port: number = 3000, options: WebServerOptions = {}) {
     this.db = db;
@@ -79,7 +102,25 @@ export class WebServer {
     this.server = this.tls
       ? https.createServer({ key: this.tls.key, cert: this.tls.cert }, this.app)
       : http.createServer(this.app);
-    this.wss = new WebSocket.Server({ server: this.server });
+    // Live events (activity, listener status) are for signed-in admins only
+    this.wss = new WebSocket.Server({
+      server: this.server,
+      verifyClient: (info, done) => {
+        let id: string | null = null;
+        try {
+          id = this.socketAuth(info.req);
+        } catch (err) {
+          // fail closed: an error must not leave the upgrade hanging or let it through
+          logger.error('WebSocket authentication failed:', err);
+        }
+        if (id === null) {
+          done(false, 401, 'Unauthorized');
+          return;
+        }
+        (info.req as any).slightSessionId = id;
+        done(true);
+      },
+    });
 
     this.setupMiddleware();
     this.setupRoutes();
@@ -88,8 +129,22 @@ export class WebServer {
     // Push FTP/SFTP server activity (already persisted by ServerManager) to GUI clients
     if (typeof (serverManager as any)?.on === 'function') {
       serverManager.on('activity', this.onServerActivity);
+      serverManager.on('listener-started', this.onListenerStarted);
+      serverManager.on('listener-stopped', this.onListenerStopped);
     }
+
+    // Forget expired sessions and close live connections that lost theirs
+    this.sweepTimer = setInterval(() => this.sweepSessions(), SESSION_SWEEP_MS);
+    this.sweepTimer.unref();
   }
+
+  private onListenerStarted = (listenerId: number): void => {
+    this.broadcast({ type: 'listener-started', data: listenerId });
+  };
+
+  private onListenerStopped = (listenerId: number): void => {
+    this.broadcast({ type: 'listener-stopped', data: listenerId });
+  };
 
   private onServerActivity = (activity: any): void => {
     this.broadcast({ type: 'activity', data: { ...activity, timestamp: activity.timestamp || new Date().toISOString() } });
@@ -120,11 +175,76 @@ export class WebServer {
   }
 
   private authenticateSession(req: Request): WebSession | null {
-    const sessionId = req.cookies.sessionId;
-    if (!sessionId) {
+    return this.validSession(req.cookies?.sessionId, req.socket.remoteAddress);
+  }
+
+  /**
+   * The session for this id, if it is still valid: not expired, and its user
+   * still exists, still has GUI access and may sign in from this address.
+   * Invalid sessions are forgotten.
+   */
+  private validSession(sessionId: string | undefined, ip: string | undefined): WebSession | null {
+    if (!sessionId) return null;
+    const session = this.sessions.get(sessionId);
+    if (!session) return null;
+    const user = this.db.getUser(session.username);
+    if (Date.now() - session.loginTime.getTime() > SESSION_TTL_MS || !user || !user.guiEnabled) {
+      this.sessions.delete(sessionId);
       return null;
     }
-    return this.sessions.get(sessionId) || null;
+    if (!userIpAllowed(user, ip)) return null;
+    return session;
+  }
+
+  /**
+   * Who may open the live-events WebSocket: a signed-in session (cookie) that
+   * does not still owe a password change, or a valid API token. Returns the
+   * session id ('' for a token), or null to refuse.
+   */
+  private socketAuth(req: http.IncomingMessage): string | null {
+    const ip = req.socket.remoteAddress;
+    const auth = req.headers.authorization;
+    if (auth && /^Bearer\s+/i.test(auth)) {
+      const guard = getLoginGuard(this.db);
+      if (guard.isBanned(ip)) return null;
+      const username = authenticateToken(this.db, auth.replace(/^Bearer\s+/i, '').trim());
+      const user = username ? this.db.getUser(username) : undefined;
+      if (!user || !user.guiEnabled || !userIpAllowed(user, ip)) {
+        guard.recordFailure(ip, 'API token');
+        return null;
+      }
+      return '';
+    }
+    const id = cookieValue(req.headers.cookie, 'sessionId');
+    const session = this.validSession(id, ip);
+    return session && !session.mustChangePassword ? id! : null;
+  }
+
+  /**
+   * Sign a user out of the web GUI everywhere (password reset, access revoked,
+   * account deleted), optionally keeping one session (the one making the change).
+   */
+  dropSessions(username: string, exceptSessionId?: string): void {
+    for (const [id, session] of this.sessions) {
+      if (session.username === username && id !== exceptSessionId) this.sessions.delete(id);
+    }
+    this.closeOrphanedSockets();
+  }
+
+  private sweepSessions(): void {
+    const now = Date.now();
+    for (const [id, session] of this.sessions) {
+      if (now - session.loginTime.getTime() > SESSION_TTL_MS) this.sessions.delete(id);
+    }
+    this.closeOrphanedSockets();
+  }
+
+  /** Close live connections whose session has ended. */
+  private closeOrphanedSockets(): void {
+    this.wss.clients.forEach((client: any) => {
+      const id = client.slightSessionId;
+      if (id && !this.sessions.has(id)) client.close(4401, 'Session ended');
+    });
   }
 
   private requireAuth(req: Request, res: Response, next: NextFunction): void {
@@ -246,17 +366,20 @@ export class WebServer {
         logger.info('User found:', { username, exists: !!user, guiEnabled: user?.guiEnabled });
         
         if (!user) {
-          this.logActivity(username, 'WEB_LOGIN_FAILED', 'User not found', false);
+          // same work as a wrong password, so response times don't reveal which accounts exist
+          verifyPasswordHash(timingDummyHash(), String(password || 'x'));
+          this.logActivity(String(username), 'WEB_LOGIN_FAILED', 'User not found', false);
           guard.recordFailure(ip, 'Web GUI', username);
           res.status(401).json({ error: 'Invalid credentials' });
           return;
         }
 
-        // Check if user has GUI access
-        if (!user.guiEnabled) {
-          this.logActivity(username, 'WEB_LOGIN_FAILED', 'GUI access not enabled', false);
+        // Password first: whether an account exists or has GUI access is only
+        // revealed to someone who knows its password
+        if (!password || !(await verifyUserPassword(this.db, user, password))) {
+          this.logActivity(username, 'WEB_LOGIN_FAILED', 'Invalid credentials', false);
           guard.recordFailure(ip, 'Web GUI', username);
-          res.status(403).json({ error: 'GUI access not enabled for this user' });
+          res.status(401).json({ error: 'Invalid credentials' });
           return;
         }
 
@@ -267,11 +390,11 @@ export class WebServer {
           return;
         }
 
-        // Verify password
-        if (!password || !(await verifyUserPassword(this.db, user, password))) {
-          this.logActivity(username, 'WEB_LOGIN_FAILED', 'Invalid credentials', false);
+        // Check if user has GUI access
+        if (!user.guiEnabled) {
+          this.logActivity(username, 'WEB_LOGIN_FAILED', 'GUI access not enabled', false);
           guard.recordFailure(ip, 'Web GUI', username);
-          res.status(401).json({ error: 'Invalid credentials' });
+          res.status(403).json({ error: 'GUI access not enabled for this user' });
           return;
         }
 
@@ -302,7 +425,7 @@ export class WebServer {
           httpOnly: true,
           secure: this.isHttps(),
           sameSite: 'lax',
-          maxAge: 24 * 60 * 60 * 1000 // 24 hours
+          maxAge: SESSION_TTL_MS
         });
 
         this.logActivity(username, 'WEB_LOGIN_SUCCESS', 'User logged in via web interface', true);
@@ -359,6 +482,8 @@ export class WebServer {
 
       this.db.updateUser(session.username, { password: newPassword, mustChangePassword: false });
       session.mustChangePassword = false;
+      // other sign-ins of this account end with the old password
+      if (!(session as any).viaToken) this.dropSessions(session.username, req.cookies?.sessionId);
       this.logActivity(session.username, 'WEB_PASSWORD_CHANGED', 'Password changed via web interface', true);
       res.json({ success: true });
     });
@@ -963,6 +1088,8 @@ export class WebServer {
         }
         
         this.db.updateUser(username, updates);
+        // a reset password or revoked GUI access signs the user out (except the admin's own session)
+        if (password || guiEnabled === false) this.dropSessions(username, req.cookies?.sessionId);
 
         // Optional: full access replacement, as sent by the GUI "Edit User" dialog
         if (Array.isArray(listeners) && Array.isArray(virtualPaths)) {
@@ -982,6 +1109,7 @@ export class WebServer {
         const session = (req as any).session as WebSession;
         const username = req.params.username;
         this.db.deleteUser(username);
+        this.dropSessions(username);
         this.logActivity(session.username, 'WEB_USER_DELETED', `Deleted user '${username}'`, true);
         res.json({ success: true });
       } catch (error: any) {
@@ -1108,12 +1236,14 @@ export class WebServer {
     });
 
     // Settings
+    // Secrets (e.g. the LDAP bind password) are never returned here
     this.app.get('/api/settings', (req: Request, res: Response) => {
-      res.json(this.db.getAllSettings());
+      res.json(publicSettings(this.db.getAllSettings()));
     });
 
     this.app.get('/api/settings/:key', (req: Request, res: Response) => {
-      res.json({ key: req.params.key, value: this.db.getSetting(req.params.key) ?? null });
+      const key = req.params.key;
+      res.json({ key, value: SECRET_SETTINGS.has(key) ? null : this.db.getSetting(key) ?? null });
     });
 
     this.app.put('/api/settings/:key', (req: Request, res: Response) => {
@@ -1121,6 +1251,12 @@ export class WebServer {
       const value = req.body?.value;
       if (value === undefined || value === null) {
         res.status(400).json({ error: 'value is required' });
+        return;
+      }
+      // only plain GUI settings; security settings have their own validated endpoints
+      const problem = validateSetting(req.params.key, String(value));
+      if (problem) {
+        res.status(400).json({ error: problem });
         return;
       }
       this.db.setSetting(req.params.key, String(value));
@@ -1282,37 +1418,14 @@ export class WebServer {
     // listener that would crash the process instead of rejecting start()
     this.wss.on('error', (error) => logger.error('WebSocket server error:', error));
 
-    this.wss.on('connection', (ws: WebSocket) => {
+    // Events are pushed by broadcast(); here we only tag the socket with its
+    // session so it is closed when that session ends
+    this.wss.on('connection', (ws: WebSocket, req: http.IncomingMessage) => {
+      (ws as any).slightSessionId = (req as any).slightSessionId || '';
       logger.info('WebSocket client connected');
-
-      // Forward activity events to connected clients
-      const activityHandler = (activity: any) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'activity', data: activity }));
-        }
-      };
-
-      const listenerStartedHandler = (listenerId: number) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'listener-started', data: listenerId }));
-        }
-      };
-
-      const listenerStoppedHandler = (listenerId: number) => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'listener-stopped', data: listenerId }));
-        }
-      };
-
-      (this.serverManager as any).on('activity', activityHandler);
-      (this.serverManager as any).on('listener-started', listenerStartedHandler);
-      (this.serverManager as any).on('listener-stopped', listenerStoppedHandler);
 
       ws.on('close', () => {
         logger.info('WebSocket client disconnected');
-        (this.serverManager as any).off('activity', activityHandler);
-        (this.serverManager as any).off('listener-started', listenerStartedHandler);
-        (this.serverManager as any).off('listener-stopped', listenerStoppedHandler);
       });
 
       ws.on('error', (error: any) => {
@@ -1864,8 +1977,11 @@ export class WebServer {
   }
 
   async stop(): Promise<void> {
+    clearInterval(this.sweepTimer);
     if (typeof (this.serverManager as any)?.off === 'function') {
       this.serverManager.off('activity', this.onServerActivity);
+      this.serverManager.off('listener-started', this.onListenerStarted);
+      this.serverManager.off('listener-stopped', this.onListenerStopped);
     }
     for (const client of this.wss.clients) {
       client.terminate();

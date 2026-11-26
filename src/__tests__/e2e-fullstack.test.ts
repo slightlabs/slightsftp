@@ -374,7 +374,15 @@ describe('Full-stack E2E: web admin API → live SFTP/FTP listeners → real cli
 
   describe('real-time WebSocket feed', () => {
     test('server activity (an SFTP login) is pushed to connected GUI clients', async () => {
-      const ws = new WebSocket(`ws://127.0.0.1:${webPort}`);
+      // the live feed is for signed-in admins only
+      await new Promise(resolve => {
+        const anon = new WebSocket(`ws://127.0.0.1:${webPort}`);
+        anon.once('unexpected-response', (_req, res) => { expect(res.statusCode).toBe(401); resolve(null); });
+        anon.once('error', () => resolve(null));
+      });
+      const login = await request(baseUrl).post('/api/login').send({ username: 'admin', password: 'Admin#2026' }).expect(200);
+      const cookie = String(login.headers['set-cookie']).split(';')[0];
+      const ws = new WebSocket(`ws://127.0.0.1:${webPort}`, { headers: { Cookie: cookie } });
       const messages: any[] = [];
       ws.on('message', data => messages.push(JSON.parse(data.toString())));
       await new Promise(resolve => ws.once('open', resolve));
