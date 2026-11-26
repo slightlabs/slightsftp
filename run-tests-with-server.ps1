@@ -38,7 +38,7 @@ if ($sftpRunning -and $ftpRunning) {
     Write-Host ""
     Start-Sleep -Seconds 2
     
-    node dist/test-client.js
+    node dist-tools/tools/test-client.js
     exit $LASTEXITCODE
 }
 
@@ -111,7 +111,7 @@ Write-Host "  Running Comprehensive Tests" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-node dist/test-client.js
+node dist-tools/tools/test-client.js
 $testExitCode = $LASTEXITCODE
 
 # Keep server running and show output

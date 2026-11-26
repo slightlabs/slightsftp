@@ -1,4 +1,4 @@
-import { DatabaseManager } from './database';
+import { DatabaseManager } from '../src/database';
 import * as path from 'path';
 import * as fs from 'fs';
 

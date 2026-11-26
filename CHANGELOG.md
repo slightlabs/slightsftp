@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Security
+- Developer scripts no longer ship in the desktop packages and the Docker image. Among
+  them was a one-off script that reset the `admin` password to `admin123`; it and three
+  other obsolete scripts were removed, and the test tools moved to `tools/` (built to
+  `dist-tools/` with `npm run tools:build`). Builds now start from an empty `dist/` and
+  leave out TypeScript declaration files.
 - Configuration backups can be encrypted with a passphrase (AES-256-GCM, key derived with
   scrypt), from the desktop app, the web GUI, or `POST /api/backup` with
   `{ "passphrase": "..." }`. Restore with `{ "bundle": ..., "passphrase": "..." }`.
