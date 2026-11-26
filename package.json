@@ -170,5 +170,9 @@
     "to-ico": "^1.1.5",
     "ts-jest": "^29.1.1",
     "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "uuid": "^11.1.1",
+    "brace-expansion@1": "^1.1.22"
   }
 }
