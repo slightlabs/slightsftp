@@ -9,6 +9,9 @@
   Sessions now end on the server's `disconnect` event.
 
 ### Added
+- `tools/load-test.ts`: concurrent SFTP / FTP upload-download-verify load test with
+  throughput and latency percentiles (`--self` starts its own throwaway server), and a
+  concurrency regression test in the suite (30 simultaneous clients, a 64 MB transfer).
 - Documentation: a *Running in Production* guide (deployment model, Docker, reverse proxy,
   upgrades and rollback, backup and restore, monitoring, hardening checklist).
 - Scheduled backups: every N hours (default daily) a configuration backup is written to a
