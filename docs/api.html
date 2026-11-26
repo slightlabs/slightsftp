@@ -126,7 +126,7 @@ curl -k -b jar -H 'Content-Type: application/json' \
                 </div>
                 <div class="api-item">
                     <h3><code>POST /api/users</code></h3>
-                    <p>Body <code>{ username, password, passwordEnabled, publicKey?, guiEnabled, mustChangePassword?, portalEnabled?, allowedIps? }</code>. <code>publicKey</code> holds OpenSSH public key lines (one per line); <code>allowedIps</code> a list of addresses / CIDR ranges.</p>
+                    <p>Body <code>{ username, password, passwordEnabled, publicKey?, guiEnabled, guiRole?, mustChangePassword?, portalEnabled?, allowedIps? }</code>. <code>publicKey</code> holds OpenSSH public key lines (one per line); <code>allowedIps</code> a list of addresses / CIDR ranges. <code>guiRole</code> is <code>admin</code> (default) or <code>viewer</code>: read-only users (and their API tokens) can use every <code>GET</code> endpoint except <code>/api/backup</code> and <code>/api/files/download</code>, see share links without their tokens and webhooks without their URLs, and may only change their own password, two-factor sign-in and API tokens; anything else returns <code>403</code>. The last administrator cannot be deleted, demoted or have GUI access removed (<code>400</code>).</p>
                 </div>
                 <div class="api-item">
                     <h3><code>PUT /api/users/:username</code></h3>

@@ -149,20 +149,11 @@ describe('Electron main process (main.ts) with real backend', () => {
       expect(visibleWindows('index.html')).toHaveLength(0);
     });
 
-    test('seeds the default admin and non-privileged default listeners', async () => {
-      const users = await invoke('get-all-users');
-      expect(users.map((u: any) => u.username)).toEqual(['admin']);
-
-      const listeners = await invoke('get-all-listeners');
-      expect(listeners.map((l: any) => [l.name, l.protocol, l.port])).toEqual([
-        ['Default SFTP', 'SFTP', 2222],
-        ['Default FTP', 'FTP', 2121],
-      ]);
-
-      const admin = await invoke('get-user', 'admin');
-      expect(await invoke('get-user-listeners', admin.id)).toEqual(listeners.map((l: any) => l.id));
-      const vps = await invoke('get-virtual-paths', admin.id);
-      expect(vps[0]).toMatchObject({ virtualPath: '/', localPath: ftpRoot });
+    test('before sign-in, only the sign-in channels answer', async () => {
+      await expect(invoke('get-all-users')).rejects.toThrow('Sign in first');
+      await expect(invoke('create-user', { username: 'x', password: 'pw', passwordEnabled: true, guiEnabled: true })).rejects.toThrow('Sign in first');
+      await expect(invoke('export-backup')).rejects.toThrow('Sign in first');
+      expect(await invoke('get-authenticated-user')).toBeNull();
     });
   });
 
@@ -187,10 +178,6 @@ describe('Electron main process (main.ts) with real backend', () => {
       expect(await invoke('get-authenticated-user')).toBeNull();
     });
 
-    test('rejects users without GUI access', async () => {
-      await invoke('create-user', { username: 'nogui', password: 'pw', passwordEnabled: true, guiEnabled: false });
-      expect((await invoke('authenticate-user', 'nogui', 'pw')).success).toBe(false);
-    });
 
     test('the default admin password forces a new password before the dashboard opens', async () => {
       expect(await invoke('set-first-login-password', 'Whatever123')).toEqual({ success: false, error: 'No password change is pending' });
@@ -226,6 +213,38 @@ describe('Electron main process (main.ts) with real backend', () => {
 
       const recent = await invoke('get-recent-activities', undefined, 10);
       expect(recent.some((a: any) => a.action === 'GUI_LOGIN' && a.username === 'admin')).toBe(true);
+    });
+
+    test('seeds the default admin and non-privileged default listeners', async () => {
+      const users = await invoke('get-all-users');
+      expect(users.map((u: any) => u.username)).toEqual(['admin']);
+      expect(await invoke('get-authenticated-user')).toMatchObject({ guiRole: 'admin' });
+
+      const listeners = await invoke('get-all-listeners');
+      expect(listeners.map((l: any) => [l.name, l.protocol, l.port])).toEqual([
+        ['Default SFTP', 'SFTP', 2222],
+        ['Default FTP', 'FTP', 2121],
+      ]);
+
+      const admin = await invoke('get-user', 'admin');
+      expect(await invoke('get-user-listeners', admin.id)).toEqual(listeners.map((l: any) => l.id));
+      const vps = await invoke('get-virtual-paths', admin.id);
+      expect(vps[0]).toMatchObject({ virtualPath: '/', localPath: ftpRoot });
+    });
+
+    test('rejects users without GUI access', async () => {
+      await invoke('create-user', { username: 'nogui', password: 'pw-nogui-1', passwordEnabled: true, guiEnabled: false });
+      expect((await invoke('authenticate-user', 'nogui', 'pw-nogui-1')).success).toBe(false);
+      // the failed attempt did not sign the admin out
+      expect(await invoke('get-authenticated-user')).toMatchObject({ username: 'admin' });
+      await invoke('delete-user', 'nogui');
+    });
+
+    test('the last administrator cannot be deleted, demoted or locked out', async () => {
+      await expect(invoke('delete-user', 'admin')).rejects.toThrow(/last administrator/);
+      await expect(invoke('update-user', 'admin', { guiRole: 'viewer' })).rejects.toThrow(/last administrator/);
+      await expect(invoke('update-user', 'admin', { guiEnabled: false })).rejects.toThrow(/last administrator/);
+      expect((await invoke('get-user', 'admin')).guiRole).toBe('admin');
     });
 
     test('closing the dashboard window minimises to tray instead of quitting', () => {

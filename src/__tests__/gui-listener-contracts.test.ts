@@ -9,7 +9,7 @@ describe('Web GUI Listener Contracts', () => {
   test('main process listener statuses append Web GUI server entry', () => {
     const src = readSource('main.ts');
 
-    expect(src).toContain("ipcMain.handle('get-all-listener-statuses'");
+    expect(src).toContain("handle('get-all-listener-statuses'");
     expect(src).toContain("name: 'Web GUI Server'");
     expect(src).toMatch(/protocol: .*'HTTPS' : 'HTTP'/);
     expect(src).toContain('id: -1');

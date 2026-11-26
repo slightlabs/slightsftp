@@ -32,6 +32,7 @@ import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from
 import { cloudTarget, deleteConnection, listConnectionsForAdmin, saveConnection, sendCloudFile, testConnectionInput } from './cloud-storage';
 import { publicSettings, SECRET_SETTINGS, validateSetting } from './settings-policy';
 import { cleanTrustProxy, clientAddress, sameOriginOnly, securityHeaders, trustFunction } from './http-security';
+import { assertAdminRemains, guiRoleFrom, isReadOnly, READ_ONLY_ERROR, viewerMayCallApi } from './gui-roles';
 import { timingDummyHash, verifyPasswordHashAsync } from './password';
 
 const APP_VERSION: string = require('../package.json').version;
@@ -54,6 +55,15 @@ const PASSWORD_CHANGE_ALLOWED = new Set(['/change-password', '/user', '/logout']
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const SESSION_SWEEP_MS = 10 * 60 * 1000;
 
+
+/** "https://hooks.slack.com/services/T0/B0/xyz" → "https://hooks.slack.com/…" */
+function redactUrl(url: unknown): string {
+  try {
+    return `${new URL(String(url)).origin}/…`;
+  } catch {
+    return '…';
+  }
+}
 
 /** Read one cookie from a raw Cookie header (WebSocket upgrades skip cookie-parser). */
 function cookieValue(header: string | undefined, name: string): string | undefined {
@@ -285,6 +295,10 @@ export class WebServer {
         res.status(401).json({ error: 'Invalid or expired token' });
         return;
       }
+      if (isReadOnly(user) && !viewerMayCallApi(req.method, req.path)) {
+        res.status(403).json({ error: READ_ONLY_ERROR });
+        return;
+      }
       (req as any).session = { username: user.username, loginTime: new Date(), viaToken: true };
       next();
       return;
@@ -299,8 +313,18 @@ export class WebServer {
       res.status(403).json({ error: 'Password change required', requirePasswordChange: true });
       return;
     }
+    if (isReadOnly(this.db.getUser(session.username)) && !viewerMayCallApi(req.method, req.path)) {
+      res.status(403).json({ error: READ_ONLY_ERROR });
+      return;
+    }
     (req as any).session = session;
     next();
+  }
+
+  /** Is this (already authenticated) request from a read-only user? */
+  private viewerRequest(req: Request): boolean {
+    const session = (req as any).session as WebSession | undefined;
+    return !!session && isReadOnly(this.db.getUser(session.username));
   }
 
   private logActivity(username: string, action: string, path: string, success: boolean, listenerId?: number, extra: { bytes?: number; checksum?: string } = {}): void {
@@ -715,7 +739,9 @@ export class WebServer {
 
     // Webhooks
     this.app.get('/api/webhooks', (req: Request, res: Response) => {
-      res.json(this.db.listWebhooks().map(describeWebhook));
+      const hooks = this.db.listWebhooks().map(describeWebhook);
+      // a webhook URL is itself a credential (Slack / Teams): read-only users see only its host
+      res.json(this.viewerRequest(req) ? hooks.map(h => ({ ...h, url: redactUrl(h.url) })) : hooks);
     });
 
     this.app.post('/api/webhooks', (req: Request, res: Response) => {
@@ -773,7 +799,11 @@ export class WebServer {
 
     // Share links (admins see and can revoke everyone's)
     this.app.get('/api/shares', (req: Request, res: Response) => {
-      res.json(this.db.listShares().map(sh => describeShare(sh, shareUrl(req, sh.token))));
+      const viewer = this.viewerRequest(req);
+      // the link token grants access to the files: never shown to read-only users
+      res.json(this.db.listShares().map(sh => viewer
+        ? { ...describeShare({ ...sh, token: '' }), token: undefined, url: undefined }
+        : describeShare(sh, shareUrl(req, sh.token))));
     });
 
     this.app.delete('/api/shares/:id', (req: Request, res: Response) => {
@@ -851,7 +881,7 @@ export class WebServer {
     this.app.get('/api/user', (req: Request, res: Response) => {
       const session = (req as any).session as WebSession;
       const user = this.db.getUser(session.username);
-      res.json({ username: user?.username, totpEnabled: !!user?.totpEnabled });
+      res.json({ username: user?.username, totpEnabled: !!user?.totpEnabled, guiRole: guiRoleFrom(user?.guiRole) });
     });
 
     // Listeners
@@ -1067,7 +1097,8 @@ export class WebServer {
           quotaBytes: quotaFromMegabytes(quotaMb),
           uploadLimitKBps: limitFromForm(uploadLimitKBps),
           downloadLimitKBps: limitFromForm(downloadLimitKBps),
-          authSource: authSource === 'ldap' ? 'ldap' : 'local'
+          authSource: authSource === 'ldap' ? 'ldap' : 'local',
+          guiRole: guiRoleFrom(req.body.guiRole)
         };
         
         const id = this.db.createUser(user);
@@ -1098,6 +1129,7 @@ export class WebServer {
         if (allowedIps !== undefined) updates.allowedIps = cleanAllowedIps(allowedIps);
         if (publicKey !== undefined) updates.publicKey = cleanAuthorizedKeys(publicKey);
         if (req.body.authSource !== undefined) updates.authSource = req.body.authSource === 'ldap' ? 'ldap' : 'local';
+        if (req.body.guiRole !== undefined) updates.guiRole = guiRoleFrom(req.body.guiRole);
         if (req.body.uploadLimitKBps !== undefined) updates.uploadLimitKBps = limitFromForm(req.body.uploadLimitKBps);
         if (req.body.downloadLimitKBps !== undefined) updates.downloadLimitKBps = limitFromForm(req.body.downloadLimitKBps);
         if (req.body.quotaMb !== undefined) {
@@ -1111,6 +1143,8 @@ export class WebServer {
           updates.password = password;
         }
         
+        // never demote / lock out the last administrator
+        assertAdminRemains(this.db, username, Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined)));
         this.db.updateUser(username, updates);
         // a reset password or revoked GUI access signs the user out (except the admin's own session)
         if (password || guiEnabled === false) this.dropSessions(username, req.cookies?.sessionId);
@@ -1132,6 +1166,7 @@ export class WebServer {
       try {
         const session = (req as any).session as WebSession;
         const username = req.params.username;
+        assertAdminRemains(this.db, username, 'delete');
         this.db.deleteUser(username);
         this.dropSessions(username);
         this.logActivity(session.username, 'WEB_USER_DELETED', `Deleted user '${username}'`, true);

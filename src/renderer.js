@@ -38,6 +38,23 @@ function jsArg(value) {
   return escapeHtml(JSON.stringify(value));
 }
 
+/** Read-only GUI users: say so up front (the server refuses their changes). */
+function showReadOnlyBanner(readOnly) {
+  let banner = document.getElementById('readOnlyBanner');
+  if (!readOnly) {
+    if (banner) banner.remove();
+    return;
+  }
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'readOnlyBanner';
+    banner.setAttribute('role', 'status');
+    banner.style.cssText = 'background:#fff3cd;color:#664d03;border-bottom:1px solid #ffe69c;padding:8px 16px;text-align:center;font-size:14px;';
+    banner.textContent = 'Read-only account: you can look around, but changes, file downloads and backups are not available.';
+    document.body.prepend(banner);
+  }
+}
+
 // Load authenticated user on startup
 async function loadAuthenticatedUser() {
   try {
@@ -49,6 +66,7 @@ async function loadAuthenticatedUser() {
     if (userElement) {
       if (authenticatedUser) {
         userElement.textContent = authenticatedUser.username;
+        showReadOnlyBanner(authenticatedUser.guiRole === 'viewer');
       } else {
         userElement.textContent = 'Unknown';
       }
@@ -1257,7 +1275,7 @@ async function loadUsers() {
       <td>${escapeHtml(user.username)}${user.portalEnabled ? ' <span title="Web file portal enabled">🌐</span>' : ''}${user.allowedIps ? ` <span title="${escapeHtml('Only from: ' + user.allowedIps)}">📍</span>` : ''}</td>
       <td>${user.passwordEnabled ? '✓' : '✗'}</td>
       <td>${user.publicKey ? '✓' : '✗'}</td>
-      <td>${user.guiEnabled ? '✓' : '✗'}</td>
+      <td>${user.guiEnabled ? (user.guiRole === 'viewer' ? '✓ read-only' : '✓') : '✗'}</td>
       <td>
         <button class="btn btn-primary" onclick="editUser(${jsArg(user.username)})">Edit</button>
         ${user.username !== 'admin' ? `<button class="btn btn-danger" onclick="deleteUser(${jsArg(user.username)})">Delete</button>` : ''}
@@ -1281,6 +1299,7 @@ async function editUser(username) {
   fields.namedItem('passwordEnabled').checked = user.passwordEnabled;
   fields.namedItem('publicKey').value = user.publicKey || '';
   fields.namedItem('guiEnabled').checked = user.guiEnabled;
+  fields.namedItem('guiRole').value = user.guiRole === 'viewer' ? 'viewer' : 'admin';
   fields.namedItem('mustChangePassword').checked = !!user.mustChangePassword;
   fields.namedItem('portalEnabled').checked = !!user.portalEnabled;
   fields.namedItem('allowedIps').value = user.allowedIps || '';
@@ -1914,6 +1933,7 @@ document.getElementById('addUserForm').addEventListener('submit', async (e) => {
     passwordEnabled: formData.get('passwordEnabled') === 'on',
     publicKey: formData.get('publicKey') || undefined,
     guiEnabled: formData.get('guiEnabled') === 'on',
+    guiRole: formData.get('guiRole') === 'viewer' ? 'viewer' : 'admin',
     mustChangePassword: formData.get('mustChangePassword') === 'on',
     portalEnabled: formData.get('portalEnabled') === 'on',
     allowedIps: (formData.get('allowedIps') || '').trim(),
@@ -1978,6 +1998,7 @@ document.getElementById('editUserForm').addEventListener('submit', async (e) => 
     passwordEnabled: formData.get('passwordEnabled') === 'on',
     publicKey: formData.get('publicKey') || undefined,
     guiEnabled: formData.get('guiEnabled') === 'on',
+    guiRole: formData.get('guiRole') === 'viewer' ? 'viewer' : 'admin',
     mustChangePassword: formData.get('mustChangePassword') === 'on',
     portalEnabled: formData.get('portalEnabled') === 'on',
     allowedIps: (formData.get('allowedIps') || '').trim(),

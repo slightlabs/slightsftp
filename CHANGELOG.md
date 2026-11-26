@@ -44,6 +44,14 @@
   sent (a server that refuses it fails the sign-in instead of falling back). *Test
   connection* warns when passwords would be sent unencrypted.
 
+- **Read-only GUI users**: a user's *GUI role* can now be *Read-only*: they see the
+  dashboard but cannot change anything, download users' files or configuration backups,
+  or see share-link tokens and webhook URLs. Enforced by the server for the web GUI, the
+  REST API (including their API tokens) and the desktop app. Existing GUI users stay
+  administrators, and the last administrator cannot be deleted or demoted.
+- The desktop app's internal API now refuses every request except sign-in until someone
+  has signed in.
+
 ### Fixes
 - `config.db` is written atomically, so a crash or power loss during a save can no longer
   leave a truncated database. Activity log writes are batched instead of rewriting the

@@ -25,6 +25,7 @@ import { isDirectoryUser, verifyUserPassword } from './credentials';
 import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from './ldap-auth';
 import { cloudTarget, deleteConnection, listConnectionsForAdmin, saveConnection, testConnectionInput } from './cloud-storage';
 import { seedDefaultAdmin } from './default-admin';
+import { assertAdminRemains, guiRoleFrom, isReadOnly, PRE_LOGIN_CHANNELS, READ_ONLY_ERROR, viewerMayInvoke } from './gui-roles';
 import { SECRET_SETTINGS, publicSettings, validateSetting } from './settings-policy';
 
 let mainWindow: BrowserWindow | null = null;
@@ -36,6 +37,25 @@ let webServer: WebServer | null = null;
 let isQuitting = false;
 let isLoggingOut = false;
 let authenticatedUser: any = null;
+
+/**
+ * Every IPC handler goes through here: apart from the sign-in channels, the
+ * caller must be signed in, and read-only GUI users may only read (and manage
+ * their own sign-in). The pages are sandboxed, so this is the last line of
+ * defence if a page were ever compromised.
+ */
+function handle(channel: string, fn: (event: Electron.IpcMainInvokeEvent, ...args: any[]) => any): void {
+  ipcMain.handle(channel, async (event, ...args) => {
+    if (!PRE_LOGIN_CHANNELS.has(channel)) {
+      const current = authenticatedUser ? db.getUser(authenticatedUser.username) : undefined;
+      if (!current || !current.guiEnabled) throw new Error('Sign in first');
+      if (isReadOnly(current) && !viewerMayInvoke(channel)) throw new Error(READ_ONLY_ERROR);
+    }
+    return fn(event, ...args);
+  });
+}
+
+const desktopViewer = () => isReadOnly(authenticatedUser ? db.getUser(authenticatedUser.username) : undefined);
 let pendingPasswordChangeUser: any = null;
 let webhooks: WebhookDispatcher;
 let syslog: SyslogForwarder;
@@ -508,7 +528,7 @@ function completeLogin(user: any): void {
 
 function setupIpcHandlers(): void {
   // Authentication handler
-  ipcMain.handle('authenticate-user', async (event, username, password, totpCode) => {
+  handle('authenticate-user', async (event, username, password, totpCode) => {
     try {
       const user = db.getUser(username);
       
@@ -556,7 +576,7 @@ function setupIpcHandlers(): void {
   });
 
   // Forced password change after authenticate-user returned requirePasswordChange
-  ipcMain.handle('set-first-login-password', async (event, newPassword) => {
+  handle('set-first-login-password', async (event, newPassword) => {
     const user = pendingPasswordChangeUser;
     if (!user) {
       return { success: false, error: 'No password change is pending' };
@@ -584,11 +604,12 @@ function setupIpcHandlers(): void {
   });
 
   // Share links created in the web file portal
-  ipcMain.handle('get-shares', async () => {
-    return db.listShares().map(share => describeShare(share));
+  handle('get-shares', async () => {
+    // link tokens grant access to files: never shown to read-only users
+    return db.listShares().map(share => desktopViewer() ? { ...describeShare(share), token: undefined } : describeShare(share));
   });
 
-  ipcMain.handle('revoke-share', async (event, id) => {
+  handle('revoke-share', async (event, id) => {
     const share = db.getShare(id);
     if (!share) throw new Error('Link not found');
     db.revokeShare(id);
@@ -603,33 +624,33 @@ function setupIpcHandlers(): void {
   });
 
   // Brute-force protection
-  ipcMain.handle('get-ip-bans', async () => getLoginGuard(db).listBans());
+  handle('get-ip-bans', async () => getLoginGuard(db).listBans());
 
-  ipcMain.handle('unban-ip', async (event, ip) => {
+  handle('unban-ip', async (event, ip) => {
     getLoginGuard(db).unban(ip);
     db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'IP_UNBANNED', path: ip, success: true });
     return { success: true };
   });
 
-  ipcMain.handle('get-security-settings', async () => getLoginGuard(db).settings());
+  handle('get-security-settings', async () => getLoginGuard(db).settings());
 
-  ipcMain.handle('set-security-settings', async (event, settings) => {
+  handle('set-security-settings', async (event, settings) => {
     saveGuardSettings(db, settings || {});
     return getLoginGuard(db).settings();
   });
 
   // Directory (LDAP / Active Directory) sign-in
-  ipcMain.handle('get-ldap-settings', async () => publicLdapSettings(db));
-  ipcMain.handle('set-ldap-settings', async (event, settings) => {
+  handle('get-ldap-settings', async () => publicLdapSettings(db));
+  handle('set-ldap-settings', async (event, settings) => {
     saveLdapSettings(db, settings || {});
     return publicLdapSettings(db);
   });
-  ipcMain.handle('test-ldap', async (event, username) => testLdap(readLdapSettings(db), username || undefined));
+  handle('test-ldap', async (event, username) => testLdap(readLdapSettings(db), username || undefined));
 
   // Update notifications (GitHub Releases)
-  ipcMain.handle('check-for-update', async () => checkForUpdate(db, app.getVersion()));
+  handle('check-for-update', async () => checkForUpdate(db, app.getVersion()));
 
-  ipcMain.handle('open-external', async (event, url) => {
+  handle('open-external', async (event, url) => {
     // only release pages of this project
     if (typeof url === 'string' && url.startsWith('https://github.com/slightlabs/slightsftp/')) {
       await shell.openExternal(url);
@@ -639,7 +660,7 @@ function setupIpcHandlers(): void {
   });
 
   // Configuration backup / restore
-  ipcMain.handle('export-backup', async () => {
+  handle('export-backup', async () => {
     const bundle = createBackup(db, app.getVersion());
     const result = await dialog.showSaveDialog(mainWindow!, {
       title: 'Save configuration backup',
@@ -652,7 +673,7 @@ function setupIpcHandlers(): void {
     return { success: true, path: result.filePath };
   });
 
-  ipcMain.handle('import-backup', async () => {
+  handle('import-backup', async () => {
     const result = await dialog.showOpenDialog(mainWindow!, {
       title: 'Restore configuration backup',
       properties: ['openFile'],
@@ -677,14 +698,14 @@ function setupIpcHandlers(): void {
   });
 
   // Personal access tokens for the REST API (signed-in user)
-  ipcMain.handle('get-api-tokens', async () => (authenticatedUser ? db.listApiTokens(authenticatedUser.username) : []));
-  ipcMain.handle('create-api-token', async (event, name, expiresInDays) => {
+  handle('get-api-tokens', async () => (authenticatedUser ? db.listApiTokens(authenticatedUser.username) : []));
+  handle('create-api-token', async (event, name, expiresInDays) => {
     if (!authenticatedUser) throw new Error('Not signed in');
     const { token, info } = createApiToken(db, authenticatedUser.username, name, expiresInDays);
     db.logActivity({ listenerId: null, username: authenticatedUser.username, action: 'API_TOKEN_CREATED', path: info.name, success: true });
     return { ...info, token };
   });
-  ipcMain.handle('revoke-api-token', async (event, id) => {
+  handle('revoke-api-token', async (event, id) => {
     const token = authenticatedUser && db.listApiTokens(authenticatedUser.username).find(t => t.id === id);
     if (!token) throw new Error('Token not found');
     db.deleteApiToken(id);
@@ -693,12 +714,12 @@ function setupIpcHandlers(): void {
 
   // Recycle bin
   const trashView = (item: any) => { const { trashPath, ...rest } = item; return rest; };
-  ipcMain.handle('get-trash', async () => ({ settings: recycleSettings(db), items: db.listTrashItems().map(trashView) }));
-  ipcMain.handle('set-trash-settings', async (event, settings) => {
+  handle('get-trash', async () => ({ settings: recycleSettings(db), items: db.listTrashItems().map(trashView) }));
+  handle('set-trash-settings', async (event, settings) => {
     saveRecycleSettings(db, settings || {});
     return recycleSettings(db);
   });
-  ipcMain.handle('restore-trash-item', async (event, id) => {
+  handle('restore-trash-item', async (event, id) => {
     const item = db.getTrashItem(id);
     if (!item) throw new Error('Not in the recycle bin');
     restoreItem(db, item);
@@ -706,28 +727,28 @@ function setupIpcHandlers(): void {
     db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'TRASH_RESTORED', path: `${item.username}:${item.virtualPath}`, success: true });
     return { success: true };
   });
-  ipcMain.handle('purge-trash-item', async (event, id) => {
+  handle('purge-trash-item', async (event, id) => {
     const item = db.getTrashItem(id);
     if (!item) throw new Error('Not in the recycle bin');
     purgeItem(db, item);
     return { success: true };
   });
-  ipcMain.handle('empty-trash', async () => {
+  handle('empty-trash', async () => {
     const items = db.listTrashItems();
     items.forEach(item => purgeItem(db, item));
     return { success: true, count: items.length };
   });
 
   // Audit export
-  ipcMain.handle('get-audit-settings', async () => ({ syslog: readSyslogSettings(db), checksumUploads: checksumsEnabled(db) }));
+  handle('get-audit-settings', async () => ({ syslog: readSyslogSettings(db), checksumUploads: checksumsEnabled(db) }));
 
-  ipcMain.handle('set-audit-settings', async (event, input) => {
+  handle('set-audit-settings', async (event, input) => {
     if (input?.syslog) saveSyslogSettings(db, input.syslog);
     if (input?.checksumUploads !== undefined) db.setSetting('checksumUploads', input.checksumUploads ? 'true' : 'false');
     return { syslog: readSyslogSettings(db), checksumUploads: checksumsEnabled(db) };
   });
 
-  ipcMain.handle('test-syslog', async () => {
+  handle('test-syslog', async () => {
     try {
       await syslog.send(formatSyslog({ listenerId: null, username: authenticatedUser?.username || 'admin', action: 'SYSLOG_TEST', path: '/', success: true, timestamp: new Date().toISOString() }, readSyslogSettings(db).facility));
       return { ok: true };
@@ -737,45 +758,46 @@ function setupIpcHandlers(): void {
   });
 
   // Cloud storage connections
-  ipcMain.handle('get-storage-connections', async () => listConnectionsForAdmin(db));
+  handle('get-storage-connections', async () => listConnectionsForAdmin(db));
 
-  ipcMain.handle('create-storage-connection', async (event, input) => {
+  handle('create-storage-connection', async (event, input) => {
     const conn = saveConnection(db, input || {});
     db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'STORAGE_CREATED', path: conn.name, success: true });
     return conn;
   });
 
-  ipcMain.handle('update-storage-connection', async (event, id, input) => {
+  handle('update-storage-connection', async (event, id, input) => {
     const conn = saveConnection(db, input || {}, Number(id));
     db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'STORAGE_UPDATED', path: conn.name, success: true });
     return conn;
   });
 
-  ipcMain.handle('delete-storage-connection', async (event, id) => {
+  handle('delete-storage-connection', async (event, id) => {
     const conn = deleteConnection(db, Number(id));
     db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'STORAGE_DELETED', path: conn.name, success: true });
     return { success: true };
   });
 
-  ipcMain.handle('test-storage-connection', async (event, input, id) => testConnectionInput(db, input || {}, id));
+  handle('test-storage-connection', async (event, input, id) => testConnectionInput(db, input || {}, id));
 
   // Webhooks
-  ipcMain.handle('get-webhooks', async () => db.listWebhooks().map(describeWebhook));
+  handle('get-webhooks', async () => db.listWebhooks().map(describeWebhook).map(h =>
+    desktopViewer() ? { ...h, url: (() => { try { return `${new URL(h.url).origin}/…`; } catch { return '…'; } })() } : h));
 
-  ipcMain.handle('create-webhook', async (event, input) => {
+  handle('create-webhook', async (event, input) => {
     const clean = validateWebhookInput(input || {});
     const id = db.createWebhook({ format: 'json', enabled: true, ...clean } as any);
     db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'WEBHOOK_CREATED', path: clean.name!, success: true });
     return describeWebhook(db.getWebhook(id)!);
   });
 
-  ipcMain.handle('update-webhook', async (event, id, input) => {
+  handle('update-webhook', async (event, id, input) => {
     if (!db.getWebhook(id)) throw new Error('Webhook not found');
     db.updateWebhook(id, validateWebhookInput(input || {}, true));
     return describeWebhook(db.getWebhook(id)!);
   });
 
-  ipcMain.handle('delete-webhook', async (event, id) => {
+  handle('delete-webhook', async (event, id) => {
     const hook = db.getWebhook(id);
     if (!hook) throw new Error('Webhook not found');
     db.deleteWebhook(id);
@@ -783,24 +805,24 @@ function setupIpcHandlers(): void {
     return { success: true };
   });
 
-  ipcMain.handle('test-webhook', async (event, id) => {
+  handle('test-webhook', async (event, id) => {
     const hook = db.getWebhook(id);
     if (!hook) throw new Error('Webhook not found');
     return webhooks.test(hook, authenticatedUser?.username || 'admin');
   });
 
   // Server identity that admins can hand to users for verification
-  ipcMain.handle('get-server-identity', async () => {
+  handle('get-server-identity', async () => {
     return { sshHostKeyFingerprint: hostKeyFingerprint() };
   });
 
   // Two-factor sign-in for the signed-in user
-  ipcMain.handle('totp-setup', async () => {
+  handle('totp-setup', async () => {
     if (!authenticatedUser) throw new Error('Not signed in');
     return beginTotpSetup(db, authenticatedUser.username);
   });
 
-  ipcMain.handle('totp-enable', async (event, code) => {
+  handle('totp-enable', async (event, code) => {
     if (!authenticatedUser || !confirmTotpSetup(db, authenticatedUser.username, code)) {
       throw new Error('That code is not valid. Check the time on your phone and try again.');
     }
@@ -808,7 +830,7 @@ function setupIpcHandlers(): void {
     return { success: true };
   });
 
-  ipcMain.handle('totp-disable', async (event, code) => {
+  handle('totp-disable', async (event, code) => {
     if (!authenticatedUser || !disableTotp(db, authenticatedUser.username, code)) {
       throw new Error('Invalid two-factor code');
     }
@@ -817,20 +839,21 @@ function setupIpcHandlers(): void {
   });
 
   // Get authenticated user info
-  ipcMain.handle('get-authenticated-user', async () => {
+  handle('get-authenticated-user', async () => {
     logger.debug('IPC: get-authenticated-user called');
     logger.debug('authenticatedUser:', authenticatedUser);
     const result = authenticatedUser ? { 
       username: authenticatedUser.username, 
       id: authenticatedUser.id,
-      totpEnabled: !!db.getUser(authenticatedUser.username)?.totpEnabled
+      totpEnabled: !!db.getUser(authenticatedUser.username)?.totpEnabled,
+      guiRole: guiRoleFrom(db.getUser(authenticatedUser.username)?.guiRole)
     } : null;
     logger.debug('Returning:', result);
     return result;
   });
 
   // Logout handler
-  ipcMain.handle('logout', async () => {
+  handle('logout', async () => {
     const logoutUsername = authenticatedUser?.username || 'unknown';
     
     // Log logout activity
@@ -865,10 +888,11 @@ function setupIpcHandlers(): void {
   });
 
   // User operations
-  ipcMain.handle('create-user', async (event, user) => {
+  handle('create-user', async (event, user) => {
     const { quotaMb, ...fields } = user || {};
     const userId = db.createUser({
       ...fields,
+      guiRole: guiRoleFrom(fields.guiRole),
       allowedIps: cleanAllowedIps(fields.allowedIps),
       publicKey: cleanAuthorizedKeys(fields.publicKey),
       quotaBytes: quotaFromMegabytes(quotaMb),
@@ -891,15 +915,15 @@ function setupIpcHandlers(): void {
   // Password hashes and TOTP secrets never leave the main process
   const withoutPassword = (user: any) => (user ? publicUser(user) : user);
 
-  ipcMain.handle('get-user', async (event, username) => {
+  handle('get-user', async (event, username) => {
     return withoutPassword(db.getUser(username));
   });
   
-  ipcMain.handle('get-all-users', async () => {
+  handle('get-all-users', async () => {
     return db.getAllUsers().map(withoutPassword);
   });
   
-  ipcMain.handle('update-user', async (event, username, updates, listeners, virtualPaths, permissions) => {
+  handle('update-user', async (event, username, updates, listeners, virtualPaths, permissions) => {
     const user = db.getUser(username);
     if (!user) throw new Error('User not found');
     
@@ -925,6 +949,9 @@ function setupIpcHandlers(): void {
       const { totpSecret: _s, totpPendingSecret: _p, totpEnabled, ...rest } = updates;
       updates = totpEnabled === false ? { ...rest, totpEnabled: false } : rest;
     }
+    if (updates && updates.guiRole !== undefined) updates = { ...updates, guiRole: guiRoleFrom(updates.guiRole) };
+    // never demote / lock out the last administrator
+    if (updates) assertAdminRemains(db, username, Object.fromEntries(Object.entries(updates).filter(([, v]) => v !== undefined)));
     db.updateUser(username, updates);
     // a new password or revoked GUI access signs the user out of the web GUI
     if (updates && (updates.password || updates.guiEnabled === false)) webServer?.dropSessions(username);
@@ -944,7 +971,8 @@ function setupIpcHandlers(): void {
     });
   });
   
-  ipcMain.handle('delete-user', async (event, username) => {
+  handle('delete-user', async (event, username) => {
+    assertAdminRemains(db, username, 'delete');
     db.deleteUser(username);
     webServer?.dropSessions(username);
     
@@ -958,25 +986,25 @@ function setupIpcHandlers(): void {
     });
   });
   
-  ipcMain.handle('get-user-usage', async (event, username) => {
+  handle('get-user-usage', async (event, username) => {
     const user = db.getUser(username);
     if (!user) throw new Error('User not found');
     return getQuotaManager(db).usage(user);
   });
 
-  ipcMain.handle('get-user-listeners', async (event, userId) => {
+  handle('get-user-listeners', async (event, userId) => {
     return db.getUserListeners(userId);
   });
   
-  ipcMain.handle('get-virtual-paths', async (event, userId) => {
+  handle('get-virtual-paths', async (event, userId) => {
     return db.getVirtualPaths(userId);
   });
   
-  ipcMain.handle('get-permission', async (event, userId, listenerId) => {
+  handle('get-permission', async (event, userId, listenerId) => {
     return db.getPermission(userId, listenerId);
   });
   
-  ipcMain.handle('select-directory', async () => {
+  handle('select-directory', async () => {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory']
     });
@@ -984,7 +1012,7 @@ function setupIpcHandlers(): void {
   });
   
   // Listener operations
-  ipcMain.handle('create-listener', async (event, listener) => {
+  handle('create-listener', async (event, listener) => {
     const listenerId = db.createListener(listener);
     
     // Log listener creation
@@ -999,15 +1027,15 @@ function setupIpcHandlers(): void {
     return listenerId;
   });
   
-  ipcMain.handle('get-listener', async (event, id) => {
+  handle('get-listener', async (event, id) => {
     return db.getListener(id);
   });
   
-  ipcMain.handle('get-all-listeners', async () => {
+  handle('get-all-listeners', async () => {
     return db.getAllListeners();
   });
   
-  ipcMain.handle('update-listener', async (event, id, updates) => {
+  handle('update-listener', async (event, id, updates) => {
     db.updateListener(id, updates);
     
     const listener = db.getListener(id);
@@ -1031,7 +1059,7 @@ function setupIpcHandlers(): void {
     });
   });
   
-  ipcMain.handle('delete-listener', async (event, id) => {
+  handle('delete-listener', async (event, id) => {
     const listener = db.getListener(id);
     
     if (serverManager.isListenerRunning(id)) {
@@ -1050,7 +1078,7 @@ function setupIpcHandlers(): void {
   });
   
   // Server management
-  ipcMain.handle('start-listener', async (event, id) => {
+  handle('start-listener', async (event, id) => {
     await serverManager.startListener(id);
     
     const listener = db.getListener(id);
@@ -1065,7 +1093,7 @@ function setupIpcHandlers(): void {
     });
   });
   
-  ipcMain.handle('stop-listener', async (event, id) => {
+  handle('stop-listener', async (event, id) => {
     await serverManager.stopListener(id);
     
     const listener = db.getListener(id);
@@ -1080,11 +1108,11 @@ function setupIpcHandlers(): void {
     });
   });
   
-  ipcMain.handle('get-listener-status', async (event, id) => {
+  handle('get-listener-status', async (event, id) => {
     return serverManager.getListenerStatus(id);
   });
   
-  ipcMain.handle('get-all-listener-statuses', async () => {
+  handle('get-all-listener-statuses', async () => {
     const statuses = serverManager.getAllListenerStatuses();
     
     // Always add Web GUI Server to the list
@@ -1105,11 +1133,11 @@ function setupIpcHandlers(): void {
   });
   
   // Active sessions
-  ipcMain.handle('get-active-sessions', async () => {
+  handle('get-active-sessions', async () => {
     return serverManager.getActiveSessions();
   });
 
-  ipcMain.handle('disconnect-session', async (event, sessionId) => {
+  handle('disconnect-session', async (event, sessionId) => {
     const result = serverManager.disconnectSession(sessionId);
     
     // Log session disconnect
@@ -1125,35 +1153,35 @@ function setupIpcHandlers(): void {
   });
   
   // Activity log
-  ipcMain.handle('get-recent-activities', async (event, listenerId, limit) => {
+  handle('get-recent-activities', async (event, listenerId, limit) => {
     return db.getRecentActivities(listenerId, limit);
   });
 
-  ipcMain.handle('get-activity-count', async () => {
+  handle('get-activity-count', async () => {
     return db.getActivityCount();
   });
 
-  ipcMain.handle('clear-activities-by-date', async (event, beforeDate) => {
+  handle('clear-activities-by-date', async (event, beforeDate) => {
     const count = db.clearActivitiesByDate(beforeDate);
     return { count };
   });
 
-  ipcMain.handle('clear-all-activities', async () => {
+  handle('clear-all-activities', async () => {
     const count = db.clearAllActivities();
     return { count };
   });
 
-  ipcMain.handle('cleanup-old-activities', async () => {
+  handle('cleanup-old-activities', async () => {
     const count = db.cleanupOldActivities();
     return { count };
   });
 
-  ipcMain.handle('get-old-logs-stats', async (event, retentionDays) => {
+  handle('get-old-logs-stats', async (event, retentionDays) => {
     const count = db.getOldLogsStats(retentionDays);
     return { count };
   });
 
-  ipcMain.handle('save-activity-log', async (event, csvContent) => {
+  handle('save-activity-log', async (event, csvContent) => {
     try {
       const result = await dialog.showSaveDialog(mainWindow!, {
         title: 'Save Activity Log',
@@ -1176,22 +1204,22 @@ function setupIpcHandlers(): void {
   });
 
   // Settings
-  ipcMain.handle('get-setting', async (event, key) => {
+  handle('get-setting', async (event, key) => {
     return SECRET_SETTINGS.has(key) ? undefined : db.getSetting(key);
   });
 
-  ipcMain.handle('set-setting', async (event, key, value) => {
+  handle('set-setting', async (event, key, value) => {
     const problem = validateSetting(String(key), String(value));
     if (problem) throw new Error(problem);
     db.setSetting(key, String(value));
   });
 
-  ipcMain.handle('get-all-settings', async () => {
+  handle('get-all-settings', async () => {
     return publicSettings(db.getAllSettings());
   });
 
   // File browsing
-  ipcMain.handle('browse-files', async (event, username, path) => {
+  handle('browse-files', async (event, username, path) => {
     const fs = require('fs');
     const pathModule = require('path');
     
@@ -1232,7 +1260,7 @@ function setupIpcHandlers(): void {
     return { files: fileList };
   });
 
-  ipcMain.handle('download-file', async (event, username, filePath) => {
+  handle('download-file', async (event, username, filePath) => {
     const fs = require('fs');
     const pathModule = require('path');
     
@@ -1280,7 +1308,7 @@ function setupIpcHandlers(): void {
   });
 
   // Web Server control
-  ipcMain.handle('start-web-server', async (event, port?: number) => {
+  handle('start-web-server', async (event, port?: number) => {
     try {
       if (webServer) {
         return { success: false, error: 'Web server is already running' };
@@ -1310,7 +1338,7 @@ function setupIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle('stop-web-server', async () => {
+  handle('stop-web-server', async () => {
     try {
       if (!webServer) {
         return { success: false, error: 'Web server is not running' };
@@ -1340,7 +1368,7 @@ function setupIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle('get-web-server-status', async () => {
+  handle('get-web-server-status', async () => {
     return { 
       running: webServer !== null,
       port: webServer ? webServer.getPort() : null,
@@ -1349,7 +1377,7 @@ function setupIpcHandlers(): void {
     };
   });
 
-  ipcMain.handle('update-web-server-port', async (event, newPort: number) => {
+  handle('update-web-server-port', async (event, newPort: number) => {
     try {
       // Stop existing web server if running
       if (webServer) {

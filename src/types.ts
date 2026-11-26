@@ -1,3 +1,6 @@
+/** 'admin': full administration; 'viewer': read-only dashboard */
+export type GuiRole = 'admin' | 'viewer';
+
 export interface User {
   id?: number;
   username: string;
@@ -5,6 +8,8 @@ export interface User {
   passwordEnabled: boolean;
   publicKey?: string;
   guiEnabled: boolean;
+  /** what a GUI user may do: full administration, or look without changing anything */
+  guiRole?: GuiRole;
   /** user must pick a new password at their next GUI / portal login */
   mustChangePassword?: boolean;
   /** may sign in to the browser file portal at /files */

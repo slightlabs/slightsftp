@@ -326,9 +326,16 @@ describe('WebServer REST API', () => {
     });
 
     test('DELETE /api/users/:username — deletes user', async () => {
-      const res = await request(app).delete('/api/users/admin').set('Cookie', cookie);
+      const res = await request(app).delete('/api/users/bob').set('Cookie', cookie);
       expect(res.status).toBe(200);
-      expect(mockDb.deleteUser).toHaveBeenCalledWith('admin');
+      expect(mockDb.deleteUser).toHaveBeenCalledWith('bob');
+    });
+
+    test('DELETE /api/users/:username — the last administrator is kept', async () => {
+      const res = await request(app).delete('/api/users/admin').set('Cookie', cookie);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/last administrator/);
+      expect(mockDb.deleteUser).not.toHaveBeenCalled();
     });
 
     test('GET /api/users/id/:userId/listeners — returns listener ids', async () => {

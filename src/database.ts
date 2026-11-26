@@ -282,6 +282,8 @@ export class DatabaseManager {
     addColumn('users', 'uploadLimitKBps', 'INTEGER');
     addColumn('users', 'downloadLimitKBps', 'INTEGER');
     addColumn('users', 'authSource', "TEXT NOT NULL DEFAULT 'local'");
+    // existing GUI users keep full access
+    addColumn('users', 'guiRole', "TEXT NOT NULL DEFAULT 'admin'");
   }
 
   // User operations
@@ -290,8 +292,8 @@ export class DatabaseManager {
     
     const hashedPassword = user.password ? this.hashPassword(user.password) : null;
     this.db.run(`
-      INSERT INTO users (username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps, quotaBytes, uploadLimitKBps, downloadLimitKBps, authSource)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO users (username, password, passwordEnabled, publicKey, guiEnabled, mustChangePassword, portalEnabled, allowedIps, quotaBytes, uploadLimitKBps, downloadLimitKBps, authSource, guiRole)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `, [
       user.username,
       hashedPassword,
@@ -304,7 +306,8 @@ export class DatabaseManager {
       user.quotaBytes || null,
       user.uploadLimitKBps || null,
       user.downloadLimitKBps || null,
-      user.authSource === 'ldap' ? 'ldap' : 'local'
+      user.authSource === 'ldap' ? 'ldap' : 'local',
+      user.guiRole === 'viewer' ? 'viewer' : 'admin'
     ]);
     
     const result = this.db.exec('SELECT last_insert_rowid() as id');
@@ -375,6 +378,10 @@ export class DatabaseManager {
     if (user.downloadLimitKBps !== undefined) {
       updates.push('downloadLimitKBps = ?');
       values.push(user.downloadLimitKBps || null);
+    }
+    if (user.guiRole !== undefined) {
+      updates.push('guiRole = ?');
+      values.push(user.guiRole === 'viewer' ? 'viewer' : 'admin');
     }
     if (user.authSource !== undefined) {
       updates.push('authSource = ?');
@@ -1231,6 +1238,7 @@ export class DatabaseManager {
       uploadLimitKBps: obj.uploadLimitKBps || null,
       downloadLimitKBps: obj.downloadLimitKBps || null,
       authSource: obj.authSource === 'ldap' ? 'ldap' : 'local',
+      guiRole: obj.guiRole === 'viewer' ? 'viewer' : 'admin',
       createdAt: obj.createdAt
     };
   }
