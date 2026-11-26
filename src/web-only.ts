@@ -8,6 +8,7 @@ import { SyslogForwarder } from './syslog';
 import { purgeExpired } from './recycle-bin';
 import { seedDefaultAdmin } from './default-admin';
 import { createShutdown, installProcessHandlers, shutdownGraceMs } from './lifecycle';
+import { BackupScheduler } from './backup-schedule';
 
 // Initialize database and server manager
 const db = new DatabaseManager();  // Use default config.db
@@ -64,6 +65,8 @@ console.log('🚀 Starting SLightSFTP Server with Web GUI...\n');
     const webhooks = new WebhookDispatcher(db);
     const syslog = new SyslogForwarder(db);
     const webServer = new WebServer(db, serverManager, WEB_PORT, { tls, webhooks, syslog });
+    const backups = new BackupScheduler(db, require('../package.json').version);
+    backups.start();
     await webServer.start();
     
     logger.info('🎯 Server is ready!');
@@ -74,6 +77,7 @@ console.log('🚀 Starting SLightSFTP Server with Web GUI...\n');
     // let transfers in progress finish within the grace period, then close
     const timeout = <T>(p: Promise<T>, ms: number) => Promise.race([p, new Promise(resolve => setTimeout(resolve, ms).unref())]);
     const shutdown = createShutdown([
+      ['backup schedule', () => backups.stop()],
       ['web GUI', () => webServer.stop()],
       ['listeners', grace => serverManager.stopAllListeners(grace)],
       // deliver the events of the last transfers (bounded: an endpoint may be down)

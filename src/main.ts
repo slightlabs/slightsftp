@@ -20,6 +20,7 @@ import { limitFromForm } from './bandwidth';
 import { purgeExpired, purgeItem, recycleSettings, restoreItem, saveRecycleSettings } from './recycle-bin';
 import { createApiToken } from './api-tokens';
 import { exportBackup, restoreBackup } from './backup';
+import { BackupScheduler, readBackupSchedule, runBackup, saveBackupSchedule } from './backup-schedule';
 import { checkForUpdate } from './update-check';
 import { isDirectoryUser, verifyUserPassword } from './credentials';
 import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from './ldap-auth';
@@ -59,6 +60,7 @@ const desktopViewer = () => isReadOnly(authenticatedUser ? db.getUser(authentica
 let pendingPasswordChangeUser: any = null;
 let webhooks: WebhookDispatcher;
 let syslog: SyslogForwarder;
+let backupScheduler: BackupScheduler | undefined;
 
 // Get application directories
 function getAppDirectories() {
@@ -697,6 +699,11 @@ function setupIpcHandlers(): void {
       await serverManager.startAllEnabledListeners();
     }
   });
+
+  // Scheduled backups
+  handle('get-backup-schedule', async () => readBackupSchedule(db));
+  handle('set-backup-schedule', async (_event: any, input: any) => saveBackupSchedule(db, input || {}));
+  handle('run-backup-now', async () => ({ success: true, ...runBackup(db, app.getVersion()), schedule: readBackupSchedule(db) }));
 
   // Personal access tokens for the REST API (signed-in user)
   handle('get-api-tokens', async () => (authenticatedUser ? db.listApiTokens(authenticatedUser.username) : []));
@@ -1426,6 +1433,8 @@ app.whenReady().then(async () => {
     return;
   }
   webhooks = new WebhookDispatcher(db);
+  backupScheduler = new BackupScheduler(db, app.getVersion());
+  backupScheduler.start();
   // Purge recycle-bin items past their retention period now and every hour
   purgeExpired(db);
   setInterval(() => { try { purgeExpired(db); } catch (err) { logger.error('Recycle bin cleanup failed:', err); } }, 3_600_000).unref();
@@ -1493,6 +1502,7 @@ app.on('before-quit', (event) => {
     } catch (err) {
       logger.error('Error stopping web server:', err);
     }
+    backupScheduler?.stop();
     try {
       await serverManager.stopAllListeners(3000);
       logger.info('All servers stopped');

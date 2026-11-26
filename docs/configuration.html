@@ -178,6 +178,9 @@
                     <ul>
                         <li>Use <em>Settings → Backup</em>: the bundle holds config.db, the SFTP host key, the TLS
                             certificate and the master key, so it restores on a new machine</li>
+                        <li><em>Scheduled backups</em>: every N hours (default 24) a bundle is written to a folder
+                            (default: <code>backups</code> next to config.db) and the newest N (default 7) are kept;
+                            set a passphrase to encrypt them. Point the folder at another disk or a synced location</li>
                         <li>Enter a <em>backup passphrase</em> to encrypt the bundle (AES-256-GCM, scrypt); the same
                             passphrase is needed to restore it. Unencrypted backups contain password hashes and keys</li>
                         <li>Copying files by hand: stop the server, then copy config.db <strong>and</strong> secret.key together

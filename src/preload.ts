@@ -21,7 +21,7 @@ const INVOKE_CHANNELS = [
   'get-ip-bans', 'unban-ip', 'get-security-settings', 'set-security-settings',
   'get-ldap-settings', 'set-ldap-settings', 'test-ldap',
   'check-for-update', 'open-external',
-  'export-backup', 'import-backup',
+  'export-backup', 'import-backup', 'get-backup-schedule', 'set-backup-schedule', 'run-backup-now',
   'get-api-tokens', 'create-api-token', 'revoke-api-token',
   'get-trash', 'set-trash-settings', 'restore-trash-item', 'purge-trash-item', 'empty-trash',
   'get-audit-settings', 'set-audit-settings', 'test-syslog',
