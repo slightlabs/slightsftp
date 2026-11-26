@@ -37,4 +37,5 @@ playwright-report/
 server.crt
 server.key
 ssh_host_rsa_key
+secret.key
 recycle-bin/

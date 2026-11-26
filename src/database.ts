@@ -4,6 +4,8 @@ import * as fs from 'fs';
 import { assertCloudTarget } from './cloud-storage';
 import { User, VirtualPath, Permission, Listener, UserListener, ServerActivity, FtpTlsMode, Share, Webhook, StorageConnection } from './types';
 import { hashPassword, timingDummyHash, verifyPasswordHash, verifyPasswordHashAsync } from './password';
+import { SecretBox, isSealed } from './secret-box';
+import { SECRET_SETTINGS } from './settings-policy';
 
 function normalizeTlsMode(mode: unknown): FtpTlsMode {
   return mode === 'optional' || mode === 'required' ? mode : 'none';
@@ -16,6 +18,8 @@ export class DatabaseManager {
   private activityListeners: Array<(activity: ServerActivity) => void> = [];
   /** pending coalesced save (activity log writes) */
   private saveTimer: NodeJS.Timeout | null = null;
+  /** encrypts the secrets stored in the database (see secret-box.ts) */
+  private secrets: SecretBox | null = null;
 
   constructor(dbPath?: string) {
     this.dbPath = dbPath || path.join(process.cwd(), 'config.db');
@@ -25,6 +29,7 @@ export class DatabaseManager {
     if (this.initialized) return;
 
     const SQL = await initSqlJs();
+    this.secrets = SecretBox.forDatabase(this.dbPath);
     
     if (fs.existsSync(this.dbPath)) {
       const buffer = fs.readFileSync(this.dbPath);
@@ -97,6 +102,58 @@ export class DatabaseManager {
   /** Write any pending changes now (call before exiting). */
   flush(): void {
     if (this.saveTimer) this.save();
+  }
+
+  /** The master key holder, e.g. for configuration backups. */
+  get secretBox(): SecretBox {
+    if (!this.secrets) throw new Error('Database not initialized');
+    return this.secrets;
+  }
+
+  /** Use a different master key (a restored backup's); the caller re-opens the data. */
+  useSecretBox(box: SecretBox): void {
+    this.secrets = box;
+  }
+
+  private seal(value: string | null | undefined): string | null | undefined {
+    return this.secrets ? this.secrets.seal(value) : value;
+  }
+
+  /**
+   * Decrypt a stored secret. With a missing or different master key the
+   * sealed value is returned unchanged, so it fails like a wrong secret
+   * would (TOTP codes and webhook signatures don't verify) instead of
+   * breaking every query that reads the row.
+   */
+  private unseal(value: string | null | undefined, what: string): string | null | undefined {
+    if (!this.secrets || !isSealed(value)) return value;
+    try {
+      return this.secrets.open(value);
+    } catch (err: any) {
+      console.error(`Cannot read ${what}: ${err?.message || err}`);
+      return value;
+    }
+  }
+
+  /** Encrypt secrets written in plaintext by older versions (or restored from their backups). */
+  private sealStoredSecrets(): void {
+    if (!this.db || !this.secrets) return;
+    const reseal = (table: string, key: string, column: string) => {
+      const rows = this.db!.exec(`SELECT ${key}, ${column} FROM ${table} WHERE ${column} IS NOT NULL AND ${column} != '' AND ${column} NOT LIKE 'enc:v1:%'`);
+      for (const [id, value] of rows.length ? rows[0].values : []) {
+        this.db!.run(`UPDATE ${table} SET ${column} = ? WHERE ${key} = ?`, [this.secrets!.seal(String(value)), id]);
+      }
+    };
+    reseal('users', 'id', 'totpSecret');
+    reseal('users', 'id', 'totpPendingSecret');
+    reseal('webhooks', 'id', 'secret');
+    reseal('storage_connections', 'id', 'config');
+    for (const key of SECRET_SETTINGS) {
+      const rows = this.db.exec(`SELECT value FROM settings WHERE key = ? AND value != '' AND value NOT LIKE 'enc:v1:%'`, [key]);
+      if (rows.length && rows[0].values.length) {
+        this.db.run('UPDATE settings SET value = ? WHERE key = ?', [this.secrets.seal(String(rows[0].values[0][0])), key]);
+      }
+    }
   }
 
   private initialize(): void {
@@ -252,6 +309,7 @@ export class DatabaseManager {
     `);
 
     this.migrate();
+    this.sealStoredSecrets();
 
     // Set default settings
     this.db.run(`INSERT OR IGNORE INTO settings (key, value) VALUES ('logRetentionDays', '30')`);
@@ -389,11 +447,11 @@ export class DatabaseManager {
     }
     if (user.totpPendingSecret !== undefined) {
       updates.push('totpPendingSecret = ?');
-      values.push(user.totpPendingSecret || null);
+      values.push(this.seal(user.totpPendingSecret) || null);
     }
     if (user.totpSecret !== undefined) {
       updates.push('totpSecret = ?');
-      values.push(user.totpSecret || null);
+      values.push(this.seal(user.totpSecret) || null);
     }
     if (user.totpEnabled !== undefined) {
       updates.push('totpEnabled = ?');
@@ -899,7 +957,7 @@ export class DatabaseManager {
     this.db.run(`
       INSERT INTO webhooks (name, url, events, format, usernameFilter, pathPrefix, secret, enabled)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `, [hook.name, hook.url, hook.events.join(','), hook.format || 'json', hook.usernameFilter ?? null, hook.pathPrefix ?? null, hook.secret ?? null, hook.enabled === false ? 0 : 1]);
+    `, [hook.name, hook.url, hook.events.join(','), hook.format || 'json', hook.usernameFilter ?? null, hook.pathPrefix ?? null, this.seal(hook.secret) ?? null, hook.enabled === false ? 0 : 1]);
     const result = this.db.exec('SELECT last_insert_rowid() as id');
     this.save();
     return result[0].values[0][0] as number;
@@ -909,7 +967,7 @@ export class DatabaseManager {
     if (!this.db) throw new Error('Database not initialized');
     const fields: Record<string, any> = {
       name: hook.name, url: hook.url, events: hook.events?.join(','), format: hook.format,
-      usernameFilter: hook.usernameFilter, pathPrefix: hook.pathPrefix, secret: hook.secret,
+      usernameFilter: hook.usernameFilter, pathPrefix: hook.pathPrefix, secret: hook.secret === undefined ? undefined : (this.seal(hook.secret) ?? null),
       enabled: hook.enabled === undefined ? undefined : (hook.enabled ? 1 : 0),
     };
     const keys = Object.keys(fields).filter(k => fields[k] !== undefined);
@@ -945,7 +1003,8 @@ export class DatabaseManager {
     return result[0].values.map(row => {
       const obj: any = {};
       result[0].columns.forEach((col, i) => { obj[col] = row[i]; });
-      return { ...obj, events: String(obj.events || '').split(',').filter(Boolean), enabled: obj.enabled === 1 } as Webhook;
+      const secret = this.unseal(obj.secret, `the signing secret of webhook ${obj.id}`);
+      return { ...obj, secret, events: String(obj.events || '').split(',').filter(Boolean), enabled: obj.enabled === 1 } as Webhook;
     });
   }
 
@@ -959,7 +1018,7 @@ export class DatabaseManager {
   // Cloud storage connections (config is JSON: bucket, credentials, ...)
   createStorageConnection(conn: StorageConnection): number {
     if (!this.db) throw new Error('Database not initialized');
-    this.db.run('INSERT INTO storage_connections (name, type, config) VALUES (?, ?, ?)', [conn.name, conn.type, JSON.stringify(conn.config || {})]);
+    this.db.run('INSERT INTO storage_connections (name, type, config) VALUES (?, ?, ?)', [conn.name, conn.type, this.seal(JSON.stringify(conn.config || {})) as string]);
     const result = this.db.exec('SELECT last_insert_rowid() as id');
     this.save();
     return result[0].values[0][0] as number;
@@ -967,7 +1026,7 @@ export class DatabaseManager {
 
   updateStorageConnection(id: number, conn: Partial<StorageConnection>): void {
     if (!this.db) throw new Error('Database not initialized');
-    const fields: Record<string, any> = { name: conn.name, type: conn.type, config: conn.config === undefined ? undefined : JSON.stringify(conn.config) };
+    const fields: Record<string, any> = { name: conn.name, type: conn.type, config: conn.config === undefined ? undefined : this.seal(JSON.stringify(conn.config)) };
     const keys = Object.keys(fields).filter(k => fields[k] !== undefined);
     if (!keys.length) return;
     this.db.run(`UPDATE storage_connections SET ${keys.map(k => `${k} = ?`).join(', ')} WHERE id = ?`, [...keys.map(k => fields[k]), id]);
@@ -996,7 +1055,8 @@ export class DatabaseManager {
       const obj: any = {};
       result[0].columns.forEach((col, i) => { obj[col] = row[i]; });
       let config = {};
-      try { config = JSON.parse(obj.config || '{}'); } catch { /* corrupt row: treat as empty */ }
+      const raw = this.unseal(obj.config, `the credentials of storage connection ${obj.id}`);
+      try { config = isSealed(raw) ? {} : JSON.parse(raw || '{}'); } catch { /* corrupt row: treat as empty */ }
       return { ...obj, config } as StorageConnection;
     });
   }
@@ -1177,13 +1237,17 @@ export class DatabaseManager {
     const result = this.db.exec('SELECT value FROM settings WHERE key = ?', [key]);
     if (result.length === 0 || result[0].values.length === 0) return undefined;
     
-    return result[0].values[0][0] as string;
+    const value = result[0].values[0][0] as string;
+    if (!SECRET_SETTINGS.has(key)) return value;
+    const plain = this.unseal(value, `the ${key} setting`);
+    return isSealed(plain) ? undefined : plain ?? undefined;
   }
 
   setSetting(key: string, value: string): void {
     if (!this.db) throw new Error('Database not initialized');
     
-    this.db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, value]);
+    const stored = SECRET_SETTINGS.has(key) ? this.seal(value) ?? '' : value;
+    this.db.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, stored]);
     this.save();
   }
 
@@ -1195,7 +1259,13 @@ export class DatabaseManager {
     
     const settings: Record<string, string> = {};
     for (const row of result[0].values) {
-      settings[row[0] as string] = row[1] as string;
+      const key = row[0] as string;
+      if (SECRET_SETTINGS.has(key)) {
+        const value = this.getSetting(key);
+        if (value !== undefined) settings[key] = value;
+      } else {
+        settings[key] = row[1] as string;
+      }
     }
     return settings;
   }
@@ -1232,8 +1302,8 @@ export class DatabaseManager {
       portalEnabled: obj.portalEnabled === 1,
       allowedIps: obj.allowedIps || null,
       totpEnabled: obj.totpEnabled === 1,
-      totpSecret: obj.totpSecret || null,
-      totpPendingSecret: obj.totpPendingSecret || null,
+      totpSecret: this.unseal(obj.totpSecret, 'a two-factor secret') || null,
+      totpPendingSecret: this.unseal(obj.totpPendingSecret, 'a two-factor secret') || null,
       quotaBytes: obj.quotaBytes || null,
       uploadLimitKBps: obj.uploadLimitKBps || null,
       downloadLimitKBps: obj.downloadLimitKBps || null,

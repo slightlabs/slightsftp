@@ -70,7 +70,7 @@ describe('database file', () => {
     const db = new DatabaseManager(dbPath);
     await db.init();
     db.createUser({ username: 'alice', password: 'alice-pass', passwordEnabled: true, publicKey: '', guiEnabled: false });
-    expect(fs.readdirSync(dir)).toEqual(['config.db']);
+    expect(fs.readdirSync(dir).sort()).toEqual(['config.db', 'secret.key']);
     db.close();
     const reopened = new DatabaseManager(dbPath);
     await reopened.init();

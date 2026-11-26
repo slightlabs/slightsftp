@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Security
+- Secrets stored in `config.db` — cloud storage credentials, the LDAP bind password,
+  webhook signing secrets and two-factor secrets — are now encrypted (AES-256-GCM) with a
+  master key kept outside the database: `secret.key` next to `config.db` (created on first
+  start, owner-only) or the `SLIGHTSFTP_MASTER_KEY` environment variable. Existing
+  plaintext values are encrypted on the first start. Configuration backups include the
+  key file. **Copy `secret.key` together with `config.db`** if you move a server by hand.
 - Symlinks inside a shared folder can no longer lead users out of it. Every SFTP, FTP,
   file portal, share link and web API path is now checked after following symlinks; a
   link (or dangling link) pointing outside the user's folders is refused. Before, only

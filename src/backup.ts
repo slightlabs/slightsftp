@@ -1,12 +1,15 @@
 /**
  * Configuration backup / restore: one JSON file with the configuration
  * database plus the SFTP host key and TLS certificate, so a restored server
- * keeps its identity.
+ * keeps its identity. The master key that encrypts the stored secrets goes
+ * with it (unless it comes from SLIGHTSFTP_MASTER_KEY, which the operator
+ * manages), so the bundle restores on a new machine.
  */
 import * as fs from 'fs';
 import * as path from 'path';
 import { DatabaseManager } from './database';
 import { CERT_FILE, KEY_FILE, SSH_HOST_KEY_FILE, getCertificateDir, setCertificateDir } from './tls';
+import { SECRET_KEY_FILE, SecretBox } from './secret-box';
 
 export const BACKUP_FORMAT = 'slightsftp-backup';
 
@@ -28,6 +31,8 @@ export function createBackup(db: DatabaseManager, appVersion: string): BackupBun
     const p = path.join(dir, name);
     if (fs.existsSync(p)) files[name] = fs.readFileSync(p).toString('base64');
   }
+  const box = db.secretBox;
+  if (box.source === 'file') files[SECRET_KEY_FILE] = Buffer.from(box.exportKey()).toString('base64');
   return {
     format: BACKUP_FORMAT,
     version: 1,
@@ -43,10 +48,19 @@ export async function restoreBackup(db: DatabaseManager, bundle: any): Promise<{
   if (!bundle || bundle.format !== BACKUP_FORMAT || typeof bundle.database !== 'string') {
     throw new Error('This is not a SLightSFTP configuration backup');
   }
+  // the backup's master key first: restoring re-seals any plaintext secrets with it
+  const restoredFiles: string[] = [];
+  const key = bundle.files?.[SECRET_KEY_FILE];
+  const box = db.secretBox;
+  if (typeof key === 'string' && box.source === 'file' && box.keyFile) {
+    const restored = SecretBox.fromKey(Buffer.from(Buffer.from(key, 'base64').toString('utf8').trim(), 'base64'));
+    fs.writeFileSync(box.keyFile, restored.exportKey(), { mode: 0o600 });
+    db.useSecretBox(SecretBox.forDatabase(path.join(path.dirname(box.keyFile), 'config.db')));
+    restoredFiles.push(SECRET_KEY_FILE);
+  }
   await db.restoreFrom(Buffer.from(bundle.database, 'base64'));
 
   const dir = getCertificateDir();
-  const restoredFiles: string[] = [];
   for (const name of KEY_FILES) {
     const content = bundle.files?.[name];
     if (typeof content !== 'string') continue;
