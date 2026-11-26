@@ -51,6 +51,10 @@
   delete), and leftover permissions or subscriptions of deleted users are removed.
 
 ### Security
+- Releases publish `SHA256SUMS`, a CycloneDX SBOM and build provenance attestations for
+  the installers; the Docker image is signed with Sigstore cosign and carries SBOM and
+  SLSA provenance. Windows and macOS installers are signed (and the .dmg notarized) when
+  the maintainer's certificates are configured — see `docs/RELEASE.md`.
 - SFTP no longer accepts SHA-1: by default the SSH listener offers only modern key
   exchange (curve25519, DH groups 16/18, group exchange SHA-256), AEAD/CTR ciphers and
   SHA-2 MACs, and disconnects clients that can only use `ssh-rsa` (SHA-1) host key

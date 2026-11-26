@@ -9,6 +9,8 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write      # keyless signing (Sigstore) and build provenance
+  attestations: write  # GitHub artifact attestations
 
 jobs:
   test:
@@ -88,19 +90,36 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Code signing happens only when the certificates are configured as repository
+      # secrets; otherwise the installers are built unsigned, as before.
       - name: Build Windows Installer
         if: matrix.os == 'windows-latest'
+        env:
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: npm run dist:win -- --publish never
 
       - name: Build Linux Installers
         if: matrix.os == 'ubuntu-latest'
         run: npm run dist:linux -- --publish never
 
-      - name: Build macOS Installer (unsigned)
+      - name: Build macOS Installer (signed and notarized when certificates are configured)
         if: matrix.os == 'macos-latest'
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npm run dist:mac -- --publish never
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          if [ -z "$CSC_LINK" ]; then
+            echo "::warning::MAC_CSC_LINK is not set: building an unsigned .dmg"
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            npm run dist:mac -- --publish never -c.mac.identity=null
+          else
+            npm run dist:mac -- --publish never
+          fi
 
       - name: Upload macOS artifacts
         if: matrix.os == 'macos-latest'
@@ -153,7 +172,8 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
 
-      - uses: docker/build-push-action@v6
+      - id: push
+        uses: docker/build-push-action@v6
         env:
           DOCKER_BUILD_RECORD_UPLOAD: false
         with:
@@ -161,6 +181,26 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # SBOM and SLSA provenance attached to the image as attestations
+          sbom: true
+          provenance: mode=max
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Sign the image (keyless, Sigstore)
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+          TAGS: ${{ steps.meta.outputs.tags }}
+        run: |
+          images=""
+          for tag in ${TAGS}; do images="$images ${tag}@${DIGEST}"; done
+          cosign sign --yes $images
+
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ github.repository }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
 
   release:
     needs: build
@@ -168,6 +208,19 @@ jobs:
     if: success() && startsWith(github.ref, 'refs/tags/')
 
     steps:
+      - name: Checkout code (for the SBOM)
+        uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Software bill of materials (CycloneDX)
+        run: |
+          npm ci --ignore-scripts --omit=dev
+          npm sbom --omit=dev --sbom-format cyclonedx --sbom-type application > sbom.cdx.json
+
       - name: Download installers
         uses: actions/download-artifact@v5
         with:
@@ -176,6 +229,15 @@ jobs:
 
       - name: List downloaded artifacts
         run: ls -R
+
+      - name: Attest build provenance of the installers
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            windows-installer/*.msi
+            linux-installers/*.AppImage
+            linux-installers/*.deb
+            mac-installer/*.dmg
 
       - name: Create or Update Release (retry)
         shell: bash
@@ -193,6 +255,11 @@ jobs:
             linux-installers/*.deb
             mac-installer/*.dmg
           )
+
+          # checksums for every installer, and the SBOM
+          sha256sum "${FILES[@]}" | sed 's#  [^ ]*/#  #' > SHA256SUMS
+          cat SHA256SUMS
+          FILES+=(SHA256SUMS sbom.cdx.json)
 
           echo "Resolved artifacts:"
           if [[ ${#FILES[@]} -eq 0 ]]; then
