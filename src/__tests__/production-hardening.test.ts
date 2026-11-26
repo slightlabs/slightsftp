@@ -124,6 +124,7 @@ describe('database file', () => {
     raw.run('INSERT INTO server_activities SELECT * FROM old_activities');
     raw.run('DROP TABLE old_activities');
     raw.run(`INSERT INTO user_listeners (userId, listenerId) VALUES (424242, ${listenerId})`);
+    raw.run('PRAGMA user_version = 1'); // before the migration that fixes this
     raw.close();
 
     const upgraded = new DatabaseManager(dbPath);

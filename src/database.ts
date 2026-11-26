@@ -17,6 +17,24 @@ export interface StoredSession {
   mustChangePassword: boolean;
 }
 
+/**
+ * The schema version this build writes to PRAGMA user_version: the number of
+ * entries in DatabaseManager.migrations. Add a migration (never edit a
+ * released one) for every schema change.
+ */
+export const SCHEMA_VERSION = 2;
+
+/** How many automatic pre-upgrade copies of config.db to keep. */
+const UPGRADE_BACKUPS_KEPT = 3;
+
+/** config.db was written by a newer version of the app. */
+export class DatabaseTooNewError extends Error {
+  constructor(readonly found: number) {
+    super(`The configuration database was written by a newer version of SLightSFTP (schema ${found}; this version understands up to ${SCHEMA_VERSION}). Install the newer version again, or restore a backup made with this one.`);
+    this.name = 'DatabaseTooNewError';
+  }
+}
+
 function normalizeTlsMode(mode: unknown): FtpTlsMode {
   return mode === 'optional' || mode === 'required' ? mode : 'none';
 }
@@ -38,8 +56,41 @@ export class DatabaseManager {
 
     this.secrets = SecretBox.forDatabase(this.dbPath);
     this.db = this.open();
-    this.initialize();
+    try {
+      this.backUpBeforeUpgrade();
+      this.initialize();
+    } catch (err) {
+      this.db.close();
+      this.db = null;
+      throw err;
+    }
     this.initialized = true;
+  }
+
+  private schemaVersion(db: SqliteDatabase = this.db!): number {
+    return Number(db.exec('PRAGMA user_version')[0]?.values[0]?.[0] ?? 0);
+  }
+
+  /**
+   * Before a newer version changes the schema of an existing database, keep
+   * a copy next to it (config.db.v<old>-<time>.bak, the newest few), so an
+   * upgrade can always be undone by reinstalling the old version.
+   */
+  private backUpBeforeUpgrade(): void {
+    if (!this.db || this.dbPath === ':memory:') return;
+    const version = this.schemaVersion();
+    const hasTables = this.db.exec("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'").length > 0;
+    if (!hasTables || version >= SCHEMA_VERSION) return;
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');
+    const target = `${this.dbPath}.v${version}-${stamp}.bak`;
+    fs.writeFileSync(target, this.db.serialize(), { mode: 0o600 });
+    console.log(`Upgrading the configuration database (schema ${version} -> ${SCHEMA_VERSION}); previous version saved as ${target}`);
+
+    const dir = path.dirname(path.resolve(this.dbPath));
+    const prefix = `${path.basename(this.dbPath)}.v`;
+    const copies = fs.readdirSync(dir).filter(f => f.startsWith(prefix) && f.endsWith('.bak'))
+      .map(f => ({ f, t: fs.statSync(path.join(dir, f)).mtimeMs })).sort((a, b) => b.t - a.t);
+    for (const { f } of copies.slice(UPGRADE_BACKUPS_KEPT)) fs.rmSync(path.join(dir, f), { force: true });
   }
 
   /**
@@ -128,6 +179,8 @@ export class DatabaseManager {
 
   private initialize(): void {
     if (!this.db) throw new Error('Database not initialized');
+    const version = this.schemaVersion();
+    if (version > SCHEMA_VERSION) throw new DatabaseTooNewError(version);
     
     // Create tables
     this.db.run(`
@@ -286,7 +339,7 @@ export class DatabaseManager {
       CREATE INDEX IF NOT EXISTS idx_activities_timestamp ON server_activities(timestamp);
     `);
 
-    this.migrate();
+    this.migrate(version);
     this.sealStoredSecrets();
 
     // Set default settings
@@ -295,9 +348,30 @@ export class DatabaseManager {
     this.db.run('PRAGMA foreign_keys = ON');
   }
 
-  /** Add columns introduced after a table was first created. */
-  private migrate(): void {
+  /**
+   * Schema changes, in order; entry i takes the database from version i to
+   * i + 1. Each runs in its own transaction together with the version bump.
+   * Released entries are never edited: add a new one.
+   */
+  private readonly migrations: Array<{ name: string; up: () => void }> = [
+    { name: 'columns added up to v1.7', up: () => this.addLegacyColumns() },
+    { name: 'audit log keeps entries of deleted listeners; remove orphan rows', up: () => { this.keepActivityHistory(); this.removeOrphanRows(); } },
+  ];
+
+  /** Bring the database from `from` up to SCHEMA_VERSION. */
+  private migrate(from: number): void {
     if (!this.db) return;
+    if (this.migrations.length !== SCHEMA_VERSION) throw new Error('SCHEMA_VERSION does not match the migrations');
+    for (let v = from; v < SCHEMA_VERSION; v++) {
+      this.db.transaction(() => {
+        this.migrations[v].up();
+        this.db!.run(`PRAGMA user_version = ${v + 1}`);
+      });
+    }
+  }
+
+  /** Columns introduced before schema versions were tracked (idempotent: v1.7 databases have some of them). */
+  private addLegacyColumns(): void {
     const addColumn = (table: string, column: string, definition: string) => {
       const info = this.db!.exec(`PRAGMA table_info(${table})`);
       const columns = info.length ? info[0].values.map(row => row[1]) : [];
@@ -320,8 +394,6 @@ export class DatabaseManager {
     addColumn('users', 'authSource', "TEXT NOT NULL DEFAULT 'local'");
     // existing GUI users keep full access
     addColumn('users', 'guiRole', "TEXT NOT NULL DEFAULT 'admin'");
-    this.keepActivityHistory();
-    this.removeOrphanRows();
   }
 
   /**
@@ -336,25 +408,23 @@ export class DatabaseManager {
     if (!fks.length) return;
     const info = this.db!.exec('PRAGMA table_info(server_activities)');
     const columns = info[0].values.map(r => `"${String(r[1])}"`).join(', ');
-    this.db!.transaction(() => {
-      this.db!.run(`
-        CREATE TABLE server_activities_new (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          listenerId INTEGER,
-          username TEXT NOT NULL,
-          action TEXT NOT NULL,
-          path TEXT NOT NULL,
-          timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-          success INTEGER NOT NULL DEFAULT 1,
-          bytes INTEGER,
-          checksum TEXT
-        )`);
-      this.db!.run(`INSERT INTO server_activities_new (${columns}) SELECT ${columns} FROM server_activities`);
-      this.db!.run('DROP TABLE server_activities');
-      this.db!.run('ALTER TABLE server_activities_new RENAME TO server_activities');
-      this.db!.run('CREATE INDEX IF NOT EXISTS idx_activities_listener ON server_activities(listenerId)');
-      this.db!.run('CREATE INDEX IF NOT EXISTS idx_activities_timestamp ON server_activities(timestamp)');
-    });
+    this.db!.run(`
+      CREATE TABLE server_activities_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        listenerId INTEGER,
+        username TEXT NOT NULL,
+        action TEXT NOT NULL,
+        path TEXT NOT NULL,
+        timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        success INTEGER NOT NULL DEFAULT 1,
+        bytes INTEGER,
+        checksum TEXT
+      )`);
+    this.db!.run(`INSERT INTO server_activities_new (${columns}) SELECT ${columns} FROM server_activities`);
+    this.db!.run('DROP TABLE server_activities');
+    this.db!.run('ALTER TABLE server_activities_new RENAME TO server_activities');
+    this.db!.run('CREATE INDEX IF NOT EXISTS idx_activities_listener ON server_activities(listenerId)');
+    this.db!.run('CREATE INDEX IF NOT EXISTS idx_activities_timestamp ON server_activities(timestamp)');
   }
 
   /** Rows whose user or listener is gone (left behind while foreign keys were not enforced). */
@@ -1426,11 +1496,13 @@ export class DatabaseManager {
     try {
       fs.writeFileSync(candidate, bytes, { mode: 0o600 });
       let check: SqliteDatabase | null = null;
+      let tooNew = false;
       try {
         check = new SqliteDatabase(candidate, { readOnly: true });
         const tables = check.exec("SELECT name FROM sqlite_master WHERE type = 'table'");
         const names = tables.length ? tables[0].values.map(r => r[0]) : [];
         if (!['users', 'listeners', 'virtual_paths'].every(t => names.includes(t))) throw new Error('missing tables');
+        tooNew = this.schemaVersion(check) > SCHEMA_VERSION;
         const integrity = check.exec('PRAGMA quick_check');
         if (integrity[0]?.values[0]?.[0] !== 'ok') throw new Error('corrupt');
       } catch {
@@ -1438,6 +1510,7 @@ export class DatabaseManager {
       } finally {
         check?.close();
       }
+      if (tooNew) throw new Error('This backup was made by a newer version of SLightSFTP; install that version to restore it');
 
       // the people signed in now stay signed in (sessions are not part of backups)
       const sessions = this.db.exec('SELECT tokenHash, kind, username, createdAt, mustChangePassword FROM web_sessions');

@@ -1416,7 +1416,15 @@ app.whenReady().then(async () => {
   ensureDirectories();
   setCertificateDir(getAppDirectories().config);
   
-  await initializeDatabase();
+  try {
+    await initializeDatabase();
+  } catch (err: any) {
+    // e.g. a config.db from a newer version, or an unreadable data folder
+    logger.error('Cannot open the configuration database:', err);
+    dialog.showErrorBox('SLightSFTP cannot start', err?.message || String(err));
+    app.exit(1);
+    return;
+  }
   webhooks = new WebhookDispatcher(db);
   // Purge recycle-bin items past their retention period now and every hour
   purgeExpired(db);
