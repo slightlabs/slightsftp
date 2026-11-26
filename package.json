@@ -136,6 +136,7 @@
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
     "ftp-srv": "^4.6.3",
+    "ip": "file:vendor/ip",
     "ldapts": "9.2.0",
     "proxy-addr": "^2.0.8",
     "qrcode": "1.5.4",
@@ -177,6 +178,7 @@
   },
   "overrides": {
     "uuid": "^11.1.1",
-    "brace-expansion@1": "^1.1.22"
+    "brace-expansion@1": "^1.1.22",
+    "ip": "$ip"
   }
 }

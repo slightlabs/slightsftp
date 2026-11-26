@@ -1,0 +1,9 @@
+{
+  "name": "ip",
+  "version": "1.1.9-slightsftp.1",
+  "description": "Minimal replacement for the unmaintained 'ip' package (GHSA-2p57-rm9w-gvfp): only isEqual(), the one function ftp-srv uses",
+  "main": "index.js",
+  "license": "MIT",
+  "private": true,
+  "files": ["index.js"]
+}
