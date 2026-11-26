@@ -15,7 +15,7 @@ import { maxConnections, passiveAddressResolver } from './connection-limits';
 import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { SessionTransferStats, TransferDirection, TransferHandle, TransferTracker } from './transfers';
 import { Readable, Transform, Writable } from 'stream';
-import { resolveUserPath } from './path-utils';
+import { escapesRoot, resolveUserPath } from './path-utils';
 import { CloudEntry, CloudTarget, cloudTarget, entryMode, isCloudPath, stagingFile } from './cloud-storage';
 
 interface ClientSession {
@@ -566,6 +566,8 @@ export class CustomFileSystem extends FileSystem {
     for (const rootPath of roots) {
       const root = path.resolve(rootPath);
       if (resolved === root || resolved.startsWith(root + path.sep)) {
+        // a symlink inside the folder must not lead out of it
+        if (escapesRoot(root, resolved)) break;
         return resolved;
       }
     }

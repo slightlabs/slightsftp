@@ -51,6 +51,8 @@ jest.mock('fs', () => {
     existsSync: jest.fn().mockReturnValue(true),
     statSync: jest.fn().mockReturnValue({ mode: 33188, uid: 0, gid: 0, size: 0, isDirectory: () => false, atimeMs: 0, mtimeMs: 0, mtime: new Date() }),
     lstatSync: jest.fn().mockReturnValue({ mode: 33188, uid: 0, gid: 0, size: 0, isDirectory: () => false, atimeMs: 0, mtimeMs: 0, mtime: new Date() }),
+    // the fake filesystem has no symlinks: every path is its own real path
+    realpathSync: Object.assign(jest.fn((p: string) => p), { native: jest.fn((p: string) => p) }),
     writeSync: jest.fn().mockReturnValue(0),
     readSync: jest.fn().mockReturnValue(0),
     openSync: jest.fn().mockReturnValue(3),

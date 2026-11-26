@@ -14,7 +14,7 @@ import { deleteFile } from './recycle-bin';
 import { verifyUserPassword } from './credentials';
 import { maxConnections, preAuthTimeoutMs } from './connection-limits';
 import { SessionTransferStats, TransferHandle, TransferTracker } from './transfers';
-import { resolveUserPath } from './path-utils';
+import { assertInsideRoot, PathEscapeError, resolveUserPath } from './path-utils';
 import { CloudEntry, CloudTarget, StagedDownload, cloudTarget, entryMode, isCloudPath, stagingFile } from './cloud-storage';
 // SFTP constants (from ssh2-streams)
 const SFTP_STATUS_CODE = {
@@ -399,6 +399,8 @@ export class SFTPServer extends EventEmitter {
                     if (resolved !== root && !resolved.startsWith(root + path.sep)) {
                       realPath = root;
                     }
+                    // ...not even through a symlink inside it (answered PERMISSION_DENIED below)
+                    assertInsideRoot(root, realPath);
                     
                     console.log(`Path mapping: ${virtualPath} -> ${normalizedVPath} -> ${realPath}`);
                     
@@ -423,6 +425,7 @@ export class SFTPServer extends EventEmitter {
                 // Default to first virtual path if available
                 if (virtualPaths.length > 0) {
                   const defaultPath = path.join(virtualPaths[0].localPath, normalizedVPath);
+                  assertInsideRoot(path.resolve(virtualPaths[0].localPath), defaultPath);
                   
                   // Ensure base directory exists
                   if (!fs.existsSync(virtualPaths[0].localPath)) {
@@ -515,6 +518,23 @@ export class SFTPServer extends EventEmitter {
                   bytes,
                   checksum,
                   success
+                });
+              };
+
+              // A path that leads out of the user's folders through a symlink makes
+              // pathMapper throw PathEscapeError: answer that request PERMISSION_DENIED
+              // instead of letting the exception escape the event handler
+              const registerRequest = sftp.on.bind(sftp) as (event: string, handler: (...args: any[]) => void) => void;
+              (sftp as any).on = (event: string, handler: (...args: any[]) => void) => {
+                if (!/^[A-Z]+$/.test(event)) return registerRequest(event, handler);
+                return registerRequest(event, (reqId: number, ...args: any[]) => {
+                  try {
+                    return handler(reqId, ...args);
+                  } catch (err) {
+                    if (!(err instanceof PathEscapeError)) throw err;
+                    logActivity('PATH_ESCAPE_DENIED', typeof args[0] === 'string' ? args[0] : '', false);
+                    sftp.status(reqId, SFTP_STATUS_CODE.PERMISSION_DENIED);
+                  }
                 });
               };
 
