@@ -116,7 +116,6 @@
     "mac": {
       "category": "public.app-category.utilities",
       "icon": "assets/icon.png",
-      "identity": null,
       "target": [
         {
           "target": "dmg",
@@ -126,7 +125,11 @@
           ]
         }
       ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     }
   },
   "dependencies": {

@@ -26,6 +26,41 @@ GitHub Actions will automatically:
 - Create GitHub Release
 - Upload all installers as release assets
 
+### Code signing (optional, recommended)
+
+Without certificates the installers are built **unsigned** (Windows SmartScreen and
+macOS Gatekeeper warn users). Add these repository secrets (*Settings → Secrets and
+variables → Actions*) and the release workflow signs automatically:
+
+| Secret | What it is |
+| --- | --- |
+| `WIN_CSC_LINK` | Windows code-signing certificate (.pfx), base64-encoded or an https URL |
+| `WIN_CSC_KEY_PASSWORD` | Its password |
+| `MAC_CSC_LINK` | Apple *Developer ID Application* certificate (.p12), base64-encoded |
+| `MAC_CSC_KEY_PASSWORD` | Its password |
+| `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` | For notarization of the .dmg |
+
+The macOS build uses the hardened runtime with `build/entitlements.mac.plist`.
+
+### What every release publishes
+
+- The installers (.msi, .dmg, .AppImage, .deb)
+- `SHA256SUMS` — checksums of the installers
+- `sbom.cdx.json` — CycloneDX software bill of materials of the shipped dependencies
+- Build provenance attestations for each installer (GitHub artifact attestations)
+- The Docker image `ghcr.io/<owner>/slightsftp`, signed with Sigstore cosign (keyless) and
+  carrying SBOM and SLSA provenance attestations
+
+### Verifying a download
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+gh attestation verify SLightSFTP-1.8.0-setup.msi --repo slightlabs/slightsftp
+cosign verify ghcr.io/slightlabs/slightsftp:1.8.0 \
+  --certificate-identity-regexp 'https://github.com/slightlabs/slightsftp/.github/workflows/release.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
 ### Manual Trigger
 
 You can also trigger builds manually from GitHub Actions tab in your repository.
