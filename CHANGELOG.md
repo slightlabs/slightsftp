@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Changed
+- The configuration database now runs on Node's built-in SQLite (`node:sqlite`) in WAL
+  mode instead of sql.js. sql.js kept the whole database in memory and rewrote the entire
+  file after every change; now each change is written to disk as it is made, so large
+  activity logs no longer slow the server down and a crash loses nothing that was saved.
+  Existing `config.db` files open as they are. Requires Node.js 22.16 or later.
+- Foreign keys are now enforced (sql.js silently switched them off). The activity log is
+  kept when a listener is deleted (older databases are upgraded to drop the cascading
+  delete), and leftover permissions or subscriptions of deleted users are removed.
+
 ### Security
 - `npm audit` reports no known vulnerabilities in the shipped dependencies. The
   unmaintained `ip` package under `ftp-srv` (GHSA-2p57-rm9w-gvfp, no fixed release) is

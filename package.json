@@ -4,7 +4,7 @@
   "description": "Multi-user FTP/SFTP server with GUI management",
   "main": "dist/main.js",
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.16"
   },
   "scripts": {
     "prebuild": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
@@ -141,7 +141,6 @@
     "proxy-addr": "^2.0.8",
     "qrcode": "1.5.4",
     "selfsigned": "5.5.0",
-    "sql.js": "^1.10.3",
     "ssh2": "^1.15.0",
     "winston": "^3.19.0",
     "ws": "^8.18.3"
@@ -152,10 +151,9 @@
     "@types/express": "^5.0.6",
     "@types/ftp": "^0.3.36",
     "@types/jest": "^29.5.11",
-    "@types/node": "^20.19.27",
+    "@types/node": "^22.20.7",
     "@types/proxy-addr": "^2.0.3",
     "@types/qrcode": "1.5.5",
-    "@types/sql.js": "^1.4.9",
     "@types/ssh2": "^1.11.17",
     "@types/ssh2-sftp-client": "^9.0.6",
     "@types/supertest": "^7.2.1",
