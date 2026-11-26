@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Running in Production - SLightSFTP</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <div class="container">
+                <div class="logo">SLightSFTP</div>
+                <ul class="nav-links">
+                    <li><a href="index.html#features">Features</a></li>
+                    <li><a href="index.html#installation">Installation</a></li>
+                    <li><a href="index.html#documentation">Documentation</a></li>
+                    <li><a href="https://github.com/slightlabs/slightsftp" target="_blank">GitHub</a></li>
+                </ul>
+            </div>
+        </nav>
+    </header>
+
+    <section class="page-header">
+        <div class="container">
+            <h1>Running in Production</h1>
+            <p>Deploy, upgrade, back up, monitor and harden a SLightSFTP server</p>
+        </div>
+    </section>
+
+    <section class="configuration-content">
+        <div class="container">
+
+            <div class="config-section">
+                <h2>Deployment model</h2>
+                <div class="config-item">
+                    <ul>
+                        <li>One server process per data folder. The configuration is a SQLite database
+                            (<code>config.db</code>, with <code>config.db-wal</code> / <code>-shm</code> while running), so two
+                            instances must never share the folder. Scale out by running separate servers.</li>
+                        <li>The data folder holds <code>config.db</code>, <code>secret.key</code> (master key for stored secrets),
+                            the SFTP host key, the TLS certificate, <code>backups/</code>, <code>logs/</code> and the recycle bin.
+                            In Docker it is <code>/data</code>.</li>
+                        <li>Sign-ins to the web GUI and portal survive restarts. Active SFTP / FTP transfers get
+                            <code>SHUTDOWN_GRACE_MS</code> to finish when the server stops.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h2>Docker</h2>
+                <div class="config-item">
+<pre><code>services:
+  slightsftp:
+    image: ghcr.io/slightlabs/slightsftp:1      # pin a major version; see "Upgrades"
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    environment:
+      WEB_HTTPS: "true"
+      SHUTDOWN_GRACE_MS: "20000"
+      TRUST_PROXY: "172.16.0.0/12"              # only behind a reverse proxy
+      LOG_FORMAT: json                          # for log collectors
+      LOG_FILES: "false"                        # stdout only
+      # SLIGHTSFTP_MASTER_KEY: from a secret store, instead of /data/secret.key
+    ports:
+      - "2222:2222"
+      - "127.0.0.1:3000:3000"                   # admin GUI only via the proxy
+    volumes:
+      - slightsftp-data:/data
+      - /srv/files:/files
+      - /mnt/backup/slightsftp:/backups         # set the backup folder to /backups
+volumes:
+  slightsftp-data:</code></pre>
+                    <ul>
+                        <li>The image runs as the unprivileged <code>node</code> user; listen on ports above 1024 and
+                            map them (e.g. <code>22:2222</code>).</li>
+                        <li><code>HEALTHCHECK</code> probes <code>/readyz</code>: the container turns unhealthy when an enabled
+                            listener cannot start (port in use, bad certificate).</li>
+                        <li>Passive FTP needs <code>FTP_PASV_URL</code> (public address) and the published range
+                            <code>FTP_PASV_MIN</code>–<code>FTP_PASV_MAX</code>.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h2>Behind a reverse proxy</h2>
+                <div class="config-item">
+                    <p>Put the web GUI and file portal behind nginx, Caddy or Traefik for a public certificate.
+                    SFTP and FTP are not HTTP; publish them directly. WebSockets are used for live updates.</p>
+<pre><code># nginx
+location / {
+    proxy_pass https://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Request-Id $request_id;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    client_max_body_size 0;          # large portal uploads
+}</code></pre>
+                    <ul>
+                        <li>Set <code>TRUST_PROXY</code> (or the <em>trustProxy</em> setting) to the proxy's address or range, so
+                            brute-force bans and IP allow-lists see real client addresses. Without it,
+                            <code>X-Forwarded-For</code> is ignored.</li>
+                        <li>The proxy's <code>X-Request-Id</code> is kept and appears in the server's log lines.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h2>Upgrades</h2>
+                <div class="config-item">
+                    <ul>
+                        <li>Read the release notes, then replace the image or installer and restart.</li>
+                        <li>Before a new version changes the database it saves a copy as
+                            <code>config.db.v&lt;old schema&gt;-&lt;time&gt;.bak</code> (newest three kept).</li>
+                        <li>To roll back: stop the server, reinstall the previous version, rename that copy to
+                            <code>config.db</code> and start. An older version refuses to open a newer database rather than
+                            damaging it.</li>
+                        <li>Verify downloads before installing: <code>SHA256SUMS</code>, <code>gh attestation verify</code>,
+                            <code>cosign verify</code> for the image (see the release guide).</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h2>Backup and restore</h2>
+                <div class="config-item">
+                    <ul>
+                        <li>Turn on <em>Security → Backup &amp; Restore → Scheduled backups</em>, set a passphrase, and point the
+                            folder at another disk or a synced location. Each bundle holds the configuration, host key,
+                            TLS certificate and master key.</li>
+                        <li>Back up the shared folders themselves separately: SLightSFTP backs up its configuration, not
+                            users' files.</li>
+                        <li>Restore from the GUI or <code>POST /api/backup/restore</code> with <code>{ bundle, passphrase }</code>; the
+                            listeners restart and current sign-ins are kept.</li>
+                        <li>Test a restore on a spare machine now and then.</li>
+                        <li>If you set <code>SLIGHTSFTP_MASTER_KEY</code>, store it in your secret manager: it is not in the
+                            backups, and stored credentials cannot be read without it.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h2>Monitoring</h2>
+                <div class="config-item">
+<pre><code># prometheus.yml
+scrape_configs:
+  - job_name: slightsftp
+    scheme: https
+    tls_config: { insecure_skip_verify: true }   # self-signed certificate
+    authorization:
+      credentials: sst_...                       # API token of a read-only GUI user
+    static_configs:
+      - targets: ["sftp.example.com:3000"]</code></pre>
+                    <ul>
+                        <li>Alert on <code>slightsftp_listener_up == 0</code>, a rising
+                            <code>rate(slightsftp_logins_total{result="failure"}[5m])</code>, and <code>slightsftp_ip_bans</code>.</li>
+                        <li><code>/healthz</code> for liveness, <code>/readyz</code> for readiness (load balancers, Kubernetes).</li>
+                        <li>Forward the activity log to your SIEM with syslog (<em>Security → Audit export</em>) or webhooks.</li>
+                        <li>Logs: <code>LOG_FORMAT=json</code>, <code>LOG_LEVEL=http</code> for one line per web request.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h2>Hardening checklist</h2>
+                <div class="config-item">
+                    <ul>
+                        <li>Choose a strong admin password (forced on first sign-in) and enable two-factor sign-in for every GUI user.</li>
+                        <li>Give automation read-only GUI users and expiring API tokens.</li>
+                        <li>Web GUI over HTTPS only; keep the admin GUI off the public internet where possible.</li>
+                        <li>Keep <em>Protocol Security</em> on <em>Modern</em> SSH algorithms and TLS 1.2+; prefer SFTP or FTPS
+                            (<em>required</em>) over plain FTP.</li>
+                        <li>Keep brute-force protection on; use per-user IP allow-lists for partners with fixed addresses.</li>
+                        <li>Map users to the narrowest folders and permissions they need; set quotas.</li>
+                        <li>Do not mount folders that contain symlinks to sensitive places: links that lead outside a user's
+                            folders are refused, but keep the shared tree clean anyway.</li>
+                        <li>Encrypt backups with a passphrase and keep <code>secret.key</code> as private as <code>config.db</code>.</li>
+                        <li>Subscribe to releases (GitHub <em>Watch → Releases</em>) and upgrade promptly; report vulnerabilities
+                            privately (see <code>SECURITY.md</code>).</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="back-link">
+        <div class="container">
+            <a href="index.html" class="btn btn-secondary">← Back to Home</a>
+        </div>
+    </section>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024–2026 SLightSFTP. Free & Open Source MIT License.</p>
+            <div class="footer-links">
+                <a href="https://github.com/slightlabs/slightsftp" target="_blank">GitHub</a>
+                <a href="https://github.com/slightlabs/slightsftp/issues" target="_blank">Issues</a>
+                <a href="https://github.com/slightlabs/slightsftp/blob/master/LICENSE" target="_blank">MIT License</a>
+                <a href="https://github.com/slightlabs/slightsftp" target="_blank">⭐ Star on GitHub</a>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

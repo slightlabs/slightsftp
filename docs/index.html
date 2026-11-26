@@ -213,6 +213,10 @@ cd slightsftp</code></pre>
                     <h3>API Reference</h3>
                     <p>API documentation for developers</p>
                 </a>
+                <a href="operations.html" class="doc-card">
+                    <h3>Running in Production</h3>
+                    <p>Deployment, reverse proxy, upgrades, backups, monitoring and hardening</p>
+                </a>
                 <a href="troubleshooting.html" class="doc-card">
                     <h3>Troubleshooting</h3>
                     <p>Common issues and solutions</p>
@@ -225,14 +229,15 @@ cd slightsftp</code></pre>
         <div class="container">
             <h2>Quick Start</h2>
             <div class="usage-commands">
-                <pre><code># Start the application
+                <pre><code># Desktop app (from source)
+npm ci
 npm start
 
-# Run test client
-npm test
+# Headless server with the web admin GUI on :3000
+npm run start:web
 
-# Development mode
-npm run dev</code></pre>
+# Run the tests
+npm test</code></pre>
             </div>
         </div>
     </section>
