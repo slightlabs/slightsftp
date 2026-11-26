@@ -173,6 +173,8 @@
                     <ul>
                         <li>Use <em>Settings → Backup</em>: the bundle holds config.db, the SFTP host key, the TLS
                             certificate and the master key, so it restores on a new machine</li>
+                        <li>Enter a <em>backup passphrase</em> to encrypt the bundle (AES-256-GCM, scrypt); the same
+                            passphrase is needed to restore it. Unencrypted backups contain password hashes and keys</li>
                         <li>Copying files by hand: copy config.db <strong>and</strong> secret.key together</li>
                         <li>With <code>SLIGHTSFTP_MASTER_KEY</code>, the key is not in the backup; restore with the same key</li>
                     </ul>

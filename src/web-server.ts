@@ -25,7 +25,7 @@ import { getQuotaManager, quotaFromMegabytes } from './quota';
 import { limitFromForm } from './bandwidth';
 import { purgeItem, recycleSettings, restoreItem, saveRecycleSettings } from './recycle-bin';
 import { authenticateToken, createApiToken } from './api-tokens';
-import { createBackup, restoreBackup } from './backup';
+import { BackupPassphraseError, createBackup, exportBackup, restoreBackup } from './backup';
 import { checkForUpdate } from './update-check';
 import { isDirectoryUser, verifyUserPassword } from './credentials';
 import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from './ldap-auth';
@@ -640,18 +640,34 @@ export class WebServer {
       res.json(bundle);
     });
 
+    // the same, encrypted with a passphrase (POST so the passphrase is not in a URL)
+    this.app.post('/api/backup', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      try {
+        const passphrase = typeof req.body?.passphrase === 'string' ? req.body.passphrase : '';
+        const bundle = exportBackup(this.db, APP_VERSION, passphrase || undefined);
+        this.logActivity(session.username, 'WEB_BACKUP_DOWNLOADED', passphrase ? 'configuration backup (encrypted)' : 'configuration backup', true);
+        res.attachment(`slightsftp-backup-${bundle.createdAt.slice(0, 10)}.json`);
+        res.json(bundle);
+      } catch (error: any) {
+        res.status(400).json({ error: error.message });
+      }
+    });
+
     this.app.post('/api/backup/restore', async (req: Request, res: Response) => {
       const session = (req as any).session as WebSession;
       try {
         await this.serverManager.stopAllListeners();
-        const summary = await restoreBackup(this.db, req.body);
+        // body: the bundle itself, or { bundle, passphrase } for an encrypted one
+        const wrapped = req.body && typeof req.body.bundle === 'object' && req.body.bundle !== null;
+        const summary = await restoreBackup(this.db, wrapped ? req.body.bundle : req.body, wrapped ? req.body.passphrase : undefined);
         getQuotaManager(this.db).invalidate();
         await this.serverManager.startAllEnabledListeners();
         this.logActivity(session.username, 'WEB_BACKUP_RESTORED', `${summary.users} users, ${summary.listeners} listeners`, true);
         res.json({ success: true, ...summary });
       } catch (error: any) {
         await this.serverManager.startAllEnabledListeners().catch(() => undefined);
-        res.status(400).json({ error: error.message });
+        res.status(400).json({ error: error.message, ...(error instanceof BackupPassphraseError ? { passphraseRequired: true } : {}) });
       }
     });
 
@@ -1866,15 +1882,18 @@ export class WebServer {
             'get-api-tokens': () => api('GET', '/api/tokens'),
             'create-api-token': (name, expiresInDays) => api('POST', '/api/tokens', { name, expiresInDays }),
             'revoke-api-token': (id) => api('DELETE', \`/api/tokens/\${id}\`),
-            'export-backup': async () => {
+            'export-backup': async (passphrase) => {
+              const bundle = await api('POST', '/api/backup', { passphrase: passphrase || '' });
               const link = document.createElement('a');
-              link.href = '/api/backup';
+              link.href = URL.createObjectURL(new Blob([JSON.stringify(bundle)], { type: 'application/json' }));
+              link.download = \`slightsftp-backup-\${String(bundle.createdAt || '').slice(0, 10)}.json\`;
               document.body.appendChild(link);
               link.click();
               link.remove();
-              return { success: true };
+              setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+              return { success: true, encrypted: !!passphrase };
             },
-            'import-backup': () => new Promise((resolve, reject) => {
+            'import-backup': (passphrase) => new Promise((resolve, reject) => {
               const input = document.createElement('input');
               input.type = 'file';
               input.accept = '.json,application/json';
@@ -1882,7 +1901,7 @@ export class WebServer {
                 const file = input.files && input.files[0];
                 if (!file) return resolve({ cancelled: true });
                 try {
-                  resolve(await api('POST', '/api/backup/restore', JSON.parse(await file.text())));
+                  resolve(await api('POST', '/api/backup/restore', { bundle: JSON.parse(await file.text()), passphrase: passphrase || '' }));
                 } catch (err) { reject(err); }
               };
               input.click();

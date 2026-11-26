@@ -644,18 +644,34 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
     });
 
     test('backup and restore buttons', async () => {
+      // without a passphrase the user confirms an unencrypted backup
+      (window.confirm as jest.Mock).mockReturnValueOnce(false);
       buttonByText($('#security'), 'Download backup').click();
       await flush();
-      expect(calls('export-backup')).toHaveLength(1);
+      expect(calls('export-backup')).toHaveLength(0);
+      buttonByText($('#security'), 'Download backup').click();
+      await flush();
+      expect(lastCall('export-backup')).toEqual(['']);
       expect((window.alert as jest.Mock).mock.calls.at(-1)[0]).toBe('Backup saved to /home/admin/slightsftp-backup.json');
+
+      // with one, it is passed along for both download and restore
+      $<HTMLInputElement>('#backupPassphrase').value = 'correct horse';
+      buttonByText($('#security'), 'Download backup').click();
+      await flush();
+      expect(lastCall('export-backup')).toEqual(['correct horse']);
+      expect(calls('import-backup')).toHaveLength(0);
+      buttonByText($('#security'), 'Restore from backup…').click();
+      await flush();
+      expect(lastCall('import-backup')).toEqual(['correct horse']);
+      $<HTMLInputElement>('#backupPassphrase').value = '';
 
       (window.confirm as jest.Mock).mockReturnValueOnce(false);
       buttonByText($('#security'), 'Restore from backup…').click();
       await flush();
-      expect(calls('import-backup')).toHaveLength(0);
+      expect(calls('import-backup')).toHaveLength(1);
       buttonByText($('#security'), 'Restore from backup…').click();
       await flush();
-      expect(calls('import-backup')).toHaveLength(1);
+      expect(calls('import-backup')).toHaveLength(2);
       expect((window.alert as jest.Mock).mock.calls.at(-1)[0]).toBe('Restored 3 user(s) and 2 listener(s).');
     });
 

@@ -773,10 +773,17 @@ async function testLdapConnection() {
   out.textContent = `${result.ok ? '✅' : '❌'} ${result.message}`;
 }
 
+function backupPassphrase() {
+  const field = document.getElementById('backupPassphrase');
+  return field ? field.value : '';
+}
+
 async function exportBackup() {
+  const passphrase = backupPassphrase();
+  if (!passphrase && !confirm('Download the backup WITHOUT encryption? Anyone with the file gets password hashes and the server keys.')) return;
   try {
-    const result = await ipcRenderer.invoke('export-backup');
-    if (result.path) alert(`Backup saved to ${result.path}`);
+    const result = await ipcRenderer.invoke('export-backup', passphrase);
+    if (result.path) alert(`Backup saved to ${result.path}${result.encrypted ? ' (encrypted)' : ''}`);
   } catch (err) {
     alert(`Backup failed: ${errorText(err)}`);
   }
@@ -785,12 +792,13 @@ async function exportBackup() {
 async function importBackup() {
   if (!confirm('Restoring replaces ALL users, listeners and settings with the backup. Listeners restart. Continue?')) return;
   try {
-    const result = await ipcRenderer.invoke('import-backup');
+    const result = await ipcRenderer.invoke('import-backup', backupPassphrase());
     if (result.cancelled) return;
     alert(`Restored ${result.users} user(s) and ${result.listeners} listener(s).`);
     loadDashboard();
   } catch (err) {
-    alert(`Restore failed: ${errorText(err)}`);
+    const text = errorText(err);
+    alert(`Restore failed: ${text}${/passphrase/i.test(text) ? '\n\nEnter the passphrase in the "Backup passphrase" field and try again.' : ''}`);
   }
 }
 

@@ -106,6 +106,41 @@ describe('configuration backup & restore', () => {
     reopened.close();
   });
 
+  describe('encrypted with a passphrase', () => {
+    let encrypted: any;
+
+    test('POST /api/backup returns a passphrase-encrypted bundle that hides its contents', async () => {
+      await admin.post('/api/backup').send({ passphrase: 'short' }).expect(400);
+      const res = await admin.post('/api/backup').send({ passphrase: 'correct horse battery' }).expect(200);
+      expect(res.headers['content-disposition']).toMatch(/attachment; filename="slightsftp-backup-/);
+      encrypted = res.body;
+      expect(encrypted).toMatchObject({ format: 'slightsftp-backup-encrypted', version: 1, cipher: 'aes-256-gcm', kdf: { name: 'scrypt' } });
+      const text = JSON.stringify(encrypted);
+      expect(text).not.toContain('SQLite');
+      expect(text).not.toContain(backup.database.slice(0, 40));
+      expect(encrypted.database).toBeUndefined();
+    });
+
+    test('restoring needs the right passphrase', async () => {
+      const none = await admin.post('/api/backup/restore').send(encrypted).expect(400);
+      expect(none.body).toMatchObject({ error: 'This backup is encrypted: enter its passphrase', passphraseRequired: true });
+      const wrong = await admin.post('/api/backup/restore').send({ bundle: encrypted, passphrase: 'wrong horse battery' }).expect(400);
+      expect(wrong.body).toMatchObject({ error: 'Wrong passphrase for this backup', passphraseRequired: true });
+      await sftpLogin(); // listeners came back after the failed attempts
+
+      await admin.delete('/api/users/bea').expect(200);
+      const res = await admin.post('/api/backup/restore').send({ bundle: encrypted, passphrase: 'correct horse battery' }).expect(200);
+      expect(res.body).toMatchObject({ success: true, users: 2, listeners: 1 });
+      await sftpLogin();
+    });
+
+    test('tampering with the encrypted bundle is detected', async () => {
+      const tampered = { ...encrypted, kdf: { ...encrypted.kdf, N: 2 ** 14 } };
+      const res = await admin.post('/api/backup/restore').send({ bundle: tampered, passphrase: 'correct horse battery' }).expect(400);
+      expect(res.body.error).toBe('Wrong passphrase for this backup');
+    });
+  });
+
   test.each([
     [{ format: 'something-else', database: 'AAAA' }],
     [{ format: 'slightsftp-backup' }],

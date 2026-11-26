@@ -19,7 +19,7 @@ import { getQuotaManager, quotaFromMegabytes } from './quota';
 import { limitFromForm } from './bandwidth';
 import { purgeExpired, purgeItem, recycleSettings, restoreItem, saveRecycleSettings } from './recycle-bin';
 import { createApiToken } from './api-tokens';
-import { createBackup, restoreBackup } from './backup';
+import { exportBackup, restoreBackup } from './backup';
 import { checkForUpdate } from './update-check';
 import { isDirectoryUser, verifyUserPassword } from './credentials';
 import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from './ldap-auth';
@@ -660,8 +660,9 @@ function setupIpcHandlers(): void {
   });
 
   // Configuration backup / restore
-  handle('export-backup', async () => {
-    const bundle = createBackup(db, app.getVersion());
+  handle('export-backup', async (_event: any, passphrase?: string) => {
+    // encrypt first: a passphrase that is too short fails before the save dialog
+    const bundle = exportBackup(db, app.getVersion(), typeof passphrase === 'string' && passphrase ? passphrase : undefined);
     const result = await dialog.showSaveDialog(mainWindow!, {
       title: 'Save configuration backup',
       defaultPath: `slightsftp-backup-${bundle.createdAt.slice(0, 10)}.json`,
@@ -670,10 +671,10 @@ function setupIpcHandlers(): void {
     if (result.canceled || !result.filePath) return { cancelled: true };
     fs.writeFileSync(result.filePath, JSON.stringify(bundle), { mode: 0o600 });
     db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'BACKUP_SAVED', path: result.filePath, success: true });
-    return { success: true, path: result.filePath };
+    return { success: true, path: result.filePath, encrypted: !!passphrase };
   });
 
-  handle('import-backup', async () => {
+  handle('import-backup', async (_event: any, passphrase?: string) => {
     const result = await dialog.showOpenDialog(mainWindow!, {
       title: 'Restore configuration backup',
       properties: ['openFile'],
@@ -688,7 +689,7 @@ function setupIpcHandlers(): void {
     }
     await serverManager.stopAllListeners();
     try {
-      const summary = await restoreBackup(db, bundle);
+      const summary = await restoreBackup(db, bundle, typeof passphrase === 'string' ? passphrase : undefined);
       getQuotaManager(db).invalidate();
       db.logActivity({ listenerId: null, username: authenticatedUser?.username || 'system', action: 'BACKUP_RESTORED', path: result.filePaths[0], success: true });
       return { success: true, ...summary };

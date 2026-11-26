@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Security
+- Configuration backups can be encrypted with a passphrase (AES-256-GCM, key derived with
+  scrypt), from the desktop app, the web GUI, or `POST /api/backup` with
+  `{ "passphrase": "..." }`. Restore with `{ "bundle": ..., "passphrase": "..." }`.
+  Downloading an unencrypted backup now asks for confirmation.
 - Secrets stored in `config.db` — cloud storage credentials, the LDAP bind password,
   webhook signing secrets and two-factor secrets — are now encrypted (AES-256-GCM) with a
   master key kept outside the database: `secret.key` next to `config.db` (created on first

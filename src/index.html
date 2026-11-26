@@ -735,7 +735,11 @@
 
           <div class="card">
             <h2>Backup &amp; Restore</h2>
-            <p style="color: #666; margin-top: 0;">Save all users, listeners, permissions, settings, the SFTP host key and the TLS certificate to one file, or restore from one. ⚠️ The backup contains password hashes, two-factor secrets and keys — store it safely.</p>
+            <p style="color: #666; margin-top: 0;">Save all users, listeners, permissions, settings, the SFTP host key, the TLS certificate and the master key for stored secrets to one file, or restore from one. ⚠️ The backup contains password hashes and keys — encrypt it with a passphrase, and keep the passphrase somewhere else.</p>
+            <div class="form-group" style="max-width: 420px;">
+              <label for="backupPassphrase">Backup passphrase (recommended, at least 8 characters)</label>
+              <input type="password" id="backupPassphrase" autocomplete="new-password" placeholder="Leave empty for an unencrypted backup">
+            </div>
             <button type="button" class="btn btn-primary" onclick="exportBackup()">Download backup</button>
             <button type="button" class="btn btn-warning" onclick="importBackup()">Restore from backup…</button>
           </div>
