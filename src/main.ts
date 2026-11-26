@@ -1271,7 +1271,7 @@ function setupIpcHandlers(): void {
       webServer = await createWebServer(webPort);
       
       db.logActivity({
-        listenerId: 0,
+        listenerId: null,
         username: authenticatedUser?.username || 'system',
         action: 'WEB_SERVER_STARTED',
         path: `Web GUI server started on port ${webPort}`,
@@ -1281,7 +1281,7 @@ function setupIpcHandlers(): void {
       return { success: true, port: webPort, https: webServer.isHttps(), url: webServer.getUrl() };
     } catch (err: any) {
       db.logActivity({
-        listenerId: 0,
+        listenerId: null,
         username: authenticatedUser?.username || 'system',
         action: 'WEB_SERVER_START_FAILED',
         path: err.message,
@@ -1301,7 +1301,7 @@ function setupIpcHandlers(): void {
       webServer = null;
       
       db.logActivity({
-        listenerId: 0,
+        listenerId: null,
         username: authenticatedUser?.username || 'system',
         action: 'WEB_SERVER_STOPPED',
         path: 'Web GUI server stopped',
@@ -1311,7 +1311,7 @@ function setupIpcHandlers(): void {
       return { success: true };
     } catch (err: any) {
       db.logActivity({
-        listenerId: 0,
+        listenerId: null,
         username: authenticatedUser?.username || 'system',
         action: 'WEB_SERVER_STOP_FAILED',
         path: err.message,
@@ -1342,7 +1342,7 @@ function setupIpcHandlers(): void {
       webServer = await createWebServer(newPort);
       
       db.logActivity({
-        listenerId: 0,
+        listenerId: null,
         username: authenticatedUser?.username || 'system',
         action: 'WEB_SERVER_PORT_CHANGED',
         path: `Web server port changed to ${newPort}`,
@@ -1352,7 +1352,7 @@ function setupIpcHandlers(): void {
       return { success: true, port: newPort };
     } catch (err: any) {
       db.logActivity({
-        listenerId: 0,
+        listenerId: null,
         username: authenticatedUser?.username || 'system',
         action: 'WEB_SERVER_PORT_CHANGE_FAILED',
         path: err.message,

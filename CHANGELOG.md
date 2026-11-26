@@ -17,12 +17,33 @@
 - `config.db` is now readable by its owner only (existing files are fixed on start).
 - Dependency updates for published advisories (`ws`, `body-parser`, `path-to-regexp`,
   `proxy-addr`, `lodash`, ...).
+- **Reverse proxies**: set the trusted proxies (`TRUST_PROXY` environment variable or the
+  `trustProxy` setting, e.g. `loopback` or `10.0.0.0/8`) and brute-force bans, IP
+  allow-lists and the activity log see the real client address. Before, every client
+  behind a proxy shared the proxy's address — and a proxy on the same host was never banned.
+  Without the setting, `X-Forwarded-For` is ignored.
+- Security headers on every page (Content-Security-Policy, no framing by other sites,
+  `nosniff`, same-origin referrers), and state-changing requests sent from another site's
+  page are refused (cross-site request forgery).
+- Password checks for every sign-in (SFTP, FTP, web GUI, portal, share links) no longer
+  block the server while they run, so a burst of login attempts cannot stall transfers.
+  The file portal no longer reveals by response time whether an account exists.
+- SFTP clients must finish signing in within 30 seconds, and each listener accepts at most
+  200 concurrent connections (`maxConnectionsPerListener` setting).
+- The activity log API returns at most 1000 entries per request; backups up to 200 MB.
 
 ### Fixes
 - `config.db` is written atomically, so a crash or power loss during a save can no longer
   leave a truncated database. Activity log writes are batched instead of rewriting the
   whole file for every event.
 - Each live activity event was sent to the web GUI twice.
+- SFTP: clients that preserve timestamps on upload (WinSCP's default, `put -p`) no
+  longer get "unsupported operation" errors; `FSTAT` reports the size of an open file.
+- FTP passive mode on a listener bound to `0.0.0.0` now advertises the address the client
+  connected to instead of `0,0,0,0` (unless `FTP_PASV_URL` is set).
+- The admin file browser lists folders that contain broken symbolic links.
+- Activity of the web GUI and desktop app (not tied to a listener) is stored without a
+  listener reference instead of the non-existent listener `0`.
 - Docker: the health check works with `WEB_HTTPS=true` (it always reported *unhealthy*),
   and the headless server now prunes the activity log by its retention period.
 - Linux and macOS packages keep configuration, keys and logs in the per-user application

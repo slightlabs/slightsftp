@@ -13,7 +13,7 @@ import { pipeline } from 'stream/promises';
 import express, { Request, Response } from 'express';
 import { DatabaseManager } from './database';
 import { resolveUserPath } from './path-utils';
-import { hashPassword, verifyPasswordHash } from './password';
+import { hashPassword, verifyPasswordHash, verifyPasswordHashAsync } from './password';
 import { Share, ShareType, User } from './types';
 import logger from './logger';
 import { uploadChecksum } from './checksum';
@@ -198,9 +198,9 @@ export function registerShareRoutes(app: express.Application, db: DatabaseManage
       return;
     }
     const guard = getLoginGuard(db);
-    const ip = req.socket.remoteAddress;
+    const ip = req.ip;
     if (guard.isBanned(ip)) throw new ShareError(429, TOO_MANY_ATTEMPTS);
-    if (!verifyPasswordHash(ctx.share.passwordHash, String(req.body?.password || '')).valid) {
+    if (!(await verifyPasswordHashAsync(ctx.share.passwordHash, String(req.body?.password || ''))).valid) {
       options.logActivity(ctx.share.owner, 'SHARE_UNLOCK_FAILED', ctx.share.virtualPath, false);
       guard.recordFailure(ip, 'share link');
       throw new ShareError(401, 'Wrong password');

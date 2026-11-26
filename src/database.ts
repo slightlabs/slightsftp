@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { assertCloudTarget } from './cloud-storage';
 import { User, VirtualPath, Permission, Listener, UserListener, ServerActivity, FtpTlsMode, Share, Webhook, StorageConnection } from './types';
-import { hashPassword, verifyPasswordHash } from './password';
+import { hashPassword, timingDummyHash, verifyPasswordHash, verifyPasswordHashAsync } from './password';
 
 function normalizeTlsMode(mode: unknown): FtpTlsMode {
   return mode === 'optional' || mode === 'required' ? mode : 'none';
@@ -432,6 +432,22 @@ export class DatabaseManager {
 
     const { valid, needsRehash } = verifyPasswordHash(user.password, password);
     if (valid && needsRehash) {
+      this.db.run('UPDATE users SET password = ? WHERE username = ?', [hashPassword(password), username]);
+      this.save();
+    }
+    return valid;
+  }
+
+  /** checkPassword without blocking the event loop (all login paths use this). */
+  async checkPasswordAsync(username: string, password: string): Promise<boolean> {
+    if (!this.db) throw new Error('Database not initialized');
+    const user = this.getUser(username);
+    if (!user || !user.password) {
+      await verifyPasswordHashAsync(timingDummyHash(), password || 'x');
+      return false;
+    }
+    const { valid, needsRehash } = await verifyPasswordHashAsync(user.password, password);
+    if (valid && needsRehash && this.db) {
       this.db.run('UPDATE users SET password = ? WHERE username = ?', [hashPassword(password), username]);
       this.save();
     }

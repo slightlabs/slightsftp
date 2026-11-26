@@ -7,6 +7,8 @@
  * returned by the generic read endpoints.
  */
 
+import { cleanTrustProxy } from './http-security';
+
 /** Never sent to a client by the generic settings endpoints. */
 export const SECRET_SETTINGS: ReadonlySet<string> = new Set(['ldapBindPassword']);
 
@@ -17,6 +19,8 @@ export const WRITABLE_SETTINGS: ReadonlySet<string> = new Set([
   'tlsCertPath',
   'tlsKeyPath',
   'setupComplete',
+  'trustProxy',
+  'maxConnectionsPerListener',
 ]);
 
 export function isWritableSetting(key: string): boolean {
@@ -40,6 +44,12 @@ export function validateSetting(key: string, value: string): string | null {
       const n = Number(value);
       return Number.isInteger(n) && n >= 1 && n <= 3650 ? null : 'Log retention must be a whole number of days between 1 and 3650';
     }
+    case 'maxConnectionsPerListener': {
+      const n = Number(value);
+      return Number.isInteger(n) && n >= 1 && n <= 100000 ? null : 'Connections per listener must be a whole number between 1 and 100000';
+    }
+    case 'trustProxy':
+      try { cleanTrustProxy(value); return null; } catch (err: any) { return err.message; }
     case 'webHttps':
     case 'setupComplete':
       return value === 'true' || value === 'false' ? null : `${key} must be "true" or "false"`;

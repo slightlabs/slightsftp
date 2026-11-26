@@ -35,7 +35,9 @@ Open https://localhost:3000, sign in as `admin` / `admin123` (you will be asked 
 password), create an SFTP listener on port 2222 and map users' virtual paths to folders
 under `/files`. Configuration, keys and the recycle bin are kept in the `/data` volume.
 For FTP, also publish port 2121 and the passive range `30000-30009`, and set
-`FTP_PASV_URL` to the server's public address. See `docker-compose.yml`.
+`FTP_PASV_URL` to the server's public address. Behind a reverse proxy (nginx, Caddy,
+Traefik), set `TRUST_PROXY` to the proxy's address or range (e.g. `TRUST_PROXY=172.16.0.0/12`)
+so brute-force protection sees real client addresses. See `docker-compose.yml`.
 
 ## Installation
 

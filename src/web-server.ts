@@ -31,7 +31,8 @@ import { isDirectoryUser, verifyUserPassword } from './credentials';
 import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from './ldap-auth';
 import { cloudTarget, deleteConnection, listConnectionsForAdmin, saveConnection, sendCloudFile, testConnectionInput } from './cloud-storage';
 import { publicSettings, SECRET_SETTINGS, validateSetting } from './settings-policy';
-import { hashPassword, verifyPasswordHash } from './password';
+import { cleanTrustProxy, clientAddress, sameOriginOnly, securityHeaders, trustFunction } from './http-security';
+import { timingDummyHash, verifyPasswordHashAsync } from './password';
 
 const APP_VERSION: string = require('../package.json').version;
 
@@ -53,10 +54,6 @@ const PASSWORD_CHANGE_ALLOWED = new Set(['/change-password', '/user', '/logout']
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const SESSION_SWEEP_MS = 10 * 60 * 1000;
 
-// Compared against when the user does not exist, so a missing account takes as
-// long to reject as a wrong password (no user enumeration by timing)
-let dummyHash: string | null = null;
-const timingDummyHash = () => (dummyHash ??= hashPassword(crypto.randomBytes(16).toString('hex')));
 
 /** Read one cookie from a raw Cookie header (WebSocket upgrades skip cookie-parser). */
 function cookieValue(header: string | undefined, name: string): string | undefined {
@@ -90,6 +87,7 @@ export class WebServer {
   private webhooks?: WebhookDispatcher;
   private syslog?: SyslogForwarder;
   private sweepTimer: NodeJS.Timeout;
+  private trustProxy: (addr: string, i: number) => boolean = () => false;
 
   constructor(db: DatabaseManager, serverManager: ServerManager, port: number = 3000, options: WebServerOptions = {}) {
     this.db = db;
@@ -159,9 +157,32 @@ export class WebServer {
     });
   }
 
+  /**
+   * Reverse proxies whose X-Forwarded-For is believed: the trustProxy setting,
+   * else the TRUST_PROXY environment variable. Without one, every client seems
+   * to come from the proxy (and loopback is never banned).
+   */
+  applyTrustProxy(): void {
+    let configured = this.db.getSetting?.('trustProxy') ?? process.env.TRUST_PROXY ?? '';
+    try {
+      configured = cleanTrustProxy(configured);
+    } catch (err: any) {
+      logger.error(`Ignoring trusted proxy setting: ${err.message}`);
+      configured = '';
+    }
+    this.trustProxy = trustFunction(configured);
+    this.app.set('trust proxy', this.trustProxy);
+    if (configured) logger.info(`Trusting X-Forwarded-For from: ${configured}`);
+  }
+
   private setupMiddleware(): void {
+    this.applyTrustProxy();
+    this.app.disable('x-powered-by');
+    this.app.use(securityHeaders);
+    // no cross-site form posts or fetches against cookie sessions (admin, portal, share links)
+    this.app.use(sameOriginOnly);
     // backups can be large; everything else keeps the default 100 kB limit
-    this.app.use('/api/backup/restore', express.json({ limit: '500mb' }));
+    this.app.use('/api/backup/restore', express.json({ limit: '200mb' }));
     this.app.use(express.json());
     this.app.use(express.urlencoded({ extended: true }));
     this.app.use(cookieParser());
@@ -175,7 +196,7 @@ export class WebServer {
   }
 
   private authenticateSession(req: Request): WebSession | null {
-    return this.validSession(req.cookies?.sessionId, req.socket.remoteAddress);
+    return this.validSession(req.cookies?.sessionId, req.ip);
   }
 
   /**
@@ -202,7 +223,7 @@ export class WebServer {
    * session id ('' for a token), or null to refuse.
    */
   private socketAuth(req: http.IncomingMessage): string | null {
-    const ip = req.socket.remoteAddress;
+    const ip = clientAddress(req, this.trustProxy);
     const auth = req.headers.authorization;
     if (auth && /^Bearer\s+/i.test(auth)) {
       const guard = getLoginGuard(this.db);
@@ -252,7 +273,7 @@ export class WebServer {
     const auth = req.headers.authorization;
     if (auth && /^Bearer\s+/i.test(auth)) {
       const guard = getLoginGuard(this.db);
-      const ip = req.socket.remoteAddress;
+      const ip = req.ip;
       if (guard.isBanned(ip)) {
         res.status(429).json({ error: TOO_MANY_ATTEMPTS });
         return;
@@ -284,7 +305,7 @@ export class WebServer {
 
   private logActivity(username: string, action: string, path: string, success: boolean, listenerId?: number, extra: { bytes?: number; checksum?: string } = {}): void {
     const activity = {
-      listenerId: listenerId || 0,
+      listenerId: listenerId || null, // not tied to a listener (0 would violate the foreign key)
       username,
       action,
       path,
@@ -353,7 +374,7 @@ export class WebServer {
     this.app.post('/api/login', async (req: Request, res: Response) => {
       const { username, password } = req.body;
       const guard = getLoginGuard(this.db);
-      const ip = req.socket.remoteAddress;
+      const ip = req.ip;
       if (guard.isBanned(ip)) {
         res.status(429).json({ error: TOO_MANY_ATTEMPTS });
         return;
@@ -367,7 +388,7 @@ export class WebServer {
         
         if (!user) {
           // same work as a wrong password, so response times don't reveal which accounts exist
-          verifyPasswordHash(timingDummyHash(), String(password || 'x'));
+          await verifyPasswordHashAsync(timingDummyHash(), String(password || 'x'));
           this.logActivity(String(username), 'WEB_LOGIN_FAILED', 'User not found', false);
           guard.recordFailure(ip, 'Web GUI', username);
           res.status(401).json({ error: 'Invalid credentials' });
@@ -1204,7 +1225,8 @@ export class WebServer {
 
     // Activity logs
     this.app.get('/api/activity', (req: Request, res: Response) => {
-      const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+      const requested = parseInt(String(req.query.limit ?? '100'), 10);
+      const limit = Number.isFinite(requested) ? Math.min(Math.max(requested, 1), 1000) : 100;
       const activities = this.db.getRecentActivities(undefined, limit);
       res.json(activities);
     });
@@ -1260,6 +1282,7 @@ export class WebServer {
         return;
       }
       this.db.setSetting(req.params.key, String(value));
+      if (req.params.key === 'trustProxy') this.applyTrustProxy();
       this.logActivity(session.username, 'WEB_SETTING_UPDATED', `${req.params.key}=${value}`, true);
       res.json({ success: true });
     });
@@ -1345,15 +1368,19 @@ export class WebServer {
           return;
         }
 
-        const files = fs.readdirSync(localPath).map((name: string) => {
-          const filePath = path.join(localPath, name);
-          const fileStat = fs.statSync(filePath);
-          return {
+        // A broken symlink or an unreadable entry must not fail the whole listing
+        const statOrNull = (p: string) => {
+          try { return fs.statSync(p); } catch { /* fall through */ }
+          try { return fs.lstatSync(p); } catch { return null; }
+        };
+        const files = fs.readdirSync(localPath).flatMap((name: string) => {
+          const fileStat = statOrNull(path.join(localPath, name));
+          return fileStat ? [{
             name,
             type: fileStat.isDirectory() ? 'directory' : 'file',
             size: fileStat.size,
             modified: fileStat.mtime
-          };
+          }] : [];
         });
 
         res.json({ files, currentPath: virtualPath });

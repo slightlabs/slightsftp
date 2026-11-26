@@ -58,6 +58,41 @@ export function verifyPasswordHash(stored: string | null | undefined, password: 
   return { valid, needsRehash: valid && outdated };
 }
 
+const scryptAsync = (password: string, salt: Buffer, keylen: number, params: crypto.ScryptOptions) =>
+  new Promise<Buffer>((resolve, reject) =>
+    crypto.scrypt(password, salt, keylen, { ...params, maxmem: 64 * 1024 * 1024 }, (err, key) => (err ? reject(err) : resolve(key))));
+
+/**
+ * Like verifyPasswordHash, but runs scrypt on the libuv thread pool instead of
+ * blocking the event loop: use it for every login path, where an attacker
+ * controls how often it runs.
+ */
+export async function verifyPasswordHashAsync(stored: string | null | undefined, password: string): Promise<PasswordCheck> {
+  if (!stored || typeof password !== 'string' || password.length === 0 || isLegacyHash(stored)) {
+    return verifyPasswordHash(stored, password);
+  }
+  const parts = stored.split('$');
+  if (parts.length !== 6 || parts[0] !== PREFIX) return { valid: false, needsRehash: false };
+  const [, n, r, p, saltB64, hashB64] = parts;
+  const expected = Buffer.from(hashB64, 'base64');
+  const params = { N: Number(n), r: Number(r), p: Number(p) };
+  let candidate: Buffer;
+  try {
+    candidate = await scryptAsync(password, Buffer.from(saltB64, 'base64'), expected.length, params);
+  } catch {
+    return { valid: false, needsRehash: false };
+  }
+  const valid = candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected);
+  const outdated = params.N !== DEFAULT_PARAMS.N || params.r !== DEFAULT_PARAMS.r || params.p !== DEFAULT_PARAMS.p;
+  return { valid, needsRehash: valid && outdated };
+}
+
+/** A hash of a random password, compared against when an account does not exist (equal timing). */
+let dummyHash: string | null = null;
+export function timingDummyHash(): string {
+  return (dummyHash ??= hashPassword(crypto.randomBytes(16).toString('hex')));
+}
+
 /** The well-known password of the seeded `admin` account. */
 export const DEFAULT_ADMIN_PASSWORD = 'admin123';
 export const MIN_PASSWORD_LENGTH = 8;

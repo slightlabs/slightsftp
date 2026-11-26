@@ -7,6 +7,7 @@ services:
     environment:
       WEB_HTTPS: "true"        # self-signed certificate, stored in /data
       # FTP_PASV_URL: 203.0.113.10   # public address for passive FTP
+      # TRUST_PROXY: 172.16.0.0/12   # behind a reverse proxy: its address / range
     ports:
       - "3000:3000"            # web admin GUI and file portal
       - "2222:2222"            # SFTP listener (create it in the GUI)

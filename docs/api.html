@@ -228,7 +228,7 @@ curl -k -b jar -H 'Content-Type: application/json' \
                 </div>
                 <div class="api-item">
                     <h3><code>PUT /api/settings/:key</code></h3>
-                    <p>Body <code>{ value }</code>. Only <code>logRetentionDays</code>, <code>webHttps</code>, <code>tlsCertPath</code>, <code>tlsKeyPath</code> and <code>setupComplete</code> can be changed here; security, directory, audit and recycle-bin settings use their own endpoints. Other keys get <code>400</code>.</p>
+                    <p>Body <code>{ value }</code>. Only <code>logRetentionDays</code>, <code>webHttps</code>, <code>tlsCertPath</code>, <code>tlsKeyPath</code>, <code>setupComplete</code>, <code>trustProxy</code> (trusted reverse proxies: addresses, CIDR ranges, <code>loopback</code>, <code>linklocal</code>, <code>uniquelocal</code>) and <code>maxConnectionsPerListener</code> can be changed here; security, directory, audit and recycle-bin settings use their own endpoints. Other keys get <code>400</code>.</p>
                 </div>
             </div>
             <div class="api-section">

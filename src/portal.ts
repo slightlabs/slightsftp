@@ -11,7 +11,7 @@ import { pipeline } from 'stream/promises';
 import express, { Request, Response, NextFunction } from 'express';
 import { DatabaseManager } from './database';
 import { resolveUserPath, ResolvedUserPath } from './path-utils';
-import { requiresPasswordChange, validateNewPassword } from './password';
+import { requiresPasswordChange, validateNewPassword, timingDummyHash, verifyPasswordHashAsync } from './password';
 import { User, VirtualPath } from './types';
 import logger from './logger';
 import { uploadChecksum } from './checksum';
@@ -132,9 +132,11 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
   router.post('/login', handle(async (req, res) => {
     const { username, password } = req.body || {};
     const guard = getLoginGuard(db);
-    const ip = req.socket.remoteAddress;
+    const ip = req.ip;
     if (guard.isBanned(ip)) throw new HttpError(429, TOO_MANY_ATTEMPTS);
     const user = typeof username === 'string' ? db.getUser(username) : undefined;
+    // unknown accounts take as long to reject as a wrong password
+    if (!user) await verifyPasswordHashAsync(timingDummyHash(), String(password || 'x'));
     if (!user || !user.portalEnabled || !user.passwordEnabled || !userIpAllowed(user, ip) || typeof password !== 'string' || !(await verifyUserPassword(db, user, password))) {
       options.logActivity(String(username || 'unknown'), 'PORTAL_LOGIN_FAILED', '/', false);
       guard.recordFailure(ip, 'file portal', String(username || ''));
