@@ -1462,32 +1462,55 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', async () => {
-  logger.info('Application quitting - shutting down servers...');
+// Electron does not wait for async 'before-quit' handlers: hold the quit,
+// stop the servers (letting transfers finish briefly), close the database,
+// then quit for real
+let cleanedUp = false;
+let cleaning = false;
+app.on('before-quit', (event) => {
   isQuitting = true;
-  // synchronously, before the awaits below: Electron may exit before they finish
-  try { db?.flush(); } catch (err) { logger.error('Error saving database:', err); }
-  
-  try {
-    if (webServer) {
-      await webServer.stop();
-      logger.info('Web server stopped');
+  if (cleanedUp) return;
+  event.preventDefault();
+  if (cleaning) return; // a second quit request while cleaning up
+  cleaning = true;
+  logger.info('Application quitting - shutting down servers...');
+
+  const finish = () => {
+    cleanedUp = true;
+    app.quit();
+  };
+  const hard = setTimeout(() => {
+    logger.error('Shutdown took too long; quitting anyway');
+    finish();
+  }, 10_000);
+
+  (async () => {
+    try {
+      if (webServer) {
+        await webServer.stop();
+        logger.info('Web server stopped');
+      }
+    } catch (err) {
+      logger.error('Error stopping web server:', err);
     }
-  } catch (err) {
-    logger.error('Error stopping web server:', err);
-  }
-  
-  try {
-    await serverManager.stopAllListeners();
-    logger.info('All servers stopped');
-  } catch (err) {
-    logger.error('Error stopping servers:', err);
-  }
-  
-  try {
-    db.close();
-    logger.info('Database closed');
-  } catch (err) {
-    logger.error('Error closing database:', err);
-  }
+    try {
+      await serverManager.stopAllListeners(3000);
+      logger.info('All servers stopped');
+    } catch (err) {
+      logger.error('Error stopping servers:', err);
+    }
+    try {
+      db?.close();
+      logger.info('Database closed');
+    } catch (err) {
+      logger.error('Error closing database:', err);
+    }
+    clearTimeout(hard);
+    finish();
+  })();
 });
+
+// Last-resort logging: in the desktop app a stray error must not take the
+// servers down (Electron reports uncaught exceptions in a dialog otherwise)
+process.on('unhandledRejection', (reason) => logger.error('Unhandled promise rejection:', reason));
+process.on('uncaughtException', (err) => logger.error('Uncaught exception:', err));

@@ -90,13 +90,14 @@ export class ServerManager extends EventEmitter {
     this.servers.set(listenerId, server);
   }
 
-  async stopListener(listenerId: number): Promise<void> {
+  /** Stop a listener; graceMs lets transfers in progress finish first. */
+  async stopListener(listenerId: number, graceMs = 0): Promise<void> {
     const server = this.servers.get(listenerId);
     if (!server) {
       throw new Error(`Listener ${listenerId} is not running`);
     }
 
-    await server.stop();
+    await server.stop(graceMs);
     this.servers.delete(listenerId);
   }
 
@@ -129,17 +130,17 @@ export class ServerManager extends EventEmitter {
     }
   }
 
-  async stopAllListeners(): Promise<void> {
+  /** Stop every listener at once; graceMs lets transfers in progress finish first. */
+  async stopAllListeners(graceMs = 0): Promise<void> {
     const listenerIds = Array.from(this.servers.keys());
-    
-    for (const listenerId of listenerIds) {
+    await Promise.all(listenerIds.map(async listenerId => {
       try {
-        await this.stopListener(listenerId);
+        await this.stopListener(listenerId, graceMs);
         logger.info(`Stopped listener: ${listenerId}`);
       } catch (err) {
         logger.error(`Failed to stop listener ${listenerId}:`, err);
       }
-    }
+    }));
   }
 
   getListenerStatus(listenerId: number): { running: boolean; listener?: Listener } {

@@ -13,6 +13,7 @@ import { getLimiter } from './bandwidth';
 import { deleteFile } from './recycle-bin';
 import { verifyUserPassword } from './credentials';
 import { maxConnections, preAuthTimeoutMs } from './connection-limits';
+import { FORCE_CLOSE_AFTER_MS, waitUntilIdle } from './drain';
 import { SessionTransferStats, TransferHandle, TransferTracker } from './transfers';
 import { assertInsideRoot, PathEscapeError, resolveUserPath } from './path-utils';
 import { CloudEntry, CloudTarget, StagedDownload, cloudTarget, entryMode, isCloudPath, stagingFile } from './cloud-storage';
@@ -113,6 +114,8 @@ export class SFTPServer extends EventEmitter {
   private hostKeys: Buffer[] = [];
   private dirHandles: Map<string, { path: string; files: string[]; entries?: CloudEntry[]; sentAll: boolean; client: any }> | null = null;
   private idleTimeoutMs: number = 300000; // 5 minutes default
+  /** every SSH connection, signed in or not (stop() disconnects them) */
+  private connections = new Set<any>();
   private clientTimeouts: Map<any, NodeJS.Timeout> = new Map();
   private activeSessions: Map<string, ClientSession> = new Map();
   private transfers = new TransferTracker();
@@ -139,6 +142,8 @@ export class SFTPServer extends EventEmitter {
         hostKeys: this.hostKeys
       }, (client) => {
         logger.debug('SFTP client connected');
+        this.connections.add(client);
+        client.once('close', () => this.connections.delete(client));
         const sessionId = `sftp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const ipAddress = (client as any)._sock?.remoteAddress || 'unknown';
         const remotePort = (client as any)._sock?.remotePort || 0;
@@ -1253,27 +1258,34 @@ export class SFTPServer extends EventEmitter {
     });
   }
 
-  stop(): Promise<void> {
-    return new Promise((resolve) => {
-      // Clear all idle timeouts
-      for (const timeout of this.clientTimeouts.values()) {
-        clearTimeout(timeout);
-      }
-      this.clientTimeouts.clear();
-      
-      // Clear all active sessions
-      this.activeSessions.clear();
-      
-      if (this.server) {
-        this.server.close(() => {
-          console.log('SFTP server stopped');
-          this.emit('stopped');
-          resolve();
-        });
-      } else {
-        resolve();
-      }
-    });
+  /**
+   * Stop accepting connections, give transfers in progress up to graceMs to
+   * finish, then disconnect every client (forcibly if it does not hang up).
+   */
+  async stop(graceMs = 0): Promise<void> {
+    if (!this.server) return;
+    const server = this.server;
+    const closed = new Promise<void>(resolve => server.close(() => resolve()));
+    if (graceMs > 0 && this.transfers.activeCount() > 0) {
+      logger.info(`SFTP listener ${this.listener.name}: waiting up to ${Math.round(graceMs / 1000)}s for ${this.transfers.activeCount()} transfer(s)`);
+      await waitUntilIdle(() => this.transfers.activeCount() === 0, graceMs);
+    }
+
+    for (const timeout of this.clientTimeouts.values()) clearTimeout(timeout);
+    this.clientTimeouts.clear();
+    for (const client of this.connections) {
+      try { client.end(); } catch { /* already gone */ }
+    }
+    const force = setTimeout(() => {
+      for (const client of this.connections) (client as any)._sock?.destroy?.();
+    }, FORCE_CLOSE_AFTER_MS);
+    force.unref?.();
+    await Promise.race([closed, new Promise(resolve => setTimeout(resolve, FORCE_CLOSE_AFTER_MS * 2).unref?.())]);
+    clearTimeout(force);
+
+    this.activeSessions.clear();
+    console.log('SFTP server stopped');
+    this.emit('stopped');
   }
 
   getActiveSessions(): Array<{ sessionId: string; username: string; ipAddress: string; connectedAt: Date } & SessionTransferStats> {

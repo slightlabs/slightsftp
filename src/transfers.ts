@@ -63,6 +63,13 @@ export class TransferTracker {
     return { uploadedBytes: t.up, downloadedBytes: t.down, transfers };
   }
 
+  /** Transfers in progress across all sessions. */
+  activeCount(): number {
+    let n = 0;
+    for (const set of this.active.values()) n += set.size;
+    return n;
+  }
+
   endSession(sessionId: string): void {
     this.active.delete(sessionId);
     this.totals.delete(sessionId);
