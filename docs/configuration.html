@@ -156,11 +156,25 @@
                 </div>
 
                 <div class="config-item">
+                    <h3>Encrypted secrets and the master key</h3>
+                    <ul>
+                        <li>Cloud storage credentials, the LDAP bind password, webhook signing secrets and
+                            two-factor secrets are encrypted (AES-256-GCM) inside config.db</li>
+                        <li>The master key is <code>secret.key</code>, created next to config.db on first start
+                            (readable by its owner only). Keep it with config.db: without it the stored secrets
+                            cannot be read and must be entered again</li>
+                        <li>Or set <code>SLIGHTSFTP_MASTER_KEY</code> (64 hex characters, base64 of 32 bytes, or a
+                            passphrase) to keep the key outside the data folder, e.g. in a secrets manager</li>
+                    </ul>
+                </div>
+
+                <div class="config-item">
                     <h3>Backup and Migration</h3>
                     <ul>
-                        <li>Simply copy config.db for backup</li>
-                        <li>Restore by replacing the database file</li>
-                        <li>Use SQLite tools for data migration</li>
+                        <li>Use <em>Settings → Backup</em>: the bundle holds config.db, the SFTP host key, the TLS
+                            certificate and the master key, so it restores on a new machine</li>
+                        <li>Copying files by hand: copy config.db <strong>and</strong> secret.key together</li>
+                        <li>With <code>SLIGHTSFTP_MASTER_KEY</code>, the key is not in the backup; restore with the same key</li>
                     </ul>
                 </div>
             </div>
