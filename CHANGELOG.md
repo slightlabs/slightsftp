@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Security
+- Symlinks inside a shared folder can no longer lead users out of it. Every SFTP, FTP,
+  file portal, share link and web API path is now checked after following symlinks; a
+  link (or dangling link) pointing outside the user's folders is refused. Before, only
+  `..` was blocked, so a link such as `docs/etc -> /etc` exposed the target.
 - The live-events WebSocket of the web GUI now requires a signed-in session (or an API
   token). Before, anyone who could reach the web port could watch the activity feed.
 - Web GUI sessions now end after 24 hours on the server, and immediately when the user is
