@@ -8,6 +8,9 @@ param(
     [string]$SourceIcon = "assets\icon-source.png"
 )
 
+# run from the repository root, wherever the script is started from
+Set-Location (Join-Path $PSScriptRoot '..')
+
 Write-Host "=== SLight SFTP Icon Setup ===" -ForegroundColor Cyan
 Write-Host ""
 

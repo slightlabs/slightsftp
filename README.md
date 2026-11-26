@@ -21,7 +21,7 @@ Multi-user FTP/SFTP server with GUI management interface.
 - Prometheus metrics (`/metrics`) and health checks (`/healthz`, `/readyz`) for monitoring
 - SQLite database for configuration storage; system tray support
 
-See [ROADMAP.md](ROADMAP.md) for what's coming next.
+See [ROADMAP.md](ROADMAP.md) for what's coming next, [CONTRIBUTING.md](CONTRIBUTING.md) to build and test it, and [SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## Docker
 
@@ -56,18 +56,14 @@ in it, so restarting or updating the container does not sign anyone out.
 
 ## Installation
 
-```bash
-npm install
-```
-
-## Usage
+Download the installer for Windows (.msi), macOS (.dmg) or Linux (.AppImage, .deb) from
+[Releases](https://github.com/slightlabs/slightsftp/releases), or run the Docker image
+above. To build from source, see [CONTRIBUTING.md](CONTRIBUTING.md):
 
 ```bash
-# Start the application
-npm start
-
-# Run test client
-npm test
+npm ci
+npm start            # desktop app
+npm run start:web    # headless server with the web admin GUI on :3000
 ```
 
 ## Default Credentials
@@ -77,27 +73,7 @@ npm test
 
 ## Configuration
 
-All configurations are stored in SQLite database (`config.db`).
-
-### User Configuration
-
-- Username
-- Password (optional)
-- Public key (optional)
-- Subscribed listeners
-- GUI access
-- Virtual path mappings
-- Permissions
-
-### Server Configuration
-
-- Protocol (FTP/SFTP)
-- Binding IP
-- Port
-- Enable/Disable
-
-## Development
-
-```bash
-npm run dev
-```
+Everything is configured in the GUI and stored in a SQLite database, `config.db`, with
+its secrets encrypted by the master key in `secret.key` next to it — back up both, or use
+the built-in (scheduled, passphrase-encrypted) backups. See the
+[configuration guide](https://slightlabs.github.io/slightsftp/configuration.html).

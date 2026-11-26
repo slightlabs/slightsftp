@@ -23,7 +23,7 @@
     "test:client": "npm run build && npm run tools:build && node dist-tools/tools/test-client.js",
     "setup:testusers": "npm run build && npm run tools:build && node dist-tools/tools/setup-test-users.js",
     "test:comprehensive": "npm run setup:testusers && npm run test:client",
-    "test:auto": "npm run build && npm run tools:build && powershell -ExecutionPolicy Bypass -File run-tests-with-server.ps1",
+    "test:auto": "npm run build && npm run tools:build && powershell -ExecutionPolicy Bypass -File tools/run-tests-with-server.ps1",
     "dist": "npm run build && electron-builder",
     "dist:linux": "npm run build && electron-builder --linux AppImage deb",
     "dist:win": "npm run build && electron-builder --win --x64",

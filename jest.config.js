@@ -14,10 +14,5 @@ module.exports = {
   coverageReporters: ['text', 'lcov', 'html'],
   moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
   verbose: true,
-  testPathIgnorePatterns: [
-    '/node_modules/',
-    'sftp-server.test.ts',
-    'ftp-server.test.ts',
-    'server-manager.test.ts'
-  ]
+  testPathIgnorePatterns: ['/node_modules/']
 };

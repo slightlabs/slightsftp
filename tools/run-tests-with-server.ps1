@@ -1,3 +1,6 @@
+
+# run from the repository root, wherever the script is started from
+Set-Location (Join-Path $PSScriptRoot '..')
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  SLightSFTP - Automated Test Runner" -ForegroundColor Cyan
