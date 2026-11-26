@@ -34,6 +34,8 @@ export class FTPServer extends EventEmitter {
   private activeSessions: Map<string, ClientSession> = new Map();
   /** client IP → local address its control connection reached (passive mode) */
   private controlAddresses = new Map<string, string>();
+  /** ftp-srv connection id → our session, ended on the server's 'disconnect' event */
+  private sessionsByConnection = new Map<string, { sessionId: string; username: string }>();
   private transfers = new TransferTracker();
 
   constructor(listener: Listener, db: DatabaseManager) {
@@ -70,8 +72,17 @@ export class FTPServer extends EventEmitter {
         const local = connection?.commandSocket?.localAddress;
         if (ip && local) this.controlAddresses.set(ip, local);
       });
-      (this.server as any).on('disconnect', ({ connection }: any) => {
+      // ftp-srv connections never emit 'close' (they drop their listeners when the
+      // socket closes); the server's 'disconnect' event is where a session ends
+      (this.server as any).on('disconnect', ({ connection, id }: any) => {
         if (connection?.ip) this.controlAddresses.delete(connection.ip);
+        const session = this.sessionsByConnection.get(id ?? connection?.id);
+        if (!session) return; // never signed in
+        this.sessionsByConnection.delete(id ?? connection?.id);
+        logger.info(`FTP user disconnected: ${session.username}`);
+        this.activeSessions.delete(session.sessionId);
+        this.transfers.endSession(session.sessionId);
+        this.logActivity('LOGOUT', session.username, '/', true);
       });
 
       this.server.on('login', async ({ connection, username, password }, resolve, reject) => {
@@ -131,6 +142,7 @@ export class FTPServer extends EventEmitter {
           ipAddress,
           connectedAt: new Date()
         });
+        if (connection?.id) this.sessionsByConnection.set(connection.id, { sessionId, username });
 
         guard.recordSuccess(ipAddress);
         this.logActivity(`LOGIN (password) [${ipAddress}:${remotePort}]`, username, '/', true);
@@ -168,12 +180,6 @@ export class FTPServer extends EventEmitter {
         connection.on('STOR', logTransfer('UPLOAD'));
         connection.on('RETR', logTransfer('DOWNLOAD'));
 
-        connection.on('close', () => {
-          logger.info(`FTP user disconnected: ${username}`);
-          this.activeSessions.delete(sessionId);
-          this.transfers.endSession(sessionId);
-          this.logActivity('LOGOUT', username, '/', true);
-        });
 
         resolve({ fs: customFS });
       });
@@ -209,6 +215,7 @@ export class FTPServer extends EventEmitter {
     // ftp-srv's close() ends every connection as well as the listening socket
     await this.server.close().catch(() => undefined);
     this.activeSessions.clear();
+    this.sessionsByConnection.clear();
     logger.info('FTP server stopped');
     this.emit('stopped');
   }
