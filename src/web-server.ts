@@ -28,6 +28,7 @@ import { authenticateToken, createApiToken } from './api-tokens';
 import { BackupPassphraseError, createBackup, exportBackup, restoreBackup } from './backup';
 import { SessionStore, newSessionToken } from './sessions';
 import { Metrics } from './metrics';
+import { tlsServerOptions } from './crypto-policy';
 import { readBackupSchedule, runBackup, saveBackupSchedule } from './backup-schedule';
 import { checkForUpdate } from './update-check';
 import { isDirectoryUser, verifyUserPassword } from './credentials';
@@ -136,7 +137,7 @@ export class WebServer {
     this.syslog = options.syslog;
     this.app = express();
     this.server = this.tls
-      ? https.createServer({ key: this.tls.key, cert: this.tls.cert }, this.app)
+      ? https.createServer({ key: this.tls.key, cert: this.tls.cert, ...tlsServerOptions(db) }, this.app)
       : http.createServer(this.app);
     // Live events (activity, listener status) are for signed-in admins only
     this.wss = new WebSocket.Server({

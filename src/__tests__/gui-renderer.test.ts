@@ -654,6 +654,17 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       expect($('#ldapTestResult').textContent).toBe('✅ Found uid=dora,dc=example,dc=com');
     });
 
+    test('protocol security: defaults to the modern SSH profile and TLS 1.2, and saves both settings', async () => {
+      expect($<HTMLSelectElement>('#sshAlgorithms').value).toBe('modern');
+      expect($<HTMLSelectElement>('#tlsMinVersion').value).toBe('TLSv1.2');
+      $<HTMLSelectElement>('#sshAlgorithms').value = 'compatible';
+      $<HTMLSelectElement>('#tlsMinVersion').value = 'TLSv1.3';
+      await submit($<HTMLFormElement>('#cryptoPolicyForm'));
+      expect(calls('set-setting').slice(-2)).toEqual([['sshAlgorithms', 'compatible'], ['tlsMinVersion', 'TLSv1.3']]);
+      expect((window.alert as jest.Mock).mock.calls.at(-1)[0]).toMatch(/Restart the listeners/);
+      expect($<HTMLSelectElement>('#sshAlgorithms').value).toBe('compatible');
+    });
+
     test('scheduled backups: the form saves typed values, keeps or clears the passphrase, and runs on demand', async () => {
       const f = $<HTMLFormElement>('#backupScheduleForm');
       expect($('#backupScheduleStatus').textContent).toBe('No scheduled backup has run yet.');

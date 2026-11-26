@@ -14,6 +14,7 @@ import { deleteFile } from './recycle-bin';
 import { verifyUserPassword } from './credentials';
 import { maxConnections, preAuthTimeoutMs } from './connection-limits';
 import { FORCE_CLOSE_AFTER_MS, waitUntilIdle } from './drain';
+import { sshAlgorithmProfile, sshServerAlgorithms } from './crypto-policy';
 import { SessionTransferStats, TransferHandle, TransferTracker } from './transfers';
 import { assertInsideRoot, PathEscapeError, resolveUserPath } from './path-utils';
 import { CloudEntry, CloudTarget, StagedDownload, cloudTarget, entryMode, isCloudPath, stagingFile } from './cloud-storage';
@@ -139,11 +140,23 @@ export class SFTPServer extends EventEmitter {
   start(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.server = new ssh2.Server({
-        hostKeys: this.hostKeys
+        hostKeys: this.hostKeys,
+        // no SHA-1 unless the "compatible" profile is chosen (crypto-policy.ts)
+        algorithms: sshServerAlgorithms(this.db) as any,
       }, (client) => {
         logger.debug('SFTP client connected');
         this.connections.add(client);
         client.once('close', () => this.connections.delete(client));
+        // ssh2 always advertises "ssh-rsa" (SHA-1 signatures) next to rsa-sha2-* for an
+        // RSA host key, whatever the algorithm list says; enforce the modern profile here
+        if (sshAlgorithmProfile(this.db) === 'modern') {
+          client.on('handshake', (negotiated: any) => {
+            if (negotiated?.serverHostKey === 'ssh-rsa') {
+              logger.warn(`SFTP client ${(client as any)._sock?.remoteAddress || 'unknown'} only supports SHA-1 (ssh-rsa) host key signatures; disconnected (set SSH algorithms to "compatible" to allow it)`);
+              client.end();
+            }
+          });
+        }
         const sessionId = `sftp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         const ipAddress = (client as any)._sock?.remoteAddress || 'unknown';
         const remotePort = (client as any)._sock?.remotePort || 0;

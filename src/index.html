@@ -734,6 +734,28 @@
           </div>
 
           <div class="card">
+            <h2>Protocol Security</h2>
+            <p style="color: #666; margin-top: 0;">Which encryption the listeners accept. Changes apply when a listener (or the web GUI) restarts.</p>
+            <form id="cryptoPolicyForm">
+              <div class="form-group">
+                <label for="sshAlgorithms">SSH / SFTP algorithms</label>
+                <select id="sshAlgorithms" name="sshAlgorithms">
+                  <option value="modern">Modern (recommended): no SHA-1; OpenSSH 7.2+, PuTTY 0.75+, WinSCP 5.18+, FileZilla 3.53+</option>
+                  <option value="compatible">Compatible: also SHA-1 signatures and MACs, for old clients and devices</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="tlsMinVersion">Minimum TLS version (HTTPS and FTPS)</label>
+                <select id="tlsMinVersion" name="tlsMinVersion">
+                  <option value="TLSv1.2">TLS 1.2 (recommended)</option>
+                  <option value="TLSv1.3">TLS 1.3 only</option>
+                </select>
+              </div>
+              <button type="submit" class="btn btn-primary">Save</button>
+            </form>
+          </div>
+
+          <div class="card">
             <h2>Backup &amp; Restore</h2>
             <p style="color: #666; margin-top: 0;">Save all users, listeners, permissions, settings, the SFTP host key, the TLS certificate and the master key for stored secrets to one file, or restore from one. ⚠️ The backup contains password hashes and keys — encrypt it with a passphrase, and keep the passphrase somewhere else.</p>
             <div class="form-group" style="max-width: 420px;">

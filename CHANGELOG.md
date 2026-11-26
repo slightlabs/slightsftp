@@ -51,6 +51,12 @@
   delete), and leftover permissions or subscriptions of deleted users are removed.
 
 ### Security
+- SFTP no longer accepts SHA-1: by default the SSH listener offers only modern key
+  exchange (curve25519, DH groups 16/18, group exchange SHA-256), AEAD/CTR ciphers and
+  SHA-2 MACs, and disconnects clients that can only use `ssh-rsa` (SHA-1) host key
+  signatures — as OpenSSH itself does since 8.8. Choose *Compatible* under
+  *Security → Protocol Security* for clients that need SHA-1. The minimum TLS version for
+  HTTPS and FTPS is configurable (TLS 1.2 default, or 1.3 only).
 - An uncaught error no longer makes the logger exit the process immediately (winston's
   exception handlers did, which skipped the graceful shutdown and could close the desktop
   app); the entry points handle them.

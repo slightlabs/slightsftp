@@ -698,6 +698,25 @@ document.getElementById('trashSettingsForm').addEventListener('submit', async (e
   loadTrash();
 });
 
+// Protocol security (SSH algorithm profile, minimum TLS version)
+async function loadCryptoPolicy() {
+  const settings = await ipcRenderer.invoke('get-all-settings');
+  document.getElementById('sshAlgorithms').value = settings.sshAlgorithms === 'compatible' ? 'compatible' : 'modern';
+  document.getElementById('tlsMinVersion').value = settings.tlsMinVersion === 'TLSv1.3' ? 'TLSv1.3' : 'TLSv1.2';
+}
+
+document.getElementById('cryptoPolicyForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    await ipcRenderer.invoke('set-setting', 'sshAlgorithms', document.getElementById('sshAlgorithms').value);
+    await ipcRenderer.invoke('set-setting', 'tlsMinVersion', document.getElementById('tlsMinVersion').value);
+    alert('Saved. Restart the listeners (and the web GUI) to apply.');
+  } catch (err) {
+    alert(`Failed to save: ${errorText(err)}`);
+  }
+  loadCryptoPolicy();
+});
+
 // Scheduled backups
 async function loadBackupSchedule() {
   const s = await ipcRenderer.invoke('get-backup-schedule');
@@ -748,6 +767,7 @@ async function runBackupNow() {
 async function loadSecurity() {
   loadAuditSettings();
   loadBackupSchedule();
+  loadCryptoPolicy();
   loadLdapSettings();
   loadApiTokens();
   const [settings, bans] = await Promise.all([

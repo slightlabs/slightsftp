@@ -21,6 +21,8 @@ export const WRITABLE_SETTINGS: ReadonlySet<string> = new Set([
   'setupComplete',
   'trustProxy',
   'maxConnectionsPerListener',
+  'sshAlgorithms',
+  'tlsMinVersion',
 ]);
 
 export function isWritableSetting(key: string): boolean {
@@ -48,6 +50,10 @@ export function validateSetting(key: string, value: string): string | null {
       const n = Number(value);
       return Number.isInteger(n) && n >= 1 && n <= 100000 ? null : 'Connections per listener must be a whole number between 1 and 100000';
     }
+    case 'sshAlgorithms':
+      return value === 'modern' || value === 'compatible' ? null : 'SSH algorithms must be "modern" or "compatible"';
+    case 'tlsMinVersion':
+      return value === 'TLSv1.2' || value === 'TLSv1.3' ? null : 'The minimum TLS version must be "TLSv1.2" or "TLSv1.3"';
     case 'trustProxy':
       try { cleanTrustProxy(value); return null; } catch (err: any) { return err.message; }
     case 'webHttps':
