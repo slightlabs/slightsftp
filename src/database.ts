@@ -8,6 +8,15 @@ import { hashPassword, timingDummyHash, verifyPasswordHash, verifyPasswordHashAs
 import { SecretBox, isSealed } from './secret-box';
 import { SECRET_SETTINGS } from './settings-policy';
 
+/** A web GUI or portal sign-in session (see sessions.ts); only the token's hash is stored. */
+export interface StoredSession {
+  kind: 'admin' | 'portal';
+  tokenHash: string;
+  username: string;
+  createdAt: number;
+  mustChangePassword: boolean;
+}
+
 function normalizeTlsMode(mode: unknown): FtpTlsMode {
   return mode === 'optional' || mode === 'required' ? mode : 'none';
 }
@@ -264,6 +273,15 @@ export class DatabaseManager {
         createdAt TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
+      CREATE TABLE IF NOT EXISTS web_sessions (
+        tokenHash TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        username TEXT NOT NULL,
+        createdAt INTEGER NOT NULL,
+        mustChangePassword INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_web_sessions_user ON web_sessions(username);
+
       CREATE INDEX IF NOT EXISTS idx_activities_listener ON server_activities(listenerId);
       CREATE INDEX IF NOT EXISTS idx_activities_timestamp ON server_activities(timestamp);
     `);
@@ -491,6 +509,7 @@ export class DatabaseManager {
       }
       db.run('DELETE FROM api_tokens WHERE username = ?', [username]);
       db.run('DELETE FROM shares WHERE owner = ?', [username]);
+      db.run('DELETE FROM web_sessions WHERE username = ?', [username]);
       db.run('DELETE FROM users WHERE username = ?', [username]);
     });
   }
@@ -1356,10 +1375,46 @@ export class DatabaseManager {
     };
   }
 
+  // Sign-in sessions (web GUI and portal)
+  createSession(session: StoredSession): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('INSERT OR REPLACE INTO web_sessions (tokenHash, kind, username, createdAt, mustChangePassword) VALUES (?, ?, ?, ?, ?)',
+      [session.tokenHash, session.kind, session.username, session.createdAt, session.mustChangePassword ? 1 : 0]);
+  }
+
+  getSession(kind: StoredSession['kind'], tokenHash: string): StoredSession | undefined {
+    if (!this.db) throw new Error('Database not initialized');
+    const result = this.db.exec('SELECT tokenHash, kind, username, createdAt, mustChangePassword FROM web_sessions WHERE tokenHash = ? AND kind = ?', [tokenHash, kind]);
+    if (!result.length) return undefined;
+    const [hash, k, username, createdAt, mustChange] = result[0].values[0];
+    return { tokenHash: String(hash), kind: k as StoredSession['kind'], username: String(username), createdAt: Number(createdAt), mustChangePassword: mustChange === 1 };
+  }
+
+  updateSession(kind: StoredSession['kind'], tokenHash: string, fields: { mustChangePassword: boolean }): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('UPDATE web_sessions SET mustChangePassword = ? WHERE tokenHash = ? AND kind = ?', [fields.mustChangePassword ? 1 : 0, tokenHash, kind]);
+  }
+
+  deleteSession(kind: StoredSession['kind'], tokenHash: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('DELETE FROM web_sessions WHERE tokenHash = ? AND kind = ?', [tokenHash, kind]);
+  }
+
+  deleteSessionsForUser(kind: StoredSession['kind'], username: string, exceptTokenHash?: string): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('DELETE FROM web_sessions WHERE kind = ? AND username = ? AND tokenHash != ?', [kind, username, exceptTokenHash ?? '']);
+  }
+
+  deleteSessionsBefore(kind: StoredSession['kind'], createdBefore: number): void {
+    if (!this.db) throw new Error('Database not initialized');
+    this.db.run('DELETE FROM web_sessions WHERE kind = ? AND createdAt < ?', [kind, createdBefore]);
+  }
+
   /** The whole configuration database as SQLite bytes (for backups). */
   exportBytes(): Buffer {
     if (!this.db) throw new Error('Database not initialized');
-    return this.db.serialize();
+    // sign-in sessions belong to this server's running state, not its configuration
+    return this.db.serialize(['DELETE FROM web_sessions']);
   }
 
   /** Replace the configuration with a backup (validated first). */
@@ -1384,6 +1439,10 @@ export class DatabaseManager {
         check?.close();
       }
 
+      // the people signed in now stay signed in (sessions are not part of backups)
+      const sessions = this.db.exec('SELECT tokenHash, kind, username, createdAt, mustChangePassword FROM web_sessions');
+      const keep = sessions.length ? sessions[0].values : [];
+
       if (this.dbPath === ':memory:') {
         // copy the backup into the in-memory database, table by table
         this.db.close();
@@ -1404,6 +1463,10 @@ export class DatabaseManager {
         this.db = this.open();
       }
       this.initialize(); // bring older backups up to the current schema
+      this.db.run('DELETE FROM web_sessions');
+      for (const row of keep) {
+        this.db.run('INSERT OR REPLACE INTO web_sessions (tokenHash, kind, username, createdAt, mustChangePassword) VALUES (?, ?, ?, ?, ?)', row);
+      }
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
       if (!this.db) this.db = this.open(); // never leave the manager without a database

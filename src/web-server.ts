@@ -26,6 +26,7 @@ import { limitFromForm } from './bandwidth';
 import { purgeItem, recycleSettings, restoreItem, saveRecycleSettings } from './recycle-bin';
 import { authenticateToken, createApiToken } from './api-tokens';
 import { BackupPassphraseError, createBackup, exportBackup, restoreBackup } from './backup';
+import { SessionStore, newSessionToken } from './sessions';
 import { checkForUpdate } from './update-check';
 import { isDirectoryUser, verifyUserPassword } from './credentials';
 import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from './ldap-auth';
@@ -40,11 +41,13 @@ const APP_VERSION: string = require('../package.json').version;
 // Get __dirname for CommonJS compatibility
 declare const __dirname: string;
 
+/** A cookie session (see sessions.ts), or a request authenticated with an API token. */
 interface WebSession {
   username: string;
-  loginTime: Date;
+  createdAt: number;
   /** set until the user replaces the default / admin-reset password */
   mustChangePassword?: boolean;
+  viaToken?: boolean;
 }
 
 
@@ -91,7 +94,7 @@ export class WebServer {
   private wss: WebSocket.Server;
   private db: DatabaseManager;
   private serverManager: ServerManager;
-  private sessions: Map<string, WebSession> = new Map();
+  private sessions: SessionStore;
   private port: number;
   private tls?: { key: string; cert: string };
   private webhooks?: WebhookDispatcher;
@@ -101,6 +104,7 @@ export class WebServer {
 
   constructor(db: DatabaseManager, serverManager: ServerManager, port: number = 3000, options: WebServerOptions = {}) {
     this.db = db;
+    this.sessions = new SessionStore(db, 'admin', SESSION_TTL_MS);
     this.serverManager = serverManager;
     this.port = port;
     this.tls = options.tls;
@@ -202,7 +206,7 @@ export class WebServer {
   }
 
   private generateSessionId(): string {
-    return crypto.randomBytes(32).toString('hex');
+    return newSessionToken();
   }
 
   private authenticateSession(req: Request): WebSession | null {
@@ -216,10 +220,10 @@ export class WebServer {
    */
   private validSession(sessionId: string | undefined, ip: string | undefined): WebSession | null {
     if (!sessionId) return null;
-    const session = this.sessions.get(sessionId);
+    const session = this.sessions.get(sessionId); // undefined once expired
     if (!session) return null;
     const user = this.db.getUser(session.username);
-    if (Date.now() - session.loginTime.getTime() > SESSION_TTL_MS || !user || !user.guiEnabled) {
+    if (!user || !user.guiEnabled) {
       this.sessions.delete(sessionId);
       return null;
     }
@@ -256,17 +260,12 @@ export class WebServer {
    * account deleted), optionally keeping one session (the one making the change).
    */
   dropSessions(username: string, exceptSessionId?: string): void {
-    for (const [id, session] of this.sessions) {
-      if (session.username === username && id !== exceptSessionId) this.sessions.delete(id);
-    }
+    this.sessions.deleteForUser(username, exceptSessionId);
     this.closeOrphanedSockets();
   }
 
   private sweepSessions(): void {
-    const now = Date.now();
-    for (const [id, session] of this.sessions) {
-      if (now - session.loginTime.getTime() > SESSION_TTL_MS) this.sessions.delete(id);
-    }
+    this.sessions.sweep();
     this.closeOrphanedSockets();
   }
 
@@ -299,7 +298,7 @@ export class WebServer {
         res.status(403).json({ error: READ_ONLY_ERROR });
         return;
       }
-      (req as any).session = { username: user.username, loginTime: new Date(), viaToken: true };
+      (req as any).session = { username: user.username, createdAt: Date.now(), viaToken: true };
       next();
       return;
     }
@@ -463,9 +462,9 @@ export class WebServer {
         const sessionId = this.generateSessionId();
         // directory users change their password in the directory, not here
         const mustChangePassword = !isDirectoryUser(user) && requiresPasswordChange(user, password);
-        this.sessions.set(sessionId, {
+        this.sessions.create(sessionId, {
           username: user.username,
-          loginTime: new Date(),
+          createdAt: Date.now(),
           mustChangePassword
         });
 
@@ -531,7 +530,10 @@ export class WebServer {
       this.db.updateUser(session.username, { password: newPassword, mustChangePassword: false });
       session.mustChangePassword = false;
       // other sign-ins of this account end with the old password
-      if (!(session as any).viaToken) this.dropSessions(session.username, req.cookies?.sessionId);
+      if (!session.viaToken) {
+        this.sessions.passwordChanged(req.cookies?.sessionId);
+        this.dropSessions(session.username, req.cookies?.sessionId);
+      }
       this.logActivity(session.username, 'WEB_PASSWORD_CHANGED', 'Password changed via web interface', true);
       res.json({ success: true });
     });

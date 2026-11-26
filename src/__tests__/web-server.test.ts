@@ -1,4 +1,5 @@
 import request from 'supertest';
+import { sessionMethods } from './helpers/test-env';
 import * as crypto from 'crypto';
 import { WebServer } from '../web-server';
 import { DatabaseManager } from '../database';
@@ -56,6 +57,7 @@ describe('WebServer REST API', () => {
 
   beforeEach(() => {
     mockDb = {
+      ...sessionMethods(),
       getUser: jest.fn().mockReturnValue(ADMIN_USER),
       getSetting: jest.fn(), // brute-force guard reads its settings (defaults apply)
       // real hash verification against whatever user the getUser mock returns

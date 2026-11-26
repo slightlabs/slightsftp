@@ -10,6 +10,7 @@ import * as path from 'path';
 import { pipeline } from 'stream/promises';
 import express, { Request, Response, NextFunction } from 'express';
 import { DatabaseManager } from './database';
+import { Session, SessionStore, newSessionToken } from './sessions';
 import { resolveUserPath, ResolvedUserPath } from './path-utils';
 import { requiresPasswordChange, validateNewPassword, timingDummyHash, verifyPasswordHashAsync } from './password';
 import { User, VirtualPath } from './types';
@@ -31,11 +32,7 @@ const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 
 type VpPermission = 'canRead' | 'canWrite' | 'canDelete' | 'canList' | 'canCreateDir' | 'canRename';
 
-interface PortalSession {
-  username: string;
-  createdAt: number;
-  mustChangePassword: boolean;
-}
+type PortalSession = Session;
 
 export interface PortalOptions {
   /** record an activity entry (and push it to admin GUIs) */
@@ -58,17 +55,14 @@ function normalizeVirtual(p: unknown): string {
 }
 
 export function registerPortalRoutes(app: express.Application, db: DatabaseManager, options: PortalOptions): void {
-  const sessions = new Map<string, PortalSession>();
+  // in the database, so a restart does not sign portal users out (sessions.ts)
+  const sessions = new SessionStore(db, 'portal', SESSION_TTL_MS);
   const router = express.Router();
 
   const currentUser = (req: Request): { session: PortalSession; user: User } | null => {
     const id = req.cookies?.[PORTAL_COOKIE];
-    const session = id ? sessions.get(id) : undefined;
+    const session = sessions.get(id); // undefined once expired
     if (!session) return null;
-    if (Date.now() - session.createdAt > SESSION_TTL_MS) {
-      sessions.delete(id);
-      return null;
-    }
     const user = db.getUser(session.username);
     if (!user || !user.portalEnabled) {
       sessions.delete(id);
@@ -152,9 +146,9 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
       return;
     }
     guard.recordSuccess(ip);
-    const id = crypto.randomBytes(32).toString('hex');
+    const id = newSessionToken();
     const mustChangePassword = !isDirectoryUser(user) && requiresPasswordChange(user, password);
-    sessions.set(id, { username: user.username, createdAt: Date.now(), mustChangePassword });
+    sessions.create(id, { username: user.username, createdAt: Date.now(), mustChangePassword });
     res.cookie(PORTAL_COOKIE, id, { httpOnly: true, sameSite: 'lax', secure: options.secureCookies(), maxAge: SESSION_TTL_MS, path: '/' });
     options.logActivity(user.username, 'PORTAL_LOGIN', '/', true);
     res.json(mustChangePassword ? { success: true, username: user.username, requirePasswordChange: true } : { success: true, username: user.username });
@@ -194,6 +188,10 @@ export function registerPortalRoutes(app: express.Application, db: DatabaseManag
     if (db.checkPassword(user.username, newPassword)) throw new HttpError(400, 'The new password must be different from the current one');
     db.updateUser(user.username, { password: newPassword, mustChangePassword: false });
     session.mustChangePassword = false;
+    const token = req.cookies?.[PORTAL_COOKIE];
+    sessions.passwordChanged(token);
+    // other portal sign-ins of this account end with the old password
+    sessions.deleteForUser(user.username, token);
     options.logActivity(user.username, 'PORTAL_PASSWORD_CHANGED', '/', true);
     res.json({ success: true });
   }));

@@ -1,4 +1,5 @@
 import * as http from 'http';
+import { sessionMethods } from './helpers/test-env';
 import * as WS from 'ws';
 import { EventEmitter } from 'events';
 import * as crypto from 'crypto';
@@ -40,6 +41,7 @@ class FakeServerManager extends EventEmitter {
 
 function makeMockDb() {
   const db: any = {
+    ...sessionMethods(),
     getUser: jest.fn().mockReturnValue(ADMIN),
     getSetting: jest.fn(), // brute-force guard reads its settings (defaults apply)
     checkPassword: jest.fn((u: string, pw: string) => {
