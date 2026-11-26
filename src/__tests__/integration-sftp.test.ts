@@ -177,7 +177,12 @@ describe('SFTP Server Integration Tests', () => {
       });
 
       await client.get('/test1.txt', localPath);
-      
+
+      // ssh2-sftp-client resolves get() when the remote stream ends, which can be
+      // before the local write stream has flushed: wait for the file to settle
+      for (let i = 0; i < 50 && !(fs.existsSync(localPath) && fs.statSync(localPath).size === 11); i++) {
+        await new Promise(r => setTimeout(r, 20));
+      }
       expect(fs.existsSync(localPath)).toBe(true);
       const content = fs.readFileSync(localPath, 'utf8');
       expect(content).toBe('Hello World');

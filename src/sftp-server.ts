@@ -12,6 +12,7 @@ import { getQuotaManager } from './quota';
 import { getLimiter } from './bandwidth';
 import { deleteFile } from './recycle-bin';
 import { verifyUserPassword } from './credentials';
+import { maxConnections, preAuthTimeoutMs } from './connection-limits';
 import { SessionTransferStats, TransferHandle, TransferTracker } from './transfers';
 import { resolveUserPath } from './path-utils';
 import { CloudEntry, CloudTarget, StagedDownload, cloudTarget, entryMode, isCloudPath, stagingFile } from './cloud-storage';
@@ -154,6 +155,18 @@ export class SFTPServer extends EventEmitter {
           client.end();
           return;
         }
+        // Unauthenticated connections may not linger: sign in within PRE_AUTH_TIMEOUT_MS
+        const authTimeout = preAuthTimeoutMs();
+        const authTimer = setTimeout(() => {
+          logger.warn(`SFTP client ${ipAddress} did not sign in within ${authTimeout / 1000}s; disconnecting`);
+          // end() waits for a handshake that may never come: drop the socket itself
+          (client as any)._sock?.destroy?.();
+          client.end();
+        }, authTimeout);
+        authTimer.unref?.();
+        client.once('ready', () => clearTimeout(authTimer));
+        client.once('close', () => clearTimeout(authTimer));
+
         // "none" and key-probe attempts are normal parts of the SSH handshake;
         // only real password / signed public-key attempts count as failures
         const countFailure = (ctx: any) => {
@@ -236,7 +249,7 @@ export class SFTPServer extends EventEmitter {
               countFailure(ctx);
               return ctx.reject();
             };
-            // local users are checked synchronously; directory (LDAP) users asynchronously
+            // verified off the event loop (scrypt thread pool / LDAP)
             const verdict = verifyUserPassword(this.db, user, ctx.password, true);
             if (typeof verdict === 'boolean') return finish(verdict);
             verdict.then(finish, () => finish(false));
@@ -850,6 +863,71 @@ export class SFTPServer extends EventEmitter {
                 }
               });
 
+              // Attributes of an open file (clients ask after OPEN, e.g. for the size)
+              sftp.on('FSTAT', (reqId, handle) => {
+                this.resetIdleTimeout(client, username!);
+                const handleNum = handle.readUInt32BE(0);
+                const open = openFiles.get(handleNum);
+                if (!open) return sftp.status(reqId, SFTP_STATUS_CODE.FAILURE, 'Invalid handle');
+                if (open.cloud) {
+                  if (open.write) {
+                    const now = Math.floor(Date.now() / 1000);
+                    return sftp.attrs(reqId, { mode: fs.constants.S_IFREG | 0o644, uid: 0, gid: 0, size: open.end, atime: now, mtime: now });
+                  }
+                  withCloud(this.db, open.localPath, t => t.backend.stat(t.key)).then(entry => {
+                    if (!entry) throw Object.assign(new Error('not found'), { code: 'ENOENT' });
+                    sftp.attrs(reqId, cloudAttrs(entry));
+                  }).catch((err: any) => cloudStatus(reqId, err));
+                  return;
+                }
+                try {
+                  const stats = fs.fstatSync(handleNum);
+                  sftp.attrs(reqId, {
+                    mode: stats.mode, uid: stats.uid, gid: stats.gid, size: stats.size,
+                    atime: Math.floor(stats.atimeMs / 1000), mtime: Math.floor(stats.mtimeMs / 1000)
+                  });
+                } catch {
+                  sftp.status(reqId, SFTP_STATUS_CODE.FAILURE);
+                }
+              });
+
+              // Setting attributes: only timestamps are applied (clients preserve the
+              // original modification time after an upload). Ownership and mode are
+              // accepted and ignored: they belong to the server account, not the user.
+              const hasTimes = (attrs: any) => attrs && typeof attrs.mtime === 'number' && typeof attrs.atime === 'number';
+
+              sftp.on('SETSTAT', (reqId, filePath, attrs) => {
+                this.resetIdleTimeout(client, username!);
+                if (!checkPermission('canEdit', filePath) && !checkPermission('canCreate', filePath)) {
+                  logActivity('SETSTAT_DENIED', filePath, false);
+                  return sftp.status(reqId, SFTP_STATUS_CODE.PERMISSION_DENIED);
+                }
+                const realPath = pathMapper(filePath);
+                if (!realPath) return sftp.status(reqId, SFTP_STATUS_CODE.PERMISSION_DENIED);
+                if (isCloudPath(realPath)) return sftp.status(reqId, SFTP_STATUS_CODE.OK); // object stores keep their own times
+                try {
+                  fs.statSync(realPath);
+                  if (hasTimes(attrs)) fs.utimesSync(realPath, attrs.atime, attrs.mtime);
+                  sftp.status(reqId, SFTP_STATUS_CODE.OK);
+                } catch (err: any) {
+                  sftp.status(reqId, err?.code === 'ENOENT' ? SFTP_STATUS_CODE.NO_SUCH_FILE : SFTP_STATUS_CODE.FAILURE);
+                }
+              });
+
+              sftp.on('FSETSTAT', (reqId, handle, attrs) => {
+                this.resetIdleTimeout(client, username!);
+                const handleNum = handle.readUInt32BE(0);
+                const open = openFiles.get(handleNum);
+                if (!open) return sftp.status(reqId, SFTP_STATUS_CODE.FAILURE, 'Invalid handle');
+                if (open.cloud || !open.write || !hasTimes(attrs)) return sftp.status(reqId, SFTP_STATUS_CODE.OK);
+                try {
+                  fs.futimesSync(handleNum, attrs.atime, attrs.mtime);
+                  sftp.status(reqId, SFTP_STATUS_CODE.OK);
+                } catch {
+                  sftp.status(reqId, SFTP_STATUS_CODE.FAILURE);
+                }
+              });
+
               sftp.on('STAT', (reqId, filePath) => {
                 // Reset idle timeout on activity
                 this.resetIdleTimeout(client, username!);
@@ -1137,6 +1215,9 @@ export class SFTPServer extends EventEmitter {
           this.transfers.endSession(sessionId);
         });
       });
+
+      // Further connections are refused once the listener is full
+      (this.server as any).maxConnections = maxConnections(this.db);
 
       this.server.listen(this.listener.port, this.listener.bindingIp, () => {
         console.log(`SFTP server listening on ${this.listener.bindingIp}:${this.listener.port}`);

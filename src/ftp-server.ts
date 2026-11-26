@@ -11,6 +11,7 @@ import { QuotaExceededError, QuotaManager, getQuotaManager } from './quota';
 import { RateLimiter, getLimiter } from './bandwidth';
 import { deleteFile } from './recycle-bin';
 import { verifyUserPassword } from './credentials';
+import { maxConnections, passiveAddressResolver } from './connection-limits';
 import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { SessionTransferStats, TransferDirection, TransferHandle, TransferTracker } from './transfers';
 import { Readable, Transform, Writable } from 'stream';
@@ -29,6 +30,8 @@ export class FTPServer extends EventEmitter {
   private listener: Listener;
   private db: DatabaseManager;
   private activeSessions: Map<string, ClientSession> = new Map();
+  /** client IP → local address its control connection reached (passive mode) */
+  private controlAddresses = new Map<string, string>();
   private transfers = new TransferTracker();
 
   constructor(listener: Listener, db: DatabaseManager) {
@@ -50,12 +53,23 @@ export class FTPServer extends EventEmitter {
         url: `ftp://${this.listener.bindingIp}:${this.listener.port}`,
         // Behind NAT / in containers: FTP_PASV_URL is the address clients should connect
         // back to, FTP_PASV_MIN / FTP_PASV_MAX the published passive port range
-        pasv_url: process.env.FTP_PASV_URL || this.listener.bindingIp,
+        // FTP_PASV_URL, else the binding address, else (0.0.0.0) the address the client reached
+        pasv_url: passiveAddressResolver(this.listener.bindingIp, ip => this.controlAddresses.get(ip)) as any,
         pasv_min: Number(process.env.FTP_PASV_MIN) || 1024,
         pasv_max: Number(process.env.FTP_PASV_MAX) || 65535,
         anonymous: false,
         tls,
         greeting: ['Welcome to SLightSFTP Server']
+      });
+
+      // remember which local address each client's control connection reached (for PASV)
+      (this.server as any).on('connect', ({ connection }: any) => {
+        const ip = connection?.ip;
+        const local = connection?.commandSocket?.localAddress;
+        if (ip && local) this.controlAddresses.set(ip, local);
+      });
+      (this.server as any).on('disconnect', ({ connection }: any) => {
+        if (connection?.ip) this.controlAddresses.delete(connection.ip);
       });
 
       this.server.on('login', async ({ connection, username, password }, resolve, reject) => {
@@ -161,6 +175,10 @@ export class FTPServer extends EventEmitter {
 
         resolve({ fs: customFS });
       });
+
+      // Further connections are refused once the listener is full
+      const netServer = (this.server as any).server;
+      if (netServer) netServer.maxConnections = maxConnections(this.db);
 
       this.server.listen()
         .then(() => {

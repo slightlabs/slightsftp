@@ -2,7 +2,7 @@
  * One place that decides whether a password is right, for local users
  * (salted hash in the database) and directory users (LDAP / AD).
  *
- * Local checks stay synchronous (a boolean); directory checks return a Promise.
+ * Both local (scrypt on the thread pool) and directory checks return a Promise.
  */
 import { DatabaseManager } from './database';
 import { ldapVerify, readLdapSettings } from './ldap-auth';
@@ -19,5 +19,10 @@ export function isDirectoryUser(user: Pick<User, 'authSource'> | undefined | nul
 export function verifyUserPassword(db: DatabaseManager, user: User, password: string, protocol = false): boolean | Promise<boolean> {
   if (protocol && !user.passwordEnabled) return false;
   if (isDirectoryUser(user)) return ldapVerify(readLdapSettings(db), user.username, password);
-  return protocol ? db.verifyPassword(user.username, password) : db.checkPassword(user.username, password);
+  // async scrypt: a flood of login attempts must not stall transfers and the GUI
+  if (typeof (db as any).checkPasswordAsync !== 'function') {
+    // test doubles without the async method
+    return protocol ? db.verifyPassword(user.username, password) : db.checkPassword(user.username, password);
+  }
+  return db.checkPasswordAsync(user.username, password);
 }
