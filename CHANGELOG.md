@@ -18,6 +18,10 @@
   so a listener that cannot start marks the container unhealthy.
 
 ### Changed
+- Repository: `SECURITY.md` (private vulnerability reporting), `CONTRIBUTING.md` (build,
+  test, layout, database migrations) and Dependabot (npm, GitHub Actions, Docker). Sixteen
+  outdated status and how-to documents, three abandoned `.skip` test suites and two test
+  suites that were excluded from runs were removed; helper scripts moved to `tools/`.
 - Logs: no colour codes when the output is not a terminal (`docker logs`, journald), ISO
   8601 timestamps in log files, and per-operation SFTP messages (path mapping, permission
   checks) moved to the `debug` level. The undated "daily" log file, which was never
