@@ -29,9 +29,10 @@ beforeEach(() => {
 });
 
 describe('preload.ts (real module)', () => {
-  test('exposes exactly invoke / on / removeAllListeners as window.api', () => {
+  test('exposes exactly invoke / on / removeAllListeners (and the desktop flag) as window.api', () => {
     expect(Object.keys(exposed)).toEqual(['api']);
-    expect(Object.keys(api).sort()).toEqual(['invoke', 'on', 'removeAllListeners']);
+    expect(Object.keys(api).sort()).toEqual(['desktop', 'invoke', 'on', 'removeAllListeners']);
+    expect(api.desktop).toBe(true);
   });
 
   describe('invoke()', () => {

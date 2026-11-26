@@ -326,6 +326,8 @@ export class WebServer {
       
       // Remove require('electron') statements for browser compatibility
       rendererJs = rendererJs.replace(/const\s*{\s*ipcRenderer\s*}\s*=\s*require\('electron'\);?\s*/g, '');
+      // the browser always uses the REST shim (window.ipcRenderer)
+      rendererJs = rendererJs.replace(/const ipcRenderer = \(window\.api && window\.api\.desktop\) \? window\.api : \(window\.ipcRenderer \|\| require\('electron'\)\.ipcRenderer\);/, 'const ipcRenderer = window.ipcRenderer;');
       rendererJs = rendererJs.replace(/const\s+\w+\s*=\s*require\('electron'\);?\s*/g, '');
       
       res.type('application/javascript');
@@ -337,6 +339,7 @@ export class WebServer {
       let loginHtml = fs.readFileSync(path.join(__dirname, 'login.html'), 'utf-8');
       
       // Remove the require('electron') line and replace ipcRenderer usage
+      loginHtml = loginHtml.replace(/const ipcRenderer = \(window\.api && window\.api\.desktop\) \? window\.api : \(window\.ipcRenderer \|\| require\('electron'\)\.ipcRenderer\);/, 'const ipcRenderer = window.ipcRenderer;');
       loginHtml = loginHtml.replace(/const\s*{\s*ipcRenderer\s*}\s*=\s*require\('electron'\);?\s*/g, '');
       
       // Replace window.close() calls

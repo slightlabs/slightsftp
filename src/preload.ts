@@ -31,7 +31,9 @@ const INVOKE_CHANNELS = [
 
 const EVENT_CHANNELS = ['activity', 'activity-update', 'listener-started', 'listener-stopped'];
 
-contextBridge.exposeInMainWorld('api', {
+const api = {
+  /** lets the pages tell the desktop app from the browser GUI */
+  desktop: true,
   invoke(channel: string, ...args: unknown[]): Promise<unknown> {
     if (!INVOKE_CHANNELS.includes(channel)) {
       return Promise.reject(new Error(`Blocked IPC channel: ${channel}`));
@@ -47,4 +49,9 @@ contextBridge.exposeInMainWorld('api', {
       ipcRenderer.removeAllListeners(channel);
     }
   },
-});
+};
+
+// The pages run without Node.js (contextIsolation + sandbox): this allow-listed
+// bridge is all they get. (Not exposed as `ipcRenderer`: contextBridge globals
+// are non-configurable, so the pages' own `const ipcRenderer` would not parse.)
+contextBridge.exposeInMainWorld('api', api);

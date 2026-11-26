@@ -31,6 +31,10 @@
 - SFTP clients must finish signing in within 30 seconds, and each listener accepts at most
   200 concurrent connections (`maxConnectionsPerListener` setting).
 - The activity log API returns at most 1000 entries per request; backups up to 200 MB.
+- **Desktop app windows are isolated**: the dashboard and sign-in pages run sandboxed,
+  without Node.js access, and talk to the app only through an allow-listed bridge; they
+  cannot open new windows or navigate to other sites. A script injected into a page can
+  no longer run programs on the computer.
 
 ### Fixes
 - `config.db` is written atomically, so a crash or power loss during a save can no longer

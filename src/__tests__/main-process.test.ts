@@ -31,7 +31,7 @@ jest.mock('electron', () => {
     loadedFile = '';
     visible = true;
     destroyed = false;
-    webContents = { send: jest.fn() };
+    webContents = { send: jest.fn(), setWindowOpenHandler: jest.fn(), on: jest.fn() };
     constructor(options: any) {
       super();
       this.options = options;
@@ -218,7 +218,9 @@ describe('Electron main process (main.ts) with real backend', () => {
       expect(visibleWindows('login.html')).toHaveLength(0);
       const main = visibleWindows('index.html');
       expect(main).toHaveLength(1);
-      expect(main[0].options.webPreferences).toMatchObject({ nodeIntegration: true });
+      // pages run isolated: preload bridge only, no Node.js
+      expect(main[0].options.webPreferences).toMatchObject({ nodeIntegration: false, contextIsolation: true, sandbox: true });
+      expect(main[0].options.webPreferences.preload).toMatch(/preload\.js$/);
       expect(trays).toHaveLength(1);
       expect(trays[0].tooltip).toBe('SLightSFTP Server');
 

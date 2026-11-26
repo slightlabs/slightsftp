@@ -1,4 +1,6 @@
-const { ipcRenderer } = require('electron');
+// Desktop: the preload bridge (window.api); browser GUI: the REST shim
+// injected by web-server.ts. Pages never get Node.js access.
+const ipcRenderer = (window.api && window.api.desktop) ? window.api : (window.ipcRenderer || require('electron').ipcRenderer);
 
 let currentEditingUser = null;
 let currentUserVirtualPaths = [];
@@ -468,14 +470,7 @@ async function loadListeners() {
   }
   
   // Check if we're in web mode
-  const isWebMode = typeof require === 'undefined' || (() => {
-    try {
-      require('electron');
-      return false;
-    } catch (e) {
-      return true;
-    }
-  })();
+  const isWebMode = !(window.api && window.api.desktop) && typeof require === 'undefined';
   
   const listenersHtml = normalizedStatuses.map(s => {
     const isWebGUI = s.listener.id === -1;

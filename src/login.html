@@ -259,7 +259,8 @@
     </div>
 
     <script>
-        const { ipcRenderer } = require('electron');
+        // preload bridge (desktop) or REST shim (browser); never Node.js
+        const ipcRenderer = (window.api && window.api.desktop) ? window.api : (window.ipcRenderer || require('electron').ipcRenderer);
 
         // Close button handler
         document.getElementById('closeButton').addEventListener('click', () => {

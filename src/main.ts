@@ -82,6 +82,17 @@ function ensureDirectories() {
   }
 }
 
+/**
+ * The app's windows only ever show its own local pages: no new windows and
+ * no navigation away (external links go through the open-external IPC).
+ */
+function lockNavigation(win: BrowserWindow): void {
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  win.webContents.on('will-navigate', (event, url) => {
+    if (!url.startsWith('file://')) event.preventDefault();
+  });
+}
+
 function createLoginWindow(): void {
   loginWindow = new BrowserWindow({
     width: 450,
@@ -89,12 +100,16 @@ function createLoginWindow(): void {
     resizable: false,
     frame: false,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      // the pages get only the allow-listed IPC bridge, never Node.js
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true
     },
     icon: path.join(__dirname, '../assets/icon.png')
   });
 
+  lockNavigation(loginWindow);
   loginWindow.loadFile(path.join(__dirname, 'login.html'));
 
   loginWindow.on('close', (event) => {
@@ -115,8 +130,11 @@ function createWindow(): void {
     width: 1200,
     height: 800,
     webPreferences: {
-      nodeIntegration: true,
-      contextIsolation: false
+      // the pages get only the allow-listed IPC bridge, never Node.js
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true
     },
     icon: path.join(__dirname, '../assets/icon.png')
   });
@@ -185,6 +203,7 @@ function createWindow(): void {
   ]);
   Menu.setApplicationMenu(menu);
 
+  lockNavigation(mainWindow);
   mainWindow.loadFile(path.join(__dirname, 'index.html'));
 
   mainWindow.on('close', async (event) => {
