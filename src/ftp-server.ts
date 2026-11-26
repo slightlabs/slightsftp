@@ -12,6 +12,7 @@ import { RateLimiter, getLimiter } from './bandwidth';
 import { deleteFile } from './recycle-bin';
 import { verifyUserPassword } from './credentials';
 import { maxConnections, passiveAddressResolver } from './connection-limits';
+import { waitUntilIdle } from './drain';
 import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { SessionTransferStats, TransferDirection, TransferHandle, TransferTracker } from './transfers';
 import { Readable, Transform, Writable } from 'stream';
@@ -194,25 +195,21 @@ export class FTPServer extends EventEmitter {
     });
   }
 
-  stop(): Promise<void> {
-    return new Promise((resolve) => {
-      // Clear all active sessions
-      this.activeSessions.clear();
-      
-      if (this.server) {
-        this.server.close()
-          .then(() => {
-            logger.info('FTP server stopped');
-            this.emit('stopped');
-            resolve();
-          })
-          .catch(() => {
-            resolve();
-          });
-      } else {
-        resolve();
-      }
-    });
+  /**
+   * Give transfers in progress up to graceMs to finish, then close the
+   * listener and every client connection.
+   */
+  async stop(graceMs = 0): Promise<void> {
+    if (!this.server) return;
+    if (graceMs > 0 && this.transfers.activeCount() > 0) {
+      logger.info(`FTP listener ${this.listener.name}: waiting up to ${Math.round(graceMs / 1000)}s for ${this.transfers.activeCount()} transfer(s)`);
+      await waitUntilIdle(() => this.transfers.activeCount() === 0, graceMs);
+    }
+    // ftp-srv's close() ends every connection as well as the listening socket
+    await this.server.close().catch(() => undefined);
+    this.activeSessions.clear();
+    logger.info('FTP server stopped');
+    this.emit('stopped');
   }
 
   getActiveSessions(): Array<{ sessionId: string; username: string; ipAddress: string; connectedAt: Date } & SessionTransferStats> {

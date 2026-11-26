@@ -4,8 +4,12 @@ services:
     image: ghcr.io/slightlabs/slightsftp:latest
     build: .
     restart: unless-stopped
+    init: true                 # reap child processes; forward signals
+    # on `docker compose stop`, transfers in progress get SHUTDOWN_GRACE_MS to finish
+    stop_grace_period: 30s
     environment:
       WEB_HTTPS: "true"        # self-signed certificate, stored in /data
+      SHUTDOWN_GRACE_MS: "20000"
       # FTP_PASV_URL: 203.0.113.10   # public address for passive FTP
       # TRUST_PROXY: 172.16.0.0/12   # behind a reverse proxy: its address / range
     ports:

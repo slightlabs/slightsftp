@@ -3,6 +3,16 @@
 ## Unreleased
 
 ### Changed
+- Graceful shutdown. On SIGTERM / SIGINT (`docker stop`, systemd, Ctrl+C) the headless
+  server stops accepting connections, gives transfers in progress up to
+  `SHUTDOWN_GRACE_MS` (default 5 s) to finish, disconnects the remaining clients,
+  delivers pending webhooks and syslog messages, and closes the database. A second signal
+  exits at once. `docker-compose.yml` allows 20 s (`stop_grace_period: 30s`).
+- Stopping or restarting a listener now disconnects its SFTP clients (before, they could
+  keep working and the stop waited until they left). The desktop app now finishes closing
+  servers and the database before it quits.
+- Uncaught exceptions in the headless server are logged and trigger a graceful exit with
+  code 1, so Docker or systemd restarts it; unhandled promise rejections are logged.
 - The configuration database has a schema version (`PRAGMA user_version`) and is upgraded
   by numbered migrations, each in its own transaction. Before an upgrade changes an
   existing database, a copy is saved next to it (`config.db.v<old>-<time>.bak`, newest

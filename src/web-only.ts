@@ -7,6 +7,7 @@ import { WebhookDispatcher } from './webhooks';
 import { SyslogForwarder } from './syslog';
 import { purgeExpired } from './recycle-bin';
 import { seedDefaultAdmin } from './default-admin';
+import { createShutdown, installProcessHandlers, shutdownGraceMs } from './lifecycle';
 
 // Initialize database and server manager
 const db = new DatabaseManager();  // Use default config.db
@@ -69,28 +70,19 @@ console.log('🚀 Starting SLightSFTP Server with Web GUI...\n');
     logger.info(`🌐 Access the Web GUI at: ${webServer.getUrl()}`);
     logger.info('⏹️  Press Ctrl+C to stop the server\n');
     
-    // Graceful shutdown
-    const shutdown = async () => {
-      logger.info('\n🛑 Shutting down servers...');
-      
-      try {
-        await webServer.stop();
-        logger.info('✅ Web server stopped');
-      } catch (err: any) {
-        logger.error('❌ Error stopping web server:', err.message);
-      }
-      
-      await serverManager.stopAllListeners();
-      logger.info('✅ All FTP/SFTP servers stopped');
-      
-      db.close(); // writes any pending activity log entries
-      logger.info('👋 Goodbye!\n');
-      process.exit(0);
-    };
-    
-    process.on('SIGINT', shutdown);
-    process.on('SIGTERM', shutdown);
-    
+    // Graceful shutdown (docker stop, systemd, Ctrl+C): stop taking new work,
+    // let transfers in progress finish within the grace period, then close
+    const timeout = <T>(p: Promise<T>, ms: number) => Promise.race([p, new Promise(resolve => setTimeout(resolve, ms).unref())]);
+    const shutdown = createShutdown([
+      ['web GUI', () => webServer.stop()],
+      ['listeners', grace => serverManager.stopAllListeners(grace)],
+      // deliver the events of the last transfers (bounded: an endpoint may be down)
+      ['webhooks', () => timeout(webhooks.idle(), 2000).then(() => webhooks.stop())],
+      ['syslog', () => timeout(syslog.idle(), 1000).then(() => syslog.stop())],
+      ['database', () => db.close()],
+    ], { graceMs: shutdownGraceMs(), log: logger });
+    installProcessHandlers(shutdown, logger);
+
   } catch (error: any) {
     logger.error('❌ Failed to initialize:', error.message);
     process.exit(1);

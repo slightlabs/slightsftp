@@ -130,7 +130,12 @@ describe('Electron main process (main.ts) with real backend', () => {
   });
 
   afterAll(async () => {
-    for (const cb of appEvents.get('before-quit') || []) await cb();
+    // quitting is held (preventDefault) until servers and database are closed, then app.quit() runs again
+    const { app } = require('electron');
+    const event = { preventDefault: jest.fn() };
+    for (const cb of appEvents.get('before-quit') || []) cb(event);
+    expect(event.preventDefault).toHaveBeenCalled();
+    await waitFor(() => app.quit.mock.calls.length > 0);
     removeDir(installDir);
   });
 
