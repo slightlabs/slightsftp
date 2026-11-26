@@ -13,6 +13,7 @@ import { deleteFile } from './recycle-bin';
 import { verifyUserPassword } from './credentials';
 import { maxConnections, passiveAddressResolver } from './connection-limits';
 import { waitUntilIdle } from './drain';
+import { tlsServerOptions } from './crypto-policy';
 import { getLoginGuard, TOO_MANY_ATTEMPTS, userIpAllowed } from './login-guard';
 import { SessionTransferStats, TransferDirection, TransferHandle, TransferTracker } from './transfers';
 import { Readable, Transform, Writable } from 'stream';
@@ -47,7 +48,7 @@ export class FTPServer extends EventEmitter {
     const tls = tlsMode === 'none' ? false : await getServerCertificate({
       certPath: this.db.getSetting('tlsCertPath'),
       keyPath: this.db.getSetting('tlsKeyPath')
-    }).then(c => ({ key: c.key, cert: c.cert }));
+    }).then(c => ({ key: c.key, cert: c.cert, ...tlsServerOptions(this.db) }));
 
     return new Promise((resolve, reject) => {
       this.server = new FtpSrv({
