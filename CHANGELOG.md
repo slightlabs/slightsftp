@@ -40,6 +40,10 @@
   in the database, and a new account created later with the same name inherited them.
   Folder and listener access of deleted users and listeners is also removed.
 
+- **LDAP StartTLS**: *Use StartTLS* upgrades `ldap://` connections before any password is
+  sent (a server that refuses it fails the sign-in instead of falling back). *Test
+  connection* warns when passwords would be sent unencrypted.
+
 ### Fixes
 - `config.db` is written atomically, so a crash or power loss during a save can no longer
   leave a truncated database. Activity log writes are batched instead of rewriting the

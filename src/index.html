@@ -725,6 +725,7 @@
                 <div class="form-group"><label>Service account password</label><input type="password" name="bindPassword" autocomplete="new-password" placeholder="unchanged"></div>
               </div>
               <div class="form-group"><label>User filter</label><input type="text" name="userFilter"></div>
+              <div class="form-group checkbox-group"><input type="checkbox" name="startTls" id="ldapStartTls"><label for="ldapStartTls">Use StartTLS for ldap:// servers (otherwise passwords are sent unencrypted; ldaps:// is always encrypted)</label></div>
               <div class="form-group checkbox-group"><input type="checkbox" name="tlsVerify" id="ldapTlsVerify"><label for="ldapTlsVerify">Verify the server's TLS certificate</label></div>
               <button type="submit" class="btn btn-primary">Save</button>
               <button type="button" class="btn" onclick="testLdapConnection()">Test connection</button>

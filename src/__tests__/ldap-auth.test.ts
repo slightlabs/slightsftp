@@ -28,6 +28,8 @@ const PEOPLE: Record<string, { password: string; attrs: Record<string, string> }
 /** A minimal directory: service-account bind, user binds, subtree search. */
 function startDirectory(): Promise<{ url: string; close: () => void; searches: string[] }> {
   const server = ldap.createServer();
+  // ldapjs cannot parse the StartTLS extended request; keep serving other clients
+  server.on('error', () => undefined);
   const searches: string[] = [];
   server.bind(BASE, (req: any, res: any, next: any) => {
     const dn = req.dn.toString().replace(/\s/g, '').toLowerCase();
@@ -106,15 +108,17 @@ describe('directory sign-in', () => {
     const saved = await admin.put('/api/ldap')
       .send({ enabled: true, url: directory.url, baseDn: BASE, bindDn: SERVICE.dn, bindPassword: SERVICE.password, tlsVerify: true })
       .expect(200);
-    expect(saved.body).toEqual({ enabled: true, url: directory.url, bindDn: SERVICE.dn, baseDn: BASE, userFilter: LDAP_DEFAULT_FILTER, tlsVerify: true, hasBindPassword: true });
+    expect(saved.body).toEqual({ enabled: true, url: directory.url, bindDn: SERVICE.dn, baseDn: BASE, userFilter: LDAP_DEFAULT_FILTER, tlsVerify: true, startTls: false, hasBindPassword: true });
     // saving again with an empty password keeps the stored one
     await admin.put('/api/ldap').send({ bindPassword: '' }).expect(200);
     expect(readLdapSettings(db).bindPassword).toBe(SERVICE.password);
   });
 
   test('"test connection" binds and looks users up', async () => {
-    expect((await admin.post('/api/ldap/test').send({}).expect(200)).body).toEqual({ ok: true, message: 'Connected' });
-    expect((await admin.post('/api/ldap/test').send({ username: 'ed' })).body).toEqual({ ok: true, message: `Found cn=Ed Admin, ou=people, ${BASE}`.replace(/, /g, ',') });
+    // the test directory is plain ldap:// without StartTLS: it works, with a warning
+    const warning = ' — warning: passwords are sent unencrypted; use ldaps:// or turn on StartTLS';
+    expect((await admin.post('/api/ldap/test').send({}).expect(200)).body).toEqual({ ok: true, message: 'Connected' + warning });
+    expect((await admin.post('/api/ldap/test').send({ username: 'ed' })).body).toEqual({ ok: true, message: `Found cn=Ed Admin, ou=people, ${BASE}`.replace(/, /g, ',') + warning });
     expect((await admin.post('/api/ldap/test').send({ username: 'twin' })).body.ok).toBe(false);
     expect((await testLdap({ ...readLdapSettings(db), bindPassword: 'wrong' })).ok).toBe(false);
   });
@@ -174,5 +178,74 @@ describe('directory sign-in', () => {
   test('an unreachable directory fails closed', async () => {
     const s = { ...readLdapSettings(db), enabled: true, url: `ldap://127.0.0.1:${await getFreePort()}` };
     expect(await ldapVerify(s, 'dora', 'Dora-Directory-1')).toBe(false);
+  });
+});
+
+describe('StartTLS', () => {
+  const { Client } = require('ldapts');
+  let directory: Awaited<ReturnType<typeof startDirectory>>;
+  let binds: string[];
+  let original: any;
+
+  beforeAll(async () => {
+    directory = await startDirectory();
+  });
+  afterAll(() => directory.close());
+  beforeEach(() => {
+    binds = [];
+    original = Client.prototype.bind;
+    jest.spyOn(Client.prototype, 'bind').mockImplementation(function (this: any, dn: any, pw: any) {
+      binds.push(`${dn}:${this.startTLSUpgraded ? 'tls' : 'plain'}`);
+      return original.call(this, dn, pw);
+    });
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  const settings = (startTls: boolean) => ({
+    enabled: true, url: directory.url, baseDn: BASE, bindDn: SERVICE.dn, bindPassword: SERVICE.password,
+    userFilter: LDAP_DEFAULT_FILTER, tlsVerify: true, startTls,
+  });
+
+  test('a server that refuses StartTLS fails closed and never receives a password', async () => {
+    // the ldapjs test directory does not implement the StartTLS extended operation
+    expect(await ldapVerify(settings(true), 'dora', 'Dora-Directory-1')).toBe(false);
+    expect(binds).toEqual([]);
+    const result = await testLdap(settings(true));
+    expect(result.ok).toBe(false);
+    expect(result.message).toMatch(/StartTLS failed/);
+    expect(binds).toEqual([]);
+  });
+
+  test('the connection is upgraded before the first bind', async () => {
+    const order: string[] = [];
+    jest.spyOn(Client.prototype, 'startTLS').mockImplementation(async function (this: any) {
+      order.push('startTLS');
+      this.startTLSUpgraded = true; // pretend: the test directory cannot speak TLS
+    });
+    (Client.prototype.bind as jest.Mock).mockImplementation(function (this: any, dn: any, pw: any) {
+      order.push(`bind:${this.startTLSUpgraded ? 'tls' : 'plain'}`);
+      return original.call(this, dn, pw);
+    });
+    const result = await testLdap(settings(true));
+    expect(result.ok).toBe(true);
+    expect(result.message).not.toMatch(/unencrypted/);
+    expect(order[0]).toBe('startTLS');
+    expect(order.filter(o => o.startsWith('bind'))).toEqual(['bind:tls']);
+  });
+
+  test('a plain ldap:// connection without StartTLS still works but is flagged', async () => {
+    const result = await testLdap(settings(false));
+    expect(result.ok).toBe(true);
+    expect(result.message).toMatch(/passwords are sent unencrypted/);
+  });
+
+  test('the StartTLS choice is saved', async () => {
+    const db = new DatabaseManager(':memory:');
+    await db.init();
+    saveLdapSettings(db, { startTls: true });
+    expect(readLdapSettings(db).startTls).toBe(true);
+    saveLdapSettings(db, { startTls: false });
+    expect(readLdapSettings(db).startTls).toBe(false);
+    db.close();
   });
 });

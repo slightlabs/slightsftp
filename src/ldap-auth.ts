@@ -17,6 +17,8 @@ export interface LdapSettings {
   /** "{username}" is replaced by the escaped login name */
   userFilter: string;
   tlsVerify: boolean;
+  /** upgrade a plain ldap:// connection with StartTLS before any password is sent */
+  startTls: boolean;
 }
 
 export const LDAP_DEFAULT_FILTER = '(&(objectClass=person)(|(uid={username})(sAMAccountName={username})(userPrincipalName={username})))';
@@ -31,6 +33,7 @@ export function readLdapSettings(db: DatabaseManager): LdapSettings {
     baseDn: get('ldapBaseDn'),
     userFilter: get('ldapUserFilter') || LDAP_DEFAULT_FILTER,
     tlsVerify: get('ldapTlsVerify') !== 'false',
+    startTls: get('ldapStartTls') === 'true',
   };
 }
 
@@ -46,6 +49,7 @@ export function saveLdapSettings(db: DatabaseManager, input: Partial<LdapSetting
   // an empty bind password in the form means "keep the stored one"
   if (input.bindPassword) db.setSetting('ldapBindPassword', input.bindPassword);
   if (input.tlsVerify !== undefined) db.setSetting('ldapTlsVerify', input.tlsVerify ? 'true' : 'false');
+  if (input.startTls !== undefined) db.setSetting('ldapStartTls', input.startTls ? 'true' : 'false');
   if (input.enabled !== undefined) db.setSetting('ldapEnabled', input.enabled ? 'true' : 'false');
 }
 
@@ -70,8 +74,33 @@ function client(settings: LdapSettings): Client {
   });
 }
 
-async function findUserDn(settings: LdapSettings, username: string): Promise<string | null> {
+/** True when passwords would cross the network unencrypted. */
+export function ldapIsCleartext(settings: Pick<LdapSettings, 'url' | 'startTls'>): boolean {
+  return /^ldap:/i.test(settings.url) && !settings.startTls;
+}
+
+/**
+ * A connected client; with StartTLS the connection is upgraded first, so no
+ * bind (service account or user password) is ever sent in the clear. A server
+ * that refuses StartTLS fails the whole check.
+ */
+async function open(settings: LdapSettings): Promise<Client> {
   const c = client(settings);
+  if (settings.startTls && /^ldap:/i.test(settings.url)) {
+    let servername: string | undefined;
+    try { servername = new URL(settings.url).hostname; } catch { /* validated on save */ }
+    try {
+      await c.startTLS({ rejectUnauthorized: settings.tlsVerify, servername });
+    } catch (err: any) {
+      await c.unbind().catch(() => undefined);
+      throw new Error(`StartTLS failed: ${err?.message || err}`);
+    }
+  }
+  return c;
+}
+
+async function findUserDn(settings: LdapSettings, username: string): Promise<string | null> {
+  const c = await open(settings);
   try {
     if (settings.bindDn) await c.bind(settings.bindDn, settings.bindPassword);
     const { searchEntries } = await c.search(settings.baseDn, {
@@ -93,7 +122,7 @@ export async function ldapVerify(settings: LdapSettings, username: string, passw
   try {
     const dn = await findUserDn(settings, username);
     if (!dn) return false;
-    const c = client(settings);
+    const c = await open(settings);
     try {
       await c.bind(dn, password);
       return true;
@@ -110,15 +139,18 @@ export async function ldapVerify(settings: LdapSettings, username: string, passw
 export async function testLdap(settings: LdapSettings, username?: string): Promise<{ ok: boolean; message: string }> {
   if (!settings.url || !settings.baseDn) return { ok: false, message: 'URL and base DN are required' };
   try {
+    const warning = ldapIsCleartext(settings)
+      ? ' — warning: passwords are sent unencrypted; use ldaps:// or turn on StartTLS'
+      : '';
     if (username) {
       const dn = await findUserDn(settings, username);
-      return dn ? { ok: true, message: `Found ${dn}` } : { ok: false, message: `No unique entry for "${username}"` };
+      return dn ? { ok: true, message: `Found ${dn}${warning}` } : { ok: false, message: `No unique entry for "${username}"` };
     }
-    const c = client(settings);
+    const c = await open(settings);
     try {
       if (settings.bindDn) await c.bind(settings.bindDn, settings.bindPassword);
       await c.search(settings.baseDn, { scope: 'base', filter: '(objectClass=*)', attributes: ['dn'] });
-      return { ok: true, message: 'Connected' };
+      return { ok: true, message: `Connected${warning}` };
     } finally {
       await c.unbind().catch(() => undefined);
     }

@@ -634,7 +634,7 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       (f.elements as any).namedItem('url').value = 'ldaps://dc01.example.com';
       (f.elements as any).namedItem('baseDn').value = 'DC=example,DC=com';
       await submit(f);
-      expect(lastCall('set-ldap-settings')).toEqual([{ enabled: true, url: 'ldaps://dc01.example.com', baseDn: 'DC=example,DC=com', bindDn: '', bindPassword: '', userFilter: '(uid={username})', tlsVerify: true }]);
+      expect(lastCall('set-ldap-settings')).toEqual([{ enabled: true, url: 'ldaps://dc01.example.com', baseDn: 'DC=example,DC=com', bindDn: '', bindPassword: '', userFilter: '(uid={username})', tlsVerify: true, startTls: false }]);
 
       (window as any).prompt = jest.fn(() => 'dora');
       buttonByText(f, 'Test connection').click();

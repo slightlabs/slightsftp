@@ -319,7 +319,7 @@ curl -k -b jar -H 'Content-Type: application/json' \
                 <h2>Directory sign-in (LDAP)</h2>
                 <div class="api-item">
                     <h3><code>GET /api/ldap</code></h3>
-                    <p><code>{ enabled, url, bindDn, baseDn, userFilter, tlsVerify, hasBindPassword }</code>.</p>
+                    <p><code>{ enabled, url, bindDn, baseDn, userFilter, tlsVerify, startTls, hasBindPassword }</code>. With <code>startTls</code>, <code>ldap://</code> connections are upgraded before any password is sent; a server that refuses StartTLS fails the sign-in.</p>
                 </div>
                 <div class="api-item">
                     <h3><code>PUT /api/ldap</code></h3>

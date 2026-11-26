@@ -719,6 +719,7 @@ async function loadLdapSettings() {
   f.namedItem('bindPassword').placeholder = ldap.hasBindPassword ? 'unchanged' : '';
   f.namedItem('userFilter').value = ldap.userFilter;
   f.namedItem('tlsVerify').checked = ldap.tlsVerify;
+  f.namedItem('startTls').checked = !!ldap.startTls;
 }
 
 function ldapFormValues() {
@@ -730,7 +731,8 @@ function ldapFormValues() {
     bindDn: f.namedItem('bindDn').value.trim(),
     bindPassword: f.namedItem('bindPassword').value,
     userFilter: f.namedItem('userFilter').value.trim(),
-    tlsVerify: f.namedItem('tlsVerify').checked
+    tlsVerify: f.namedItem('tlsVerify').checked,
+    startTls: f.namedItem('startTls').checked
   };
 }
 
