@@ -698,9 +698,56 @@ document.getElementById('trashSettingsForm').addEventListener('submit', async (e
   loadTrash();
 });
 
+// Scheduled backups
+async function loadBackupSchedule() {
+  const s = await ipcRenderer.invoke('get-backup-schedule');
+  const f = document.getElementById('backupScheduleForm').elements;
+  f.namedItem('enabled').checked = s.enabled;
+  f.namedItem('intervalHours').value = s.intervalHours;
+  f.namedItem('keep').value = s.keep;
+  f.namedItem('directory').value = s.directory;
+  f.namedItem('passphrase').value = '';
+  f.namedItem('passphrase').placeholder = s.hasPassphrase ? 'Unchanged (set)' : 'None: backups are not encrypted';
+  f.namedItem('clearPassphrase').checked = false;
+  document.getElementById('backupScheduleStatus').textContent = s.lastRunAt
+    ? `Last run ${new Date(s.lastRunAt).toLocaleString()}: ${s.lastResult}`
+    : 'No scheduled backup has run yet.';
+}
+
+document.getElementById('backupScheduleForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = e.target.elements;
+  const input = {
+    enabled: f.namedItem('enabled').checked,
+    intervalHours: parseInt(f.namedItem('intervalHours').value, 10),
+    keep: parseInt(f.namedItem('keep').value, 10),
+    directory: f.namedItem('directory').value.trim(),
+  };
+  if (f.namedItem('clearPassphrase').checked) input.passphrase = null;
+  else if (f.namedItem('passphrase').value) input.passphrase = f.namedItem('passphrase').value;
+  try {
+    await ipcRenderer.invoke('set-backup-schedule', input);
+    alert('Backup schedule saved.');
+  } catch (err) {
+    alert(`Failed to save the schedule: ${errorText(err)}`);
+  }
+  loadBackupSchedule();
+});
+
+async function runBackupNow() {
+  try {
+    const result = await ipcRenderer.invoke('run-backup-now');
+    alert(`Backup written to ${result.file}${result.encrypted ? ' (encrypted)' : ''}`);
+  } catch (err) {
+    alert(`Backup failed: ${errorText(err)}`);
+  }
+  loadBackupSchedule();
+}
+
 // Security (brute-force protection)
 async function loadSecurity() {
   loadAuditSettings();
+  loadBackupSchedule();
   loadLdapSettings();
   loadApiTokens();
   const [settings, bans] = await Promise.all([

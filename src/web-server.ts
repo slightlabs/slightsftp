@@ -28,6 +28,7 @@ import { authenticateToken, createApiToken } from './api-tokens';
 import { BackupPassphraseError, createBackup, exportBackup, restoreBackup } from './backup';
 import { SessionStore, newSessionToken } from './sessions';
 import { Metrics } from './metrics';
+import { readBackupSchedule, runBackup, saveBackupSchedule } from './backup-schedule';
 import { checkForUpdate } from './update-check';
 import { isDirectoryUser, verifyUserPassword } from './credentials';
 import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from './ldap-auth';
@@ -683,6 +684,29 @@ export class WebServer {
       this.logActivity(session.username, 'WEB_BACKUP_DOWNLOADED', 'configuration backup', true);
       res.attachment(`slightsftp-backup-${bundle.createdAt.slice(0, 10)}.json`);
       res.json(bundle);
+    });
+
+    // Scheduled backups to a folder on the server
+    this.app.get('/api/backup/schedule', (req: Request, res: Response) => {
+      res.json(readBackupSchedule(this.db));
+    });
+    this.app.put('/api/backup/schedule', (req: Request, res: Response) => {
+      const session = (req as any).session as WebSession;
+      try {
+        const schedule = saveBackupSchedule(this.db, req.body || {});
+        this.logActivity(session.username, 'WEB_BACKUP_SCHEDULE_CHANGED', schedule.enabled ? `every ${schedule.intervalHours} h, keep ${schedule.keep}` : 'off', true);
+        res.json(schedule);
+      } catch (error: any) {
+        res.status(400).json({ error: error.message });
+      }
+    });
+    this.app.post('/api/backup/schedule/run', (req: Request, res: Response) => {
+      try {
+        const result = runBackup(this.db, APP_VERSION);
+        res.json({ success: true, ...result, schedule: readBackupSchedule(this.db) });
+      } catch (error: any) {
+        res.status(500).json({ error: `Backup failed: ${error.message}` });
+      }
     });
 
     // the same, encrypted with a passphrase (POST so the passphrase is not in a URL)
@@ -1951,6 +1975,9 @@ export class WebServer {
               };
               input.click();
             }),
+            'get-backup-schedule': () => api('GET', '/api/backup/schedule'),
+            'set-backup-schedule': (schedule) => api('PUT', '/api/backup/schedule', schedule),
+            'run-backup-now': () => api('POST', '/api/backup/schedule/run'),
             'get-ldap-settings': () => api('GET', '/api/ldap'),
             'set-ldap-settings': (settings) => api('PUT', '/api/ldap', settings),
             'test-ldap': (username) => api('POST', '/api/ldap/test', { username }),

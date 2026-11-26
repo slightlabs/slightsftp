@@ -395,6 +395,10 @@ curl -k -b jar -H 'Content-Type: application/json' \
                     <p>Body <code>{ passphrase }</code> (at least 8 characters): the same bundle encrypted with AES-256-GCM under a key derived from the passphrase with scrypt (<code>format: "slightsftp-backup-encrypted"</code>). An empty passphrase returns the unencrypted bundle.</p>
                 </div>
                 <div class="api-item">
+                    <h3><code>GET /api/backup/schedule</code>, <code>PUT /api/backup/schedule</code>, <code>POST /api/backup/schedule/run</code></h3>
+                    <p>Scheduled backups. Body for <code>PUT</code>: <code>{ enabled?, intervalHours? (1–720), keep? (1–365), directory? (absolute path, "" = default), passphrase? (string to set, null to remove) }</code>. Responses include <code>hasPassphrase</code>, <code>lastRunAt</code> and <code>lastResult</code>, never the passphrase. <code>run</code> writes one backup now and returns its <code>file</code>.</p>
+                </div>
+                <div class="api-item">
                     <h3><code>POST /api/backup/restore</code></h3>
                     <p>Body: a bundle from <code>GET /api/backup</code>, or <code>{ bundle, passphrase }</code> for an encrypted one. Replaces the configuration and restarts the listeners. A missing or wrong passphrase returns <code>400</code> with <code>passphraseRequired: true</code>.</p>
                 </div>

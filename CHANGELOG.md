@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Added
+- Scheduled backups: every N hours (default daily) a configuration backup is written to a
+  folder (default `backups` next to `config.db`), encrypted when a passphrase is set, and
+  the newest N (default 7) are kept. Configure under *Security → Backup & Restore* or
+  `GET/PUT /api/backup/schedule`; *Back up now* / `POST /api/backup/schedule/run`.
 - Structured logging: `LOG_FORMAT=json` writes one JSON object per line; `LOG_FILES=false`
   logs to stdout only. Web requests get an `X-Request-Id` (a proxy's id is kept), which is
   added to every log line written while handling the request, and an access log at the

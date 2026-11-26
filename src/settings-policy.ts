@@ -10,7 +10,7 @@
 import { cleanTrustProxy } from './http-security';
 
 /** Never sent to a client by the generic settings endpoints. */
-export const SECRET_SETTINGS: ReadonlySet<string> = new Set(['ldapBindPassword']);
+export const SECRET_SETTINGS: ReadonlySet<string> = new Set(['ldapBindPassword', 'backupPassphrase']);
 
 /** Keys the generic settings endpoint may change. */
 export const WRITABLE_SETTINGS: ReadonlySet<string> = new Set([

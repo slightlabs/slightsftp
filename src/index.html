@@ -742,6 +742,22 @@
             </div>
             <button type="button" class="btn btn-primary" onclick="exportBackup()">Download backup</button>
             <button type="button" class="btn btn-warning" onclick="importBackup()">Restore from backup…</button>
+
+            <h3 style="margin-top: 24px;">Scheduled backups</h3>
+            <p style="color: #666; margin-top: 0;">Write a backup to a folder on this server at a fixed interval and keep the newest ones. Copy that folder off the machine (another disk, a NAS, cloud sync) so a failed disk does not take the backups with it.</p>
+            <form id="backupScheduleForm">
+              <div class="form-group"><label><input type="checkbox" name="enabled"> Back up automatically</label></div>
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <div class="form-group"><label>Every (hours)</label><input type="number" name="intervalHours" min="1" max="720" required></div>
+                <div class="form-group"><label>Keep the newest</label><input type="number" name="keep" min="1" max="365" required></div>
+              </div>
+              <div class="form-group"><label>Folder (empty: "backups" next to the configuration)</label><input type="text" name="directory" placeholder="/mnt/backup/slightsftp"></div>
+              <div class="form-group"><label>Passphrase for scheduled backups (at least 8 characters)</label><input type="password" name="passphrase" autocomplete="new-password" placeholder="Unchanged"></div>
+              <div class="form-group"><label><input type="checkbox" name="clearPassphrase"> Remove the passphrase (backups unencrypted)</label></div>
+              <p id="backupScheduleStatus" style="color: #666;"></p>
+              <button type="submit" class="btn btn-primary">Save schedule</button>
+              <button type="button" class="btn btn-secondary" onclick="runBackupNow()">Back up now</button>
+            </form>
           </div>
 
           <div class="card">

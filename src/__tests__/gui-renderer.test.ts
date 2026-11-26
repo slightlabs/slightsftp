@@ -56,6 +56,7 @@ const model = {
   webhooks: [] as any[],
   storage: [] as any[],
   audit: { checksumUploads: true, syslog: { enabled: false, host: '', port: 514, protocol: 'udp', facility: 16 } } as any,
+  backupSchedule: { enabled: false, intervalHours: 24, keep: 7, directory: '', hasPassphrase: false, lastRunAt: null, lastResult: null } as any,
   security: { enabled: true, maxFailures: 5, windowMinutes: 10, banMinutes: 15, allowlist: '127.0.0.0/8, ::1' },
   bans: [{ ip: '203.0.113.9', reason: `5 failed logins in 10 min (last: SFTP as ${XSS})`, bannedAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 900_000).toISOString() }] as any[],
   shares: [
@@ -99,6 +100,16 @@ const backend: Record<string, Handler> = {
   'purge-trash-item': (id: number) => { model.trash = model.trash.filter(t => t.id !== id); return { success: true }; },
   'empty-trash': () => { const count = model.trash.length; model.trash = []; return { success: true, count }; },
   'get-audit-settings': () => model.audit,
+  'get-backup-schedule': () => model.backupSchedule,
+  'set-backup-schedule': (u: any) => {
+    const { passphrase, ...rest } = u;
+    Object.assign(model.backupSchedule, rest, passphrase === undefined ? {} : { hasPassphrase: passphrase !== null });
+    return model.backupSchedule;
+  },
+  'run-backup-now': () => {
+    Object.assign(model.backupSchedule, { lastRunAt: new Date().toISOString(), lastResult: 'ok: slightsftp-backup-20261127T000000Z.json' });
+    return { success: true, file: '/data/backups/slightsftp-backup-20261127T000000Z.json', encrypted: model.backupSchedule.hasPassphrase };
+  },
   'set-audit-settings': (u: any) => { model.audit = { ...model.audit, ...u, syslog: { ...model.audit.syslog, ...(u.syslog || {}) } }; return model.audit; },
   'test-syslog': () => ({ ok: false, error: 'connect ECONNREFUSED' }),
   'unban-ip': (ip: string) => { model.bans = model.bans.filter(b => b.ip !== ip); return { success: true }; },
@@ -641,6 +652,33 @@ describe('Dashboard GUI (index.html + renderer.js)', () => {
       await flush();
       expect(lastCall('test-ldap')).toEqual(['dora']);
       expect($('#ldapTestResult').textContent).toBe('✅ Found uid=dora,dc=example,dc=com');
+    });
+
+    test('scheduled backups: the form saves typed values, keeps or clears the passphrase, and runs on demand', async () => {
+      const f = $<HTMLFormElement>('#backupScheduleForm');
+      expect($('#backupScheduleStatus').textContent).toBe('No scheduled backup has run yet.');
+      (f.elements as any).namedItem('enabled').checked = true;
+      (f.elements as any).namedItem('intervalHours').value = '12';
+      (f.elements as any).namedItem('keep').value = '14';
+      (f.elements as any).namedItem('directory').value = ' /mnt/nas/backups ';
+      (f.elements as any).namedItem('passphrase').value = 'long enough phrase';
+      await submit(f);
+      expect(lastCall('set-backup-schedule')).toEqual([{ enabled: true, intervalHours: 12, keep: 14, directory: '/mnt/nas/backups', passphrase: 'long enough phrase' }]);
+      expect((f.elements as any).namedItem('passphrase').value).toBe('');
+      expect((f.elements as any).namedItem('passphrase').placeholder).toBe('Unchanged (set)');
+
+      // saving again without typing a passphrase leaves it alone
+      await submit(f);
+      expect(lastCall('set-backup-schedule')![0]).not.toHaveProperty('passphrase');
+      (f.elements as any).namedItem('clearPassphrase').checked = true;
+      await submit(f);
+      expect(lastCall('set-backup-schedule')![0].passphrase).toBeNull();
+
+      buttonByText(f, 'Back up now').click();
+      await flush();
+      expect(calls('run-backup-now')).toHaveLength(1);
+      expect((window.alert as jest.Mock).mock.calls.at(-1)[0]).toBe('Backup written to /data/backups/slightsftp-backup-20261127T000000Z.json');
+      expect($('#backupScheduleStatus').textContent).toContain('ok: slightsftp-backup-20261127T000000Z.json');
     });
 
     test('backup and restore buttons', async () => {

@@ -52,6 +52,11 @@ export class DatabaseManager {
     this.dbPath = dbPath || path.join(process.cwd(), 'config.db');
   }
 
+  /** The database file (':memory:' for an in-memory database). */
+  get filePath(): string {
+    return this.dbPath;
+  }
+
   async init(): Promise<void> {
     if (this.initialized) return;
 
