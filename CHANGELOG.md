@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Fixed
+- FTP sessions were never removed when a client disconnected: ftp-srv connections emit no
+  `close` event, so every FTP sign-in stayed in the live sessions list, its transfer
+  statistics stayed in memory for the life of the process, and no LOGOUT was logged.
+  Sessions now end on the server's `disconnect` event.
+
 ### Added
 - Documentation: a *Running in Production* guide (deployment model, Docker, reverse proxy,
   upgrades and rollback, backup and restore, monitoring, hardening checklist).
