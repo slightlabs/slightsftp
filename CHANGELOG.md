@@ -3,6 +3,8 @@
 ## Unreleased
 
 ### Added
+- Documentation: a *Running in Production* guide (deployment model, Docker, reverse proxy,
+  upgrades and rollback, backup and restore, monitoring, hardening checklist).
 - Scheduled backups: every N hours (default daily) a configuration backup is written to a
   folder (default `backups` next to `config.db`), encrypted when a passphrase is set, and
   the newest N (default 7) are kept. Configure under *Security → Backup & Restore* or

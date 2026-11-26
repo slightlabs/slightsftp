@@ -50,6 +50,9 @@ operation), `LOG_FORMAT=json` for one JSON object per line (log collectors), and
 `LOG_FILES=false` to log to stdout only. Every web response carries an `X-Request-Id`
 that also appears in the log lines written while handling it.
 
+For a production setup (reverse proxy, upgrades and rollback, backups, monitoring,
+hardening) see [Running in Production](https://slightlabs.github.io/slightsftp/operations.html).
+
 Run **one container per data volume**: the configuration is a SQLite database, so two
 instances must not share `/data`. Sign-ins to the web GUI and the file portal are stored
 in it, so restarting or updating the container does not sign anyone out.
