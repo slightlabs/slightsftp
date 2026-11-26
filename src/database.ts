@@ -2,6 +2,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { SqliteDatabase } from './sqlite';
+import logger from './logger';
 import { assertCloudTarget } from './cloud-storage';
 import { User, VirtualPath, Permission, Listener, UserListener, ServerActivity, FtpTlsMode, Share, Webhook, StorageConnection } from './types';
 import { hashPassword, timingDummyHash, verifyPasswordHash, verifyPasswordHashAsync } from './password';
@@ -84,7 +85,7 @@ export class DatabaseManager {
     const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');
     const target = `${this.dbPath}.v${version}-${stamp}.bak`;
     fs.writeFileSync(target, this.db.serialize(), { mode: 0o600 });
-    console.log(`Upgrading the configuration database (schema ${version} -> ${SCHEMA_VERSION}); previous version saved as ${target}`);
+    logger.warn(`Upgrading the configuration database (schema ${version} -> ${SCHEMA_VERSION}); previous version saved as ${target}`);
 
     const dir = path.dirname(path.resolve(this.dbPath));
     const prefix = `${path.basename(this.dbPath)}.v`;
@@ -151,7 +152,7 @@ export class DatabaseManager {
     try {
       return this.secrets.open(value);
     } catch (err: any) {
-      console.error(`Cannot read ${what}: ${err?.message || err}`);
+      logger.error(`Cannot read ${what}: ${err?.message || err}`);
       return value;
     }
   }
@@ -1240,7 +1241,7 @@ export class DatabaseManager {
       try {
         listener({ ...activity, timestamp: activity.timestamp || new Date().toISOString() });
       } catch (err) {
-        console.error('Activity listener failed:', err);
+        logger.error('Activity listener failed:', err);
       }
     }
   }
@@ -1552,9 +1553,9 @@ export class DatabaseManager {
         this.db.close();
         this.db = null;
         this.initialized = false;
-        console.log('Database closed successfully');
+        logger.debug('Database closed');
       } catch (err) {
-        console.error('Error closing database:', err);
+        logger.error('Error closing database:', err);
         // Even if there's an error, mark as not initialized to prevent further operations
         this.db = null;
         this.initialized = false;

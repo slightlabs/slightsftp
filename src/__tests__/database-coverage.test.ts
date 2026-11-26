@@ -2,7 +2,8 @@ import { DatabaseManager } from '../database';
 
 jest.mock('../logger', () => ({
   __esModule: true,
-  default: { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn() }
+  default: { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn(), log: jest.fn() },
+  requestContext: new (require('async_hooks').AsyncLocalStorage)(),
 }));
 
 describe('DatabaseManager — activity and settings coverage', () => {

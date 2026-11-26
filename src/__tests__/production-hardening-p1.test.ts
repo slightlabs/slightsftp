@@ -16,7 +16,8 @@ const SftpClient = require('ssh2-sftp-client');
 
 jest.mock('../logger', () => ({
   __esModule: true,
-  default: { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn() }
+  default: { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn(), log: jest.fn() },
+  requestContext: new (require('async_hooks').AsyncLocalStorage)(),
 }));
 
 const fakeServerManager: any = {
