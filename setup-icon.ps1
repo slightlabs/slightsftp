@@ -41,7 +41,7 @@ Write-Host "Generating ICO file for MSI installer..." -ForegroundColor Cyan
 
 try {
     # Use npx icon-gen to create ICO
-    npx icon-gen -i $SourceIcon -o build --ico
+    npx --yes icon-gen@5.0.0 -i $SourceIcon -o build --ico
     Write-Host "Generated: build\icon.ico" -ForegroundColor Green
     
     # Also create app.ico for the application
