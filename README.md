@@ -18,6 +18,7 @@ Multi-user FTP/SFTP server with GUI management interface.
 - Salted scrypt password hashing; forced password change on first login
 - Stable SFTP host key with a fingerprint you can share with users
 - Live sessions, activity log and a REST API ([docs](https://slightlabs.github.io/slightsftp/api.html))
+- Prometheus metrics (`/metrics`) and health checks (`/healthz`, `/readyz`) for monitoring
 - SQLite database for configuration storage; system tray support
 
 See [ROADMAP.md](ROADMAP.md) for what's coming next.

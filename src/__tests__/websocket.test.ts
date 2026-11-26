@@ -42,6 +42,7 @@ class FakeServerManager extends EventEmitter {
 function makeMockDb() {
   const db: any = {
     ...sessionMethods(),
+    onActivity: jest.fn(() => () => undefined), // metrics subscribe to the activity stream
     getUser: jest.fn().mockReturnValue(ADMIN),
     getSetting: jest.fn(), // brute-force guard reads its settings (defaults apply)
     checkPassword: jest.fn((u: string, pw: string) => {

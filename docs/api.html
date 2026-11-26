@@ -365,6 +365,18 @@ curl -k -b jar -H 'Content-Type: application/json' \
                 </div>
             </div>
             <div class="api-section">
+                <h2>Monitoring</h2>
+                <div class="api-item">
+                    <h3><code>GET /healthz</code> and <code>GET /readyz</code></h3>
+                    <p>No sign-in. <code>/healthz</code> returns <code>200 {"status":"ok"}</code> while the process and its database answer (liveness). <code>/readyz</code> also requires every enabled listener to be accepting connections, and returns <code>503</code> with <code>checks.listeners.enabled</code> / <code>running</code> counts otherwise (readiness; the Docker image's <code>HEALTHCHECK</code> uses it).</p>
+                </div>
+                <div class="api-item">
+                    <h3><code>GET /metrics</code></h3>
+                    <p>Prometheus metrics; authenticate with an API token (a read-only user's is enough), e.g. <code>authorization: { credentials: sst_… }</code> in <code>prometheus.yml</code>. Includes <code>slightsftp_sessions{protocol}</code>, <code>slightsftp_listener_up{listener,protocol,port}</code>, <code>slightsftp_logins_total{protocol,result}</code>, <code>slightsftp_transfers_total</code> / <code>slightsftp_transfer_bytes_total{protocol,direction}</code>, <code>slightsftp_deletes_total</code>, <code>slightsftp_transfers_in_progress</code>, <code>slightsftp_ip_bans</code>, <code>slightsftp_info{version}</code> and the standard process / Node.js runtime metrics (prefixed <code>slightsftp_</code>). <code>protocol</code> is <code>SFTP</code>, <code>FTP</code> or <code>web</code> (web GUI, portal and share links).</p>
+                </div>
+            </div>
+
+            <div class="api-section">
                 <h2>Audit export, backup and updates</h2>
                 <div class="api-item">
                     <h3><code>GET /api/audit/settings · PUT /api/audit/settings</code></h3>

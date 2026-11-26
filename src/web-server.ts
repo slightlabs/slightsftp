@@ -27,6 +27,7 @@ import { purgeItem, recycleSettings, restoreItem, saveRecycleSettings } from './
 import { authenticateToken, createApiToken } from './api-tokens';
 import { BackupPassphraseError, createBackup, exportBackup, restoreBackup } from './backup';
 import { SessionStore, newSessionToken } from './sessions';
+import { Metrics } from './metrics';
 import { checkForUpdate } from './update-check';
 import { isDirectoryUser, verifyUserPassword } from './credentials';
 import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from './ldap-auth';
@@ -95,6 +96,7 @@ export class WebServer {
   private db: DatabaseManager;
   private serverManager: ServerManager;
   private sessions: SessionStore;
+  readonly metrics: Metrics;
   private port: number;
   private tls?: { key: string; cert: string };
   private webhooks?: WebhookDispatcher;
@@ -105,6 +107,7 @@ export class WebServer {
   constructor(db: DatabaseManager, serverManager: ServerManager, port: number = 3000, options: WebServerOptions = {}) {
     this.db = db;
     this.sessions = new SessionStore(db, 'admin', SESSION_TTL_MS);
+    this.metrics = new Metrics(db, serverManager, APP_VERSION);
     this.serverManager = serverManager;
     this.port = port;
     this.tls = options.tls;
@@ -342,6 +345,25 @@ export class WebServer {
   }
 
   private setupRoutes(): void {
+    // Health checks for load balancers, Docker and Kubernetes: no sign-in, no details
+    // beyond counts. /healthz: the process and database answer. /readyz: also every
+    // enabled listener is accepting connections.
+    this.app.get('/healthz', (req: Request, res: Response) => {
+      const report = this.metrics.health();
+      res.status(report.checks.database ? 200 : 503).json({ status: report.checks.database ? 'ok' : 'unavailable' });
+    });
+    this.app.get('/readyz', (req: Request, res: Response) => {
+      const report = this.metrics.health();
+      res.status(report.status === 'ok' ? 200 : 503).json(report);
+    });
+
+    // Prometheus metrics: scrape with an API token (bearer_token / authorization in
+    // prometheus.yml); any GUI user's token works, including read-only users
+    this.app.get('/metrics', (req, res, next) => this.requireAuth(req, res, next), async (req: Request, res: Response) => {
+      res.set('Content-Type', this.metrics.registry.contentType);
+      res.send(await this.metrics.registry.metrics());
+    });
+
     // Serve renderer.js
     this.app.get('/renderer.js', (req: Request, res: Response) => {
       const rendererPath = path.join(__dirname, 'renderer.js');
@@ -2064,6 +2086,7 @@ export class WebServer {
 
   async stop(): Promise<void> {
     clearInterval(this.sweepTimer);
+    this.metrics.stop();
     if (typeof (this.serverManager as any)?.off === 'function') {
       this.serverManager.off('activity', this.onServerActivity);
       this.serverManager.off('listener-started', this.onListenerStarted);

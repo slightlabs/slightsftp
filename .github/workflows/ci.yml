@@ -94,6 +94,7 @@ jobs:
           for i in $(seq 1 30); do curl -fs http://127.0.0.1:3000/login >/dev/null && break; sleep 2; done
           curl -fs http://127.0.0.1:3000/login >/dev/null
           docker exec slightsftp-ci node /app/dist/healthcheck.js
+          curl -fs http://127.0.0.1:3000/readyz | grep -q '"status":"ok"'
           docker rm -f slightsftp-ci
       - name: Smoke test (HTTPS, as in docker-compose.yml)
         run: |

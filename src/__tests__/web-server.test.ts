@@ -58,6 +58,7 @@ describe('WebServer REST API', () => {
   beforeEach(() => {
     mockDb = {
       ...sessionMethods(),
+      onActivity: jest.fn(() => () => undefined), // metrics subscribe to the activity stream
       getUser: jest.fn().mockReturnValue(ADMIN_USER),
       getSetting: jest.fn(), // brute-force guard reads its settings (defaults apply)
       // real hash verification against whatever user the getUser mock returns
