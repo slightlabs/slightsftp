@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Changed
+- Web GUI and file portal sign-ins are stored in the configuration database (only a
+  SHA-256 hash of each session token), so restarting or updating the server no longer
+  signs everyone out. Sessions are left out of backups; restoring one keeps the current
+  sign-ins. Changing your portal password now signs out your other portal sessions.
 - The configuration database now runs on Node's built-in SQLite (`node:sqlite`) in WAL
   mode instead of sql.js. sql.js kept the whole database in memory and rewrote the entire
   file after every change; now each change is written to disk as it is made, so large

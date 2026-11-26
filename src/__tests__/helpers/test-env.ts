@@ -57,3 +57,27 @@ export const FULL_VPATH_PERMS = {
   canRename: true,
   applyToSubdirs: true,
 };
+
+/**
+ * The session methods of DatabaseManager, kept in a Map, for tests that hand
+ * WebServer a mocked database: spread into the mock (`{ ...sessionMethods(), ... }`).
+ */
+export function sessionMethods() {
+  const rows = new Map<string, any>();
+  const key = (kind: string, hash: string) => `${kind}:${hash}`;
+  return {
+    createSession: jest.fn((s: any) => { rows.set(key(s.kind, s.tokenHash), { ...s }); }),
+    getSession: jest.fn((kind: string, hash: string) => rows.get(key(kind, hash))),
+    updateSession: jest.fn((kind: string, hash: string, fields: any) => {
+      const row = rows.get(key(kind, hash));
+      if (row) Object.assign(row, fields);
+    }),
+    deleteSession: jest.fn((kind: string, hash: string) => { rows.delete(key(kind, hash)); }),
+    deleteSessionsForUser: jest.fn((kind: string, username: string, except?: string) => {
+      for (const [k, row] of rows) if (row.kind === kind && row.username === username && row.tokenHash !== except) rows.delete(k);
+    }),
+    deleteSessionsBefore: jest.fn((kind: string, before: number) => {
+      for (const [k, row] of rows) if (row.kind === kind && row.createdAt < before) rows.delete(k);
+    }),
+  };
+}

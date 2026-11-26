@@ -102,12 +102,25 @@ export class SqliteDatabase {
     }
   }
 
-  /** A consistent copy of the whole database as SQLite file bytes. */
-  serialize(): Buffer {
+  /**
+   * A consistent copy of the whole database as SQLite file bytes, after
+   * running `scrub` statements on the copy (never on this database).
+   */
+  serialize(scrub: string[] = []): Buffer {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slightsftp-export-'));
     const copy = path.join(dir, 'copy.db');
     try {
       this.db.prepare('VACUUM INTO ?').run(copy);
+      if (scrub.length) {
+        const { DatabaseSync } = sqlite();
+        const target = new DatabaseSync(copy);
+        try {
+          for (const sql of scrub) target.exec(sql);
+          target.exec('VACUUM'); // leave no trace of the removed rows in free pages
+        } finally {
+          target.close();
+        }
+      }
       return fs.readFileSync(copy);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
