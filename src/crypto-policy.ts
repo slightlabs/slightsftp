@@ -49,9 +49,34 @@ export function sshAlgorithmProfile(db: SettingsReader): SshAlgorithmProfile {
   return db.getSetting('sshAlgorithms') === 'compatible' ? 'compatible' : 'modern';
 }
 
+/**
+ * What this ssh2 build supports: it depends on the crypto library underneath
+ * (Electron's BoringSSL has no ChaCha20-Poly1305, for one), and ssh2 refuses
+ * to start a server with an algorithm it cannot do.
+ */
+function supportedBySsh2(): Record<keyof typeof MODERN_SSH_ALGORITHMS, string[]> | null {
+  try {
+    const c = require('ssh2/lib/protocol/constants.js');
+    return { kex: c.SUPPORTED_KEX, serverHostKey: c.SUPPORTED_SERVER_HOST_KEY, cipher: c.SUPPORTED_CIPHER, hmac: c.SUPPORTED_MAC, compress: c.SUPPORTED_COMPRESSION };
+  } catch {
+    return null; // layout changed: offer the list as is
+  }
+}
+
+/** The modern list, limited to what the running ssh2 supports. */
+export function modernSshAlgorithms(supported = supportedBySsh2()): typeof MODERN_SSH_ALGORITHMS {
+  if (!supported) return MODERN_SSH_ALGORITHMS;
+  const out = {} as typeof MODERN_SSH_ALGORITHMS;
+  for (const key of Object.keys(MODERN_SSH_ALGORITHMS) as Array<keyof typeof MODERN_SSH_ALGORITHMS>) {
+    const available = Array.isArray(supported[key]) ? MODERN_SSH_ALGORITHMS[key].filter(a => supported[key].includes(a)) : MODERN_SSH_ALGORITHMS[key];
+    out[key] = available.length ? available : MODERN_SSH_ALGORITHMS[key];
+  }
+  return out;
+}
+
 /** The `algorithms` option for ssh2.Server, or undefined for the library defaults. */
 export function sshServerAlgorithms(db: SettingsReader): typeof MODERN_SSH_ALGORITHMS | undefined {
-  return sshAlgorithmProfile(db) === 'modern' ? MODERN_SSH_ALGORITHMS : undefined;
+  return sshAlgorithmProfile(db) === 'modern' ? modernSshAlgorithms() : undefined;
 }
 
 export function tlsMinVersion(db: SettingsReader): TlsMinVersion {
