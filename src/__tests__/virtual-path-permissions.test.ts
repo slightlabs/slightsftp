@@ -1,20 +1,20 @@
 import { DatabaseManager } from '../database';
 import { VirtualPath, User } from '../types';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 describe('Virtual Path Permissions', () => {
   let db: DatabaseManager;
-  const testDbPath = path.join(__dirname, 'test-vp-permissions.db');
+  // a temp folder per test: the database brings its -wal / -shm journal and secret.key along
+  let testDir: string;
+  let testDbPath: string;
   let testUser: User;
   let listenerId: number;
 
   beforeEach(async () => {
-    // Clean up test database if it exists
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath);
-    }
-
+    testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'slightsftp-vp-'));
+    testDbPath = path.join(testDir, 'test-vp-permissions.db');
     db = new DatabaseManager(testDbPath);
     await db.init();
 
@@ -41,9 +41,8 @@ describe('Virtual Path Permissions', () => {
   });
 
   afterEach(() => {
-    if (fs.existsSync(testDbPath)) {
-      fs.unlinkSync(testDbPath);
-    }
+    db.close();
+    fs.rmSync(testDir, { recursive: true, force: true });
   });
 
   describe('Virtual Path Creation with Permissions', () => {

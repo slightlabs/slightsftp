@@ -150,7 +150,8 @@
                     <h3>Database Location</h3>
                     <ul>
                         <li>Default location: Application directory/config.db</li>
-                        <li>Single file for easy backup</li>
+                        <li>A standard SQLite database in WAL mode: every change is written to disk as it is made
+                            (config.db-wal and config.db-shm sit next to it while the server runs)</li>
                         <li>Supports standard SQLite tools for management</li>
                     </ul>
                 </div>
@@ -175,7 +176,8 @@
                             certificate and the master key, so it restores on a new machine</li>
                         <li>Enter a <em>backup passphrase</em> to encrypt the bundle (AES-256-GCM, scrypt); the same
                             passphrase is needed to restore it. Unencrypted backups contain password hashes and keys</li>
-                        <li>Copying files by hand: copy config.db <strong>and</strong> secret.key together</li>
+                        <li>Copying files by hand: stop the server, then copy config.db <strong>and</strong> secret.key together
+                            (while it runs, recent changes may still be in config.db-wal)</li>
                         <li>With <code>SLIGHTSFTP_MASTER_KEY</code>, the key is not in the backup; restore with the same key</li>
                     </ul>
                 </div>

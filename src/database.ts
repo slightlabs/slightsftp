@@ -1,6 +1,7 @@
-import initSqlJs, { Database } from 'sql.js';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
+import { SqliteDatabase } from './sqlite';
 import { assertCloudTarget } from './cloud-storage';
 import { User, VirtualPath, Permission, Listener, UserListener, ServerActivity, FtpTlsMode, Share, Webhook, StorageConnection } from './types';
 import { hashPassword, timingDummyHash, verifyPasswordHash, verifyPasswordHashAsync } from './password';
@@ -12,12 +13,10 @@ function normalizeTlsMode(mode: unknown): FtpTlsMode {
 }
 
 export class DatabaseManager {
-  private db: Database | null = null;
+  private db: SqliteDatabase | null = null;
   private dbPath: string;
   private initialized: boolean = false;
   private activityListeners: Array<(activity: ServerActivity) => void> = [];
-  /** pending coalesced save (activity log writes) */
-  private saveTimer: NodeJS.Timeout | null = null;
   /** encrypts the secrets stored in the database (see secret-box.ts) */
   private secrets: SecretBox | null = null;
 
@@ -28,80 +27,42 @@ export class DatabaseManager {
   async init(): Promise<void> {
     if (this.initialized) return;
 
-    const SQL = await initSqlJs();
     this.secrets = SecretBox.forDatabase(this.dbPath);
-    
-    if (fs.existsSync(this.dbPath)) {
-      const buffer = fs.readFileSync(this.dbPath);
-      this.db = new SQL.Database(buffer);
-      // databases created by older versions were world-readable
-      if (process.platform !== 'win32') {
-        try { fs.chmodSync(this.dbPath, 0o600); } catch { /* not our file to change */ }
-      }
-    } else {
-      this.db = new SQL.Database();
-    }
-    
+    this.db = this.open();
     this.initialize();
-    this.save();
     this.initialized = true;
   }
 
   /**
-   * Write the database to disk atomically: a temp file is written and synced,
-   * then renamed over config.db, so a crash mid-write never leaves a truncated
-   * database. The file holds password hashes and secrets: owner-only (0600).
+   * Open the database file (created owner-only: it holds password hashes and
+   * secrets). Files written by older versions with sql.js are plain SQLite
+   * databases and open as they are.
    */
-  private save(): void {
-    if (!this.db) return;
-    // Don't save in-memory databases
-    if (this.dbPath === ':memory:') return;
-    if (this.saveTimer) {
-      clearTimeout(this.saveTimer);
-      this.saveTimer = null;
+  private open(): SqliteDatabase {
+    if (this.dbPath === ':memory:') return new SqliteDatabase(':memory:');
+    fs.mkdirSync(path.dirname(path.resolve(this.dbPath)), { recursive: true });
+    fs.closeSync(fs.openSync(this.dbPath, 'a', 0o600));
+    if (process.platform !== 'win32') {
+      // databases created by older versions were world-readable; SQLite gives
+      // its -wal / -shm files the database file's permissions
+      for (const file of [this.dbPath, `${this.dbPath}-wal`, `${this.dbPath}-shm`]) {
+        try { if (fs.existsSync(file)) fs.chmodSync(file, 0o600); } catch { /* not our file to change */ }
+      }
     }
-
-    const buffer = Buffer.from(this.db.export());
-    const temp = `${this.dbPath}.${process.pid}.tmp`;
-    const fd = fs.openSync(temp, 'w', 0o600);
-    try {
-      fs.writeSync(fd, buffer, 0, buffer.length);
-      fs.fsyncSync(fd);
-    } finally {
-      fs.closeSync(fd);
-    }
-    try {
-      fs.renameSync(temp, this.dbPath);
-    } catch (err: any) {
-      // Windows can refuse to replace a file another process (e.g. a virus
-      // scanner) holds open; fall back to writing in place
-      fs.rmSync(temp, { force: true });
-      if (err?.code !== 'EPERM' && err?.code !== 'EBUSY' && err?.code !== 'EACCES') throw err;
-      fs.writeFileSync(this.dbPath, buffer, { mode: 0o600 });
-    }
+    return new SqliteDatabase(this.dbPath);
   }
 
   /**
-   * Coalesce frequent, low-value writes (activity log entries) into one save
-   * shortly after: a burst of transfers or failed logins no longer rewrites
-   * the whole database file once per event.
+   * Changes are written to disk as each statement runs; there is nothing to
+   * save. Kept so callers written for the in-memory sql.js engine still work.
    */
-  private scheduleSave(delayMs = 1000): void {
-    if (this.dbPath === ':memory:' || this.saveTimer) return;
-    this.saveTimer = setTimeout(() => {
-      this.saveTimer = null;
-      try {
-        this.save();
-      } catch (err) {
-        console.error('Saving the database failed:', err);
-      }
-    }, delayMs);
-    this.saveTimer.unref?.();
-  }
+  private save(): void { /* written already */ }
 
-  /** Write any pending changes now (call before exiting). */
+  private scheduleSave(_delayMs?: number): void { /* written already */ }
+
+  /** Make sure everything is on disk (call before exiting). */
   flush(): void {
-    if (this.saveTimer) this.save();
+    this.db?.run('PRAGMA wal_checkpoint(PASSIVE)');
   }
 
   /** The master key holder, e.g. for configuration backups. */
@@ -230,8 +191,7 @@ export class DatabaseManager {
         action TEXT NOT NULL,
         path TEXT NOT NULL,
         timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        success INTEGER NOT NULL DEFAULT 1,
-        FOREIGN KEY (listenerId) REFERENCES listeners(id) ON DELETE CASCADE
+        success INTEGER NOT NULL DEFAULT 1
       );
 
       CREATE TABLE IF NOT EXISTS settings (
@@ -342,6 +302,49 @@ export class DatabaseManager {
     addColumn('users', 'authSource', "TEXT NOT NULL DEFAULT 'local'");
     // existing GUI users keep full access
     addColumn('users', 'guiRole', "TEXT NOT NULL DEFAULT 'admin'");
+    this.keepActivityHistory();
+    this.removeOrphanRows();
+  }
+
+  /**
+   * The activity log is an audit trail: entries outlive the listener they
+   * mention. Older databases declared server_activities.listenerId as a
+   * foreign key with ON DELETE CASCADE (never enforced by the sql.js engine,
+   * whose export() reset PRAGMA foreign_keys); rebuild the table without it,
+   * the standard SQLite procedure for changing a constraint.
+   */
+  private keepActivityHistory(): void {
+    const fks = this.db!.exec('PRAGMA foreign_key_list(server_activities)');
+    if (!fks.length) return;
+    const info = this.db!.exec('PRAGMA table_info(server_activities)');
+    const columns = info[0].values.map(r => `"${String(r[1])}"`).join(', ');
+    this.db!.transaction(() => {
+      this.db!.run(`
+        CREATE TABLE server_activities_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          listenerId INTEGER,
+          username TEXT NOT NULL,
+          action TEXT NOT NULL,
+          path TEXT NOT NULL,
+          timestamp TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          success INTEGER NOT NULL DEFAULT 1,
+          bytes INTEGER,
+          checksum TEXT
+        )`);
+      this.db!.run(`INSERT INTO server_activities_new (${columns}) SELECT ${columns} FROM server_activities`);
+      this.db!.run('DROP TABLE server_activities');
+      this.db!.run('ALTER TABLE server_activities_new RENAME TO server_activities');
+      this.db!.run('CREATE INDEX IF NOT EXISTS idx_activities_listener ON server_activities(listenerId)');
+      this.db!.run('CREATE INDEX IF NOT EXISTS idx_activities_timestamp ON server_activities(timestamp)');
+    });
+  }
+
+  /** Rows whose user or listener is gone (left behind while foreign keys were not enforced). */
+  private removeOrphanRows(): void {
+    this.db!.run('DELETE FROM virtual_paths WHERE userId NOT IN (SELECT id FROM users)');
+    for (const table of ['permissions', 'user_listeners']) {
+      this.db!.run(`DELETE FROM ${table} WHERE userId NOT IN (SELECT id FROM users) OR listenerId NOT IN (SELECT id FROM listeners)`);
+    }
   }
 
   // User operations
@@ -478,15 +481,18 @@ export class DatabaseManager {
   deleteUser(username: string): void {
     if (!this.db) throw new Error('Database not initialized');
     const user = this.getUser(username);
-    if (user?.id !== undefined) {
-      for (const table of ['virtual_paths', 'permissions', 'user_listeners']) {
-        this.db.run(`DELETE FROM ${table} WHERE userId = ?`, [user.id]);
+    const db = this.db;
+    // all or nothing: never a user without their tokens revoked
+    db.transaction(() => {
+      if (user?.id !== undefined) {
+        for (const table of ['virtual_paths', 'permissions', 'user_listeners']) {
+          db.run(`DELETE FROM ${table} WHERE userId = ?`, [user.id]);
+        }
       }
-    }
-    this.db.run('DELETE FROM api_tokens WHERE username = ?', [username]);
-    this.db.run('DELETE FROM shares WHERE owner = ?', [username]);
-    this.db.run('DELETE FROM users WHERE username = ?', [username]);
-    this.save();
+      db.run('DELETE FROM api_tokens WHERE username = ?', [username]);
+      db.run('DELETE FROM shares WHERE owner = ?', [username]);
+      db.run('DELETE FROM users WHERE username = ?', [username]);
+    });
   }
 
   /**
@@ -688,10 +694,12 @@ export class DatabaseManager {
     if (!this.db) throw new Error('Database not initialized');
     
     // explicit for the same reason as deleteUser; the activity log keeps its history
-    this.db.run('DELETE FROM permissions WHERE listenerId = ?', [id]);
-    this.db.run('DELETE FROM user_listeners WHERE listenerId = ?', [id]);
-    this.db.run('DELETE FROM listeners WHERE id = ?', [id]);
-    this.save();
+    const db = this.db;
+    db.transaction(() => {
+      db.run('DELETE FROM permissions WHERE listenerId = ?', [id]);
+      db.run('DELETE FROM user_listeners WHERE listenerId = ?', [id]);
+      db.run('DELETE FROM listeners WHERE id = ?', [id]);
+    });
   }
 
   // Permission operations
@@ -1351,32 +1359,60 @@ export class DatabaseManager {
   /** The whole configuration database as SQLite bytes (for backups). */
   exportBytes(): Buffer {
     if (!this.db) throw new Error('Database not initialized');
-    return Buffer.from(this.db.export());
+    return this.db.serialize();
   }
 
   /** Replace the configuration with a backup (validated first). */
   async restoreFrom(bytes: Buffer): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
-    const SQL = await initSqlJs();
-    let candidate: Database;
+    // next to the database, so the finished file can be renamed into place
+    const dir = fs.mkdtempSync(path.join(this.dbPath === ':memory:' ? os.tmpdir() : path.dirname(path.resolve(this.dbPath)), '.restore-'));
+    const candidate = path.join(dir, 'restore.db');
     try {
-      candidate = new SQL.Database(bytes);
-      const tables = candidate.exec("SELECT name FROM sqlite_master WHERE type = 'table'");
-      const names = tables.length ? tables[0].values.map(r => r[0]) : [];
-      if (!['users', 'listeners', 'virtual_paths'].every(t => names.includes(t))) throw new Error('missing tables');
-    } catch {
-      throw new Error('This is not a SLightSFTP configuration backup');
+      fs.writeFileSync(candidate, bytes, { mode: 0o600 });
+      let check: SqliteDatabase | null = null;
+      try {
+        check = new SqliteDatabase(candidate, { readOnly: true });
+        const tables = check.exec("SELECT name FROM sqlite_master WHERE type = 'table'");
+        const names = tables.length ? tables[0].values.map(r => r[0]) : [];
+        if (!['users', 'listeners', 'virtual_paths'].every(t => names.includes(t))) throw new Error('missing tables');
+        const integrity = check.exec('PRAGMA quick_check');
+        if (integrity[0]?.values[0]?.[0] !== 'ok') throw new Error('corrupt');
+      } catch {
+        throw new Error('This is not a SLightSFTP configuration backup');
+      } finally {
+        check?.close();
+      }
+
+      if (this.dbPath === ':memory:') {
+        // copy the backup into the in-memory database, table by table
+        this.db.close();
+        this.db = new SqliteDatabase(':memory:');
+        this.db.run('ATTACH DATABASE ? AS backup', [candidate]);
+        const tables = this.db.exec("SELECT name, sql FROM backup.sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'");
+        for (const [name, sql] of tables.length ? tables[0].values : []) {
+          this.db.run(String(sql));
+          this.db.run(`INSERT INTO main."${String(name)}" SELECT * FROM backup."${String(name)}"`);
+        }
+        this.db.run('DETACH DATABASE backup');
+      } else {
+        // swap the file: close, replace (dropping the old journal), reopen
+        this.db.close();
+        this.db = null;
+        for (const suffix of ['-wal', '-shm']) fs.rmSync(this.dbPath + suffix, { force: true });
+        fs.renameSync(candidate, this.dbPath);
+        this.db = this.open();
+      }
+      this.initialize(); // bring older backups up to the current schema
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+      if (!this.db) this.db = this.open(); // never leave the manager without a database
     }
-    this.db.close();
-    this.db = candidate;
-    this.initialize(); // bring older backups up to the current schema
-    this.save();
   }
 
   close(): void {
     if (this.db && this.initialized) {
       try {
-        this.save();
         this.db.close();
         this.db = null;
         this.initialized = false;

@@ -4,10 +4,10 @@
  */
 import * as fs from 'fs';
 import * as path from 'path';
-import initSqlJs from 'sql.js';
 import { createBackup, restoreBackup } from '../backup';
 import { DatabaseManager } from '../database';
 import { MASTER_KEY_ENV, SECRET_KEY_FILE, SecretBox, SecretUnavailableError, isSealed, keyFromEnvironment } from '../secret-box';
+import { SqliteDatabase } from '../sqlite';
 import { setCertificateDir } from '../tls';
 import { makeTempDir, removeDir } from './helpers/test-env';
 
@@ -17,8 +17,7 @@ const HOOK_SECRET = 'hook-signing-secret-123';
 const TOTP_SECRET = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
 
 async function rawRows(dbFile: string, sql: string): Promise<any[][]> {
-  const SQL = await initSqlJs();
-  const raw = new SQL.Database(fs.readFileSync(dbFile));
+  const raw = new SqliteDatabase(dbFile, { readOnly: true });
   const result = raw.exec(sql);
   raw.close();
   return result.length ? result[0].values : [];
@@ -111,13 +110,11 @@ describe('secrets in config.db', () => {
     await old.init();
     await populate(old);
     old.close();
-    const SQL = await initSqlJs();
-    const raw = new SQL.Database(fs.readFileSync(file));
+    const raw = new SqliteDatabase(file);
     raw.run(`UPDATE storage_connections SET config = ?`, [JSON.stringify({ bucket: 'b', secretAccessKey: S3_SECRET })]);
     raw.run(`UPDATE settings SET value = ? WHERE key = 'ldapBindPassword'`, [BIND_PASSWORD]);
     raw.run(`UPDATE webhooks SET secret = ?`, [HOOK_SECRET]);
     raw.run(`UPDATE users SET totpSecret = ? WHERE username = 'tina'`, [TOTP_SECRET]);
-    fs.writeFileSync(file, Buffer.from(raw.export()));
     raw.close();
 
     const db = new DatabaseManager(file);
