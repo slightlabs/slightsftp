@@ -36,6 +36,10 @@
   cannot open new windows or navigate to other sites. A script injected into a page can
   no longer run programs on the computer.
 
+- **Deleting a user now revokes their API tokens and share links.** Before, they stayed
+  in the database, and a new account created later with the same name inherited them.
+  Folder and listener access of deleted users and listeners is also removed.
+
 ### Fixes
 - `config.db` is written atomically, so a crash or power loss during a save can no longer
   leave a truncated database. Activity log writes are batched instead of rewriting the

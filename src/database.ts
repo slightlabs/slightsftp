@@ -404,9 +404,22 @@ export class DatabaseManager {
     this.save();
   }
 
+  /**
+   * Delete a user and everything that grants access as them. Done explicitly:
+   * sql.js turns foreign keys off when it exports the database, so ON DELETE
+   * CASCADE does not run on saved databases, and API tokens / share links are
+   * keyed by user name: a later account with the same name must not inherit them.
+   */
   deleteUser(username: string): void {
     if (!this.db) throw new Error('Database not initialized');
-    
+    const user = this.getUser(username);
+    if (user?.id !== undefined) {
+      for (const table of ['virtual_paths', 'permissions', 'user_listeners']) {
+        this.db.run(`DELETE FROM ${table} WHERE userId = ?`, [user.id]);
+      }
+    }
+    this.db.run('DELETE FROM api_tokens WHERE username = ?', [username]);
+    this.db.run('DELETE FROM shares WHERE owner = ?', [username]);
     this.db.run('DELETE FROM users WHERE username = ?', [username]);
     this.save();
   }
@@ -609,6 +622,9 @@ export class DatabaseManager {
   deleteListener(id: number): void {
     if (!this.db) throw new Error('Database not initialized');
     
+    // explicit for the same reason as deleteUser; the activity log keeps its history
+    this.db.run('DELETE FROM permissions WHERE listenerId = ?', [id]);
+    this.db.run('DELETE FROM user_listeners WHERE listenerId = ?', [id]);
     this.db.run('DELETE FROM listeners WHERE id = ?', [id]);
     this.save();
   }

@@ -109,3 +109,37 @@ describe('settings policy', () => {
     expect(validateSetting('defaultAdminSeeded', 'false')).not.toBeNull();
   });
 });
+
+describe('deleting a user', () => {
+  test('removes their tokens, share links and access, also in a saved database (no cascade)', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'slightsftp-del-'));
+    try {
+      const db = new DatabaseManager(path.join(dir, 'config.db'));
+      await db.init();
+      // reopen: like every real database, it has been exported once (foreign keys off)
+      db.close();
+      await db.init();
+      const { createApiToken, authenticateToken } = require('../api-tokens');
+      const id = db.createUser({ username: 'bob', password: 'bob-pass-1', passwordEnabled: true, publicKey: '', guiEnabled: true });
+      const listenerId = db.createListener({ name: 'L', protocol: 'SFTP', bindingIp: '127.0.0.1', port: 2299, enabled: false });
+      db.subscribeUserToListener(id, listenerId);
+      db.addVirtualPath({ userId: id, virtualPath: '/', localPath: dir, canRead: true, canWrite: true, canAppend: true, canDelete: true, canList: true, canCreateDir: true, canRename: true });
+      const { token } = createApiToken(db, 'bob', 'script');
+      expect(authenticateToken(db, token)).toBe('bob');
+
+      db.deleteUser('bob');
+      const again = db.createUser({ username: 'bob', password: 'other-pass-1', passwordEnabled: true, publicKey: '', guiEnabled: true });
+      expect(authenticateToken(db, token)).toBeNull();
+      expect(db.listApiTokens('bob')).toEqual([]);
+      expect(db.getVirtualPaths(id)).toEqual([]);
+      expect(db.getUserListeners(id)).toEqual([]);
+      expect(db.getVirtualPaths(again)).toEqual([]);
+
+      db.deleteListener(listenerId);
+      expect(db.getUserListeners(again)).toEqual([]);
+      db.close();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
