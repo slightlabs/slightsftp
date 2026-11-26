@@ -11,7 +11,7 @@ import { ServerManager } from '../server-manager';
 import { WebServer } from '../web-server';
 import { getServerCertificate, setCertificateDir } from '../tls';
 import { validateSetting } from '../settings-policy';
-import { MODERN_SSH_ALGORITHMS } from '../crypto-policy';
+import { MODERN_SSH_ALGORITHMS, modernSshAlgorithms } from '../crypto-policy';
 import { getFreePort, makeTempDir, removeDir } from './helpers/test-env';
 
 jest.setTimeout(30000);
@@ -125,6 +125,17 @@ describe('minimum TLS version', () => {
     } finally {
       await web.stop();
     }
+  });
+});
+
+describe('modern list', () => {
+  test('is limited to what the running ssh2 supports (Electron has no ChaCha20-Poly1305)', () => {
+    const electronLike = { kex: MODERN_SSH_ALGORITHMS.kex, serverHostKey: MODERN_SSH_ALGORITHMS.serverHostKey, cipher: ['aes256-gcm@openssh.com', 'aes128-ctr'], hmac: MODERN_SSH_ALGORITHMS.hmac, compress: ['none'] };
+    const list = modernSshAlgorithms(electronLike);
+    expect(list.cipher).toEqual(['aes256-gcm@openssh.com', 'aes128-ctr']);
+    expect(list.compress).toEqual(['none']);
+    expect(list.kex).toEqual(MODERN_SSH_ALGORITHMS.kex);
+    expect(modernSshAlgorithms(null)).toBe(MODERN_SSH_ALGORITHMS);
   });
 });
 
