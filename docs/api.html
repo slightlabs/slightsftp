@@ -220,7 +220,7 @@ curl -k -b jar -H 'Content-Type: application/json' \
                 </div>
                 <div class="api-item">
                     <h3><code>GET /api/settings</code></h3>
-                    <p>All settings, e.g. <code>logRetentionDays</code>, <code>webHttps</code>, <code>tlsCertPath</code>, <code>tlsKeyPath</code>.</p>
+                    <p>All settings, e.g. <code>logRetentionDays</code>, <code>webHttps</code>, <code>tlsCertPath</code>, <code>tlsKeyPath</code>. Secrets such as the LDAP bind password are never returned.</p>
                 </div>
                 <div class="api-item">
                     <h3><code>GET /api/settings/:key</code></h3>
@@ -228,7 +228,7 @@ curl -k -b jar -H 'Content-Type: application/json' \
                 </div>
                 <div class="api-item">
                     <h3><code>PUT /api/settings/:key</code></h3>
-                    <p>Body <code>{ value }</code>.</p>
+                    <p>Body <code>{ value }</code>. Only <code>logRetentionDays</code>, <code>webHttps</code>, <code>tlsCertPath</code>, <code>tlsKeyPath</code> and <code>setupComplete</code> can be changed here; security, directory, audit and recycle-bin settings use their own endpoints. Other keys get <code>400</code>.</p>
                 </div>
             </div>
             <div class="api-section">

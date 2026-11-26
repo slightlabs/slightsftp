@@ -14,6 +14,8 @@ export class DatabaseManager {
   private dbPath: string;
   private initialized: boolean = false;
   private activityListeners: Array<(activity: ServerActivity) => void> = [];
+  /** pending coalesced save (activity log writes) */
+  private saveTimer: NodeJS.Timeout | null = null;
 
   constructor(dbPath?: string) {
     this.dbPath = dbPath || path.join(process.cwd(), 'config.db');
@@ -27,6 +29,10 @@ export class DatabaseManager {
     if (fs.existsSync(this.dbPath)) {
       const buffer = fs.readFileSync(this.dbPath);
       this.db = new SQL.Database(buffer);
+      // databases created by older versions were world-readable
+      if (process.platform !== 'win32') {
+        try { fs.chmodSync(this.dbPath, 0o600); } catch { /* not our file to change */ }
+      }
     } else {
       this.db = new SQL.Database();
     }
@@ -36,14 +42,61 @@ export class DatabaseManager {
     this.initialized = true;
   }
 
+  /**
+   * Write the database to disk atomically: a temp file is written and synced,
+   * then renamed over config.db, so a crash mid-write never leaves a truncated
+   * database. The file holds password hashes and secrets: owner-only (0600).
+   */
   private save(): void {
     if (!this.db) return;
     // Don't save in-memory databases
     if (this.dbPath === ':memory:') return;
-    
-    const data = this.db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(this.dbPath, buffer);
+    if (this.saveTimer) {
+      clearTimeout(this.saveTimer);
+      this.saveTimer = null;
+    }
+
+    const buffer = Buffer.from(this.db.export());
+    const temp = `${this.dbPath}.${process.pid}.tmp`;
+    const fd = fs.openSync(temp, 'w', 0o600);
+    try {
+      fs.writeSync(fd, buffer, 0, buffer.length);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    try {
+      fs.renameSync(temp, this.dbPath);
+    } catch (err: any) {
+      // Windows can refuse to replace a file another process (e.g. a virus
+      // scanner) holds open; fall back to writing in place
+      fs.rmSync(temp, { force: true });
+      if (err?.code !== 'EPERM' && err?.code !== 'EBUSY' && err?.code !== 'EACCES') throw err;
+      fs.writeFileSync(this.dbPath, buffer, { mode: 0o600 });
+    }
+  }
+
+  /**
+   * Coalesce frequent, low-value writes (activity log entries) into one save
+   * shortly after: a burst of transfers or failed logins no longer rewrites
+   * the whole database file once per event.
+   */
+  private scheduleSave(delayMs = 1000): void {
+    if (this.dbPath === ':memory:' || this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      try {
+        this.save();
+      } catch (err) {
+        console.error('Saving the database failed:', err);
+      }
+    }, delayMs);
+    this.saveTimer.unref?.();
+  }
+
+  /** Write any pending changes now (call before exiting). */
+  flush(): void {
+    if (this.saveTimer) this.save();
   }
 
   private initialize(): void {
@@ -985,7 +1038,7 @@ export class DatabaseManager {
       activity.checksum ?? null
     ]);
     
-    this.save();
+    this.scheduleSave();
 
     for (const listener of this.activityListeners) {
       try {

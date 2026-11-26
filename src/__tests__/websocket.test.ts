@@ -55,11 +55,39 @@ function makeMockDb() {
   return db;
 }
 
-function wsConnect(port: number): Promise<WS.WebSocket> {
+/** Sign in through the API and return the session cookie ("sessionId=..."). */
+function login(port: number, password = PASSWORD): Promise<string> {
   return new Promise((resolve, reject) => {
-    const ws = new WS.WebSocket(`ws://127.0.0.1:${port}`);
+    const body = JSON.stringify({ username: 'admin', password });
+    const req = http.request({
+      hostname: '127.0.0.1', port, path: '/api/login', method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+    }, res => {
+      res.resume();
+      res.on('end', () => resolve(String(res.headers['set-cookie'] || '').split(';')[0]));
+    });
+    req.on('error', reject);
+    req.end(body);
+  });
+}
+
+let sessionCookie = '';
+
+function wsConnect(port: number, cookie: string | null = sessionCookie): Promise<WS.WebSocket> {
+  return new Promise((resolve, reject) => {
+    const ws = new WS.WebSocket(`ws://127.0.0.1:${port}`, cookie ? { headers: { Cookie: cookie } } : {});
     ws.once('open', () => resolve(ws));
     ws.once('error', reject);
+  });
+}
+
+/** Status code of a refused WebSocket upgrade. */
+function wsRefusal(port: number, headers: Record<string, string> = {}): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const ws = new WS.WebSocket(`ws://127.0.0.1:${port}`, { headers });
+    ws.once('open', () => { ws.close(); reject(new Error('connection was accepted')); });
+    ws.once('unexpected-response', (_req, res) => resolve(res.statusCode!));
+    ws.once('error', () => undefined);
   });
 }
 
@@ -82,11 +110,42 @@ describe('WebServer — WebSocket real-time push', () => {
     await webServer.start();
     const addr = (webServer as any).server.address() as { port: number };
     port = addr.port;
+    sessionCookie = await login(port);
   });
 
   afterEach(async () => {
     await webServer.stop();
     jest.clearAllMocks();
+  });
+
+  test('refuses clients without a session', async () => {
+    expect(await wsRefusal(port)).toBe(401);
+    expect(await wsRefusal(port, { Cookie: 'sessionId=forged' })).toBe(401);
+    expect(await wsRefusal(port, { Authorization: 'Bearer sst_not-a-token' })).toBe(401);
+  });
+
+  test('refuses a session that still owes a password change', async () => {
+    mockDb.getUser.mockReturnValue({ ...ADMIN, mustChangePassword: true });
+    const cookie = await login(port);
+    expect(cookie).toMatch(/^sessionId=/);
+    expect(await wsRefusal(port, { Cookie: cookie })).toBe(401);
+  });
+
+  test('each activity reaches a client exactly once', async () => {
+    const ws = await wsConnect(port);
+    const received: any[] = [];
+    ws.on('message', d => received.push(JSON.parse(d.toString())));
+    mockSM.emit('activity', { listenerId: 1, username: 'u', action: 'ONCE', path: '/', success: true });
+    await new Promise(r => setTimeout(r, 100));
+    expect(received.filter(m => m.type === 'activity')).toHaveLength(1);
+    ws.close();
+  });
+
+  test('the connection is closed when its user is signed out everywhere', async () => {
+    const ws = await wsConnect(port);
+    const closed = new Promise<number>(resolve => ws.once('close', code => resolve(code)));
+    webServer.dropSessions('admin');
+    expect(await closed).toBe(4401);
   });
 
   test('client connects and receives activity broadcast', async () => {

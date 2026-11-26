@@ -24,6 +24,8 @@ import { checkForUpdate } from './update-check';
 import { isDirectoryUser, verifyUserPassword } from './credentials';
 import { publicLdapSettings, readLdapSettings, saveLdapSettings, testLdap } from './ldap-auth';
 import { cloudTarget, deleteConnection, listConnectionsForAdmin, saveConnection, testConnectionInput } from './cloud-storage';
+import { seedDefaultAdmin } from './default-admin';
+import { SECRET_SETTINGS, publicSettings, validateSetting } from './settings-policy';
 
 let mainWindow: BrowserWindow | null = null;
 let loginWindow: BrowserWindow | null = null;
@@ -43,14 +45,19 @@ function getAppDirectories() {
   const isPackaged = app.isPackaged;
   
   if (isPackaged) {
-    // Production: Use installation directory structure
-    const installPath = path.dirname(app.getPath('exe'));
+    // Windows (per-machine MSI, runs elevated): next to the program, where
+    // existing installs keep their data. Elsewhere the program folder is
+    // read-only (AppImage mount, /opt for .deb, the macOS .app bundle), so use
+    // the per-user application data folder.
+    const base = process.platform === 'win32'
+      ? path.dirname(app.getPath('exe'))
+      : app.getPath('userData');
     
     return {
-      config: path.join(installPath, 'config'),
-      data: path.join(installPath, 'data'),
-      logs: path.join(installPath, 'logs'),
-      ftpRoot: path.join(installPath, 'data', 'ftp-root')
+      config: path.join(base, 'config'),
+      data: path.join(base, 'data'),
+      logs: path.join(base, 'logs'),
+      ftpRoot: path.join(base, 'data', 'ftp-root')
     };
   } else {
     // Development: Use current working directory
@@ -305,18 +312,12 @@ async function initializeDatabase(): Promise<void> {
   db = new DatabaseManager(dbPath);
   await db.init();
   
-  // Check if admin user exists, if not create it
-  const adminUser = db.getUser('admin');
-  if (!adminUser) {
-    logger.info('Creating default admin user...');
-    const userId = db.createUser({
-      username: 'admin',
-      password: 'admin123',
-      passwordEnabled: true,
-      guiEnabled: true,
-      mustChangePassword: true
-    });
-    
+  // Fresh install only: default admin plus default listeners. Never recreated
+  // later, so deleting or renaming `admin` is permanent.
+  const userId = seedDefaultAdmin(db);
+  if (userId !== null) {
+    logger.info('Created default admin user');
+
     // Create default SFTP listener
     const sftpListenerId = db.createListener({
       name: 'Default SFTP',
@@ -906,6 +907,8 @@ function setupIpcHandlers(): void {
       updates = totpEnabled === false ? { ...rest, totpEnabled: false } : rest;
     }
     db.updateUser(username, updates);
+    // a new password or revoked GUI access signs the user out of the web GUI
+    if (updates && (updates.password || updates.guiEnabled === false)) webServer?.dropSessions(username);
     
     // Replace subscriptions / permissions / virtual paths as sent by the Edit User dialog
     if (Array.isArray(listeners) && Array.isArray(virtualPaths)) {
@@ -924,6 +927,7 @@ function setupIpcHandlers(): void {
   
   ipcMain.handle('delete-user', async (event, username) => {
     db.deleteUser(username);
+    webServer?.dropSessions(username);
     
     // Log user deletion
     db.logActivity({
@@ -1154,15 +1158,17 @@ function setupIpcHandlers(): void {
 
   // Settings
   ipcMain.handle('get-setting', async (event, key) => {
-    return db.getSetting(key);
+    return SECRET_SETTINGS.has(key) ? undefined : db.getSetting(key);
   });
 
   ipcMain.handle('set-setting', async (event, key, value) => {
-    db.setSetting(key, value);
+    const problem = validateSetting(String(key), String(value));
+    if (problem) throw new Error(problem);
+    db.setSetting(key, String(value));
   });
 
   ipcMain.handle('get-all-settings', async () => {
-    return db.getAllSettings();
+    return publicSettings(db.getAllSettings());
   });
 
   // File browsing
@@ -1403,6 +1409,8 @@ app.on('window-all-closed', () => {
 app.on('before-quit', async () => {
   logger.info('Application quitting - shutting down servers...');
   isQuitting = true;
+  // synchronously, before the awaits below: Electron may exit before they finish
+  try { db?.flush(); } catch (err) { logger.error('Error saving database:', err); }
   
   try {
     if (webServer) {

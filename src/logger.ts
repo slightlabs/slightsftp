@@ -10,9 +10,9 @@ function getLogsDirectory(): string {
     const isPackaged = app.isPackaged;
     
     if (isPackaged) {
-      // Production: Use installation directory
-      const installPath = path.dirname(app.getPath('exe'));
-      return path.join(installPath, 'logs');
+      // Production: same base folder as the app's config (see getAppDirectories in main.ts)
+      const base = process.platform === 'win32' ? path.dirname(app.getPath('exe')) : app.getPath('userData');
+      return path.join(base, 'logs');
     } else {
       // Development: Use current working directory
       return path.join(process.cwd(), 'logs');
