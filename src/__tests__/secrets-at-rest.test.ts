@@ -10,6 +10,7 @@ import { MASTER_KEY_ENV, SECRET_KEY_FILE, SecretBox, SecretUnavailableError, isS
 import { SqliteDatabase } from '../sqlite';
 import { setCertificateDir } from '../tls';
 import { makeTempDir, removeDir } from './helpers/test-env';
+import logger from '../logger';
 
 const S3_SECRET = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY';
 const BIND_PASSWORD = 'Bind-Pass-Do-Not-Leak';
@@ -138,7 +139,7 @@ describe('secrets in config.db', () => {
     db.close();
     fs.rmSync(path.join(dir, SECRET_KEY_FILE)); // key lost: a new one is generated
 
-    const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+    const errors = jest.spyOn(logger, 'error').mockImplementation((() => logger) as any);
     const reopened = new DatabaseManager(file);
     await reopened.init();
     expect(reopened.getAllUsers().map(u => u.username)).toContain('tina');
@@ -146,7 +147,7 @@ describe('secrets in config.db', () => {
     expect(reopened.getSetting('ldapBindPassword')).toBeUndefined();
     expect(reopened.listWebhooks()[0].secret).not.toBe(HOOK_SECRET);
     expect(reopened.getUser('tina')!.totpSecret).not.toBe(TOTP_SECRET); // codes never verify
-    expect(errors).toHaveBeenCalled();
+    expect(errors).toHaveBeenCalledWith(expect.stringMatching(/^Cannot read the credentials of storage connection/));
     errors.mockRestore();
     reopened.close();
   });

@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Added
+- Structured logging: `LOG_FORMAT=json` writes one JSON object per line; `LOG_FILES=false`
+  logs to stdout only. Web requests get an `X-Request-Id` (a proxy's id is kept), which is
+  added to every log line written while handling the request, and an access log at the
+  `http` level (`LOG_LEVEL=http`).
 - Monitoring: Prometheus metrics at `GET /metrics` (API token required) — sessions,
   listener status, sign-ins, transfers and bytes by protocol, bans, plus process and
   Node.js runtime metrics — and health checks `GET /healthz` (liveness) and `GET /readyz`
@@ -10,6 +14,10 @@
   so a listener that cannot start marks the container unhealthy.
 
 ### Changed
+- Logs: no colour codes when the output is not a terminal (`docker logs`, journald), ISO
+  8601 timestamps in log files, and per-operation SFTP messages (path mapping, permission
+  checks) moved to the `debug` level. The undated "daily" log file, which was never
+  pruned, is gone; `combined.log` and `error.log` rotate at 10 MB.
 - Graceful shutdown. On SIGTERM / SIGINT (`docker stop`, systemd, Ctrl+C) the headless
   server stops accepting connections, gives transfers in progress up to
   `SHUTDOWN_GRACE_MS` (default 5 s) to finish, disconnects the remaining clients,
@@ -39,6 +47,9 @@
   delete), and leftover permissions or subscriptions of deleted users are removed.
 
 ### Security
+- An uncaught error no longer makes the logger exit the process immediately (winston's
+  exception handlers did, which skipped the graceful shutdown and could close the desktop
+  app); the entry points handle them.
 - `npm audit` reports no known vulnerabilities in the shipped dependencies. The
   unmaintained `ip` package under `ftp-srv` (GHSA-2p57-rm9w-gvfp, no fixed release) is
   replaced by a minimal vendored implementation of the one function `ftp-srv` uses

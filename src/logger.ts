@@ -1,6 +1,23 @@
+/**
+ * Application log.
+ *
+ * Environment:
+ *   LOG_LEVEL   error | warn | info (default) | http (adds web requests) | verbose | debug
+ *   LOG_FORMAT  text (default) | json — one JSON object per line on stdout, for log
+ *               collectors (Docker / Kubernetes logging drivers, Loki, ELK, ...)
+ *   LOG_FILES   set to "false" to log to stdout only (containers); otherwise
+ *               combined.log and error.log, rotated at 10 MB (5 kept), in the logs folder
+ *
+ * Messages logged while a web request is handled carry its requestId (also
+ * returned in the X-Request-Id response header) — see requestContext.
+ */
+import { AsyncLocalStorage } from 'async_hooks';
 import * as winston from 'winston';
 import * as path from 'path';
 import * as fs from 'fs';
+
+/** Per-request context; logger output includes its requestId automatically. */
+export const requestContext = new AsyncLocalStorage<{ requestId: string }>();
 
 // Get logs directory based on environment
 function getLogsDirectory(): string {
@@ -8,7 +25,7 @@ function getLogsDirectory(): string {
   try {
     const { app } = require('electron');
     const isPackaged = app.isPackaged;
-    
+
     if (isPackaged) {
       // Production: same base folder as the app's config (see getAppDirectories in main.ts)
       const base = process.platform === 'win32' ? path.dirname(app.getPath('exe')) : app.getPath('userData');
@@ -23,99 +40,82 @@ function getLogsDirectory(): string {
   }
 }
 
-// Ensure logs directory exists
-const logsDir = getLogsDirectory();
-if (!fs.existsSync(logsDir)) {
-  fs.mkdirSync(logsDir, { recursive: true });
+const json = (process.env.LOG_FORMAT || '').toLowerCase() === 'json';
+const toFiles = (process.env.LOG_FILES || '').toLowerCase() !== 'false';
+
+/** Adds the current request's id, if any. */
+const withRequestId = winston.format(info => {
+  const ctx = requestContext.getStore();
+  if (ctx && info.requestId === undefined) info.requestId = ctx.requestId;
+  return info;
+});
+
+/** "msg", meta... → message plus a JSON tail; errors with their stack. */
+function textLine(info: winston.Logform.TransformableInfo, upper: boolean): string {
+  const { timestamp, level, message, stack, ...meta } = info as any;
+  let line = `${timestamp} [${upper ? String(level).toUpperCase() : level}]: ${message}`;
+  // winston keeps splat arguments under a symbol; plain meta keys are enumerable
+  if (Object.keys(meta).length > 0) line += ` ${JSON.stringify(meta)}`;
+  if (stack) line += `\n${stack}`;
+  return line;
 }
 
-// Custom format for console output
-const consoleFormat = winston.format.combine(
-  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
-  winston.format.colorize(),
-  winston.format.printf(({ timestamp, level, message, ...meta }) => {
-    let msg = `${timestamp} [${level}]: ${message}`;
-    if (Object.keys(meta).length > 0) {
-      msg += ` ${JSON.stringify(meta)}`;
-    }
-    return msg;
-  })
-);
+const consoleFormat = json
+  ? winston.format.combine(
+      winston.format.errors({ stack: true }),
+      winston.format.timestamp(), // ISO 8601, UTC
+      withRequestId(),
+      winston.format.json(),
+    )
+  : winston.format.combine(
+      winston.format.errors({ stack: true }),
+      winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
+      withRequestId(),
+      // colours only for a terminal: not in docker logs, journald or files
+      ...(process.stdout.isTTY ? [winston.format.colorize()] : []),
+      winston.format.printf(info => textLine(info, false)),
+    );
 
-// Custom format for file output
 const fileFormat = winston.format.combine(
-  winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
   winston.format.errors({ stack: true }),
-  winston.format.printf(({ timestamp, level, message, stack, ...meta }) => {
-    let msg = `${timestamp} [${level.toUpperCase()}]: ${message}`;
-    if (stack) {
-      msg += `\n${stack}`;
-    }
-    if (Object.keys(meta).length > 0) {
-      msg += ` ${JSON.stringify(meta)}`;
-    }
-    return msg;
-  })
+  winston.format.timestamp({ format: () => new Date().toISOString() }),
+  withRequestId(),
+  winston.format.printf(info => textLine(info, true)),
 );
 
-// Create the logger
-const logger = winston.createLogger({
-  level: process.env.LOG_LEVEL || 'info',
-  transports: [
-    // Console output
-    new winston.transports.Console({
-      format: consoleFormat
-    }),
-    
-    // Combined log file (all levels)
+const transports: winston.transport[] = [new winston.transports.Console({ format: consoleFormat })];
+
+if (toFiles) {
+  const logsDir = getLogsDirectory();
+  fs.mkdirSync(logsDir, { recursive: true });
+  transports.push(
+    // everything, rotated by size
     new winston.transports.File({
       filename: path.join(logsDir, 'combined.log'),
       format: fileFormat,
-      maxsize: 10485760, // 10MB
+      maxsize: 10 * 1024 * 1024,
       maxFiles: 5,
-      tailable: true
+      tailable: true,
     }),
-    
-    // Error log file (errors only)
+    // errors only
     new winston.transports.File({
       filename: path.join(logsDir, 'error.log'),
       level: 'error',
       format: fileFormat,
-      maxsize: 10485760, // 10MB
+      maxsize: 10 * 1024 * 1024,
       maxFiles: 5,
-      tailable: true
+      tailable: true,
     }),
-    
-    // Application log file (daily rotation)
-    new winston.transports.File({
-      filename: path.join(logsDir, `app-${new Date().toISOString().split('T')[0]}.log`),
-      format: fileFormat,
-      maxsize: 10485760, // 10MB
-      maxFiles: 7 // Keep last 7 days
-    })
-  ],
-  
-  // Handle exceptions and rejections
-  exceptionHandlers: [
-    new winston.transports.File({
-      filename: path.join(logsDir, 'exceptions.log'),
-      format: fileFormat
-    })
-  ],
-  
-  rejectionHandlers: [
-    new winston.transports.File({
-      filename: path.join(logsDir, 'rejections.log'),
-      format: fileFormat
-    })
-  ]
-});
+  );
+}
 
-// Add stream for Morgan HTTP logging
-logger.stream = {
-  write: (message: string) => {
-    logger.info(message.trim());
-  }
-} as any;
+// Uncaught exceptions and unhandled rejections are handled by the entry points
+// (lifecycle.ts for the headless server, main.ts for the desktop app). Winston's
+// own handlers would exit the process immediately (exitOnError), skipping the
+// graceful shutdown, and would close the desktop app on any stray error.
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  transports,
+});
 
 export default logger;

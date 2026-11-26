@@ -41,6 +41,11 @@ For FTP, also publish port 2121 and the passive range `30000-30009`, and set
 Traefik), set `TRUST_PROXY` to the proxy's address or range (e.g. `TRUST_PROXY=172.16.0.0/12`)
 so brute-force protection sees real client addresses. See `docker-compose.yml`.
 
+Logging: `LOG_LEVEL` (`info`; `http` adds one line per web request, `debug` per file
+operation), `LOG_FORMAT=json` for one JSON object per line (log collectors), and
+`LOG_FILES=false` to log to stdout only. Every web response carries an `X-Request-Id`
+that also appears in the log lines written while handling it.
+
 Run **one container per data volume**: the configuration is a SQLite database, so two
 instances must not share `/data`. Sign-ins to the web GUI and the file portal are stored
 in it, so restarting or updating the container does not sign anyone out.

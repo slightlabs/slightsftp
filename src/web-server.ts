@@ -9,7 +9,7 @@ const cookieParser = require('cookie-parser');
 import { DatabaseManager } from './database';
 import { ServerManager } from './server-manager';
 import { User, Listener, Webhook } from './types';
-import logger from './logger';
+import logger, { requestContext } from './logger';
 import { resolveUserPath } from './path-utils';
 import { requiresPasswordChange, validateNewPassword } from './password';
 import { hostKeyFingerprint } from './tls';
@@ -59,6 +59,26 @@ const PASSWORD_CHANGE_ALLOWED = new Set(['/change-password', '/user', '/logout']
 export const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const SESSION_SWEEP_MS = 10 * 60 * 1000;
 
+
+/**
+ * Give every request an id (the proxy's X-Request-Id when it sent a sane one),
+ * return it in X-Request-Id, attach it to everything logged while handling the
+ * request, and write an access-log line when the response is sent: at the
+ * "http" level (LOG_LEVEL=http to see them), or "error" for server errors.
+ */
+function requestLogging(req: Request, res: Response, next: NextFunction): void {
+  const incoming = req.get('x-request-id');
+  const requestId = incoming && /^[A-Za-z0-9._:-]{1,128}$/.test(incoming) ? incoming : crypto.randomUUID();
+  res.setHeader('X-Request-Id', requestId);
+  const started = process.hrtime.bigint();
+  res.on('finish', () => {
+    const ms = Number(process.hrtime.bigint() - started) / 1e6;
+    // the path without its query string: tokens and passwords never reach the log
+    const meta = { requestId, method: req.method, path: req.originalUrl.split('?')[0], status: res.statusCode, ms: Math.round(ms * 10) / 10, ip: req.ip };
+    logger.log(res.statusCode >= 500 ? 'error' : 'http', 'HTTP request', meta);
+  });
+  requestContext.run({ requestId }, () => next());
+}
 
 /** "https://hooks.slack.com/services/T0/B0/xyz" → "https://hooks.slack.com/…" */
 function redactUrl(url: unknown): string {
@@ -195,6 +215,7 @@ export class WebServer {
   private setupMiddleware(): void {
     this.applyTrustProxy();
     this.app.disable('x-powered-by');
+    this.app.use(requestLogging);
     this.app.use(securityHeaders);
     // no cross-site form posts or fetches against cookie sessions (admin, portal, share links)
     this.app.use(sameOriginOnly);
@@ -2000,11 +2021,11 @@ export class WebServer {
             };
             
             window.wsConnection.onerror = (error) => {
-              console.error('WebSocket error:', error);
+              logger.warn('WebSocket error:', error);
             };
             
             window.wsConnection.onclose = () => {
-              console.log('WebSocket connection closed');
+              logger.debug('WebSocket connection closed');
               // Attempt to reconnect after 5 seconds
               setTimeout(() => {
                 window.wsConnection = null;
@@ -2097,7 +2118,12 @@ export class WebServer {
     }
     return new Promise((resolve, reject) => {
       this.wss.close(() => {
+        // idle keep-alive connections would hold close() open; busy ones get 3 s
+        const force = setTimeout(() => (this.server as any).closeAllConnections?.(), 3000);
+        force.unref();
+        (this.server as any).closeIdleConnections?.();
         this.server.close((err?: Error) => {
+          clearTimeout(force);
           if (err) {
             reject(err);
           } else {
