@@ -55,8 +55,8 @@ The macOS build uses the hardened runtime with `build/entitlements.mac.plist`.
 
 ```bash
 sha256sum -c SHA256SUMS --ignore-missing
-gh attestation verify SLightSFTP-1.8.0-setup.msi --repo slightlabs/slightsftp
-cosign verify ghcr.io/slightlabs/slightsftp:1.8.0 \
+gh attestation verify SLightSFTP-1.8.1-setup.msi --repo slightlabs/slightsftp
+cosign verify ghcr.io/slightlabs/slightsftp:1.8.1 \
   --certificate-identity-regexp 'https://github.com/slightlabs/slightsftp/.github/workflows/release.yml@.*' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```

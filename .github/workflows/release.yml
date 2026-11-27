@@ -218,8 +218,8 @@ jobs:
 
       - name: Software bill of materials (CycloneDX)
         run: |
-          npm ci --ignore-scripts --omit=dev
-          npm sbom --omit=dev --sbom-format cyclonedx --sbom-type application > sbom.cdx.json
+          npm ci --ignore-scripts
+          node tools/production-sbom.js > sbom.cdx.json
 
       - name: Download installers
         uses: actions/download-artifact@v5

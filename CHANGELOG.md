@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.8.1 — 2026-11-27
+
+### Fixes
+- Release workflow: the software bill of materials step failed, so v1.8.0 published only
+  its Docker image and no installers. `npm sbom --omit=dev` also left out most shipped
+  packages; `tools/production-sbom.js` now builds the SBOM from the full tree minus the
+  packages the lockfile marks as dev-only. There are no changes to the application.
+
 ## v1.8.0 — 2026-11-27
 
 ### Fixed
