@@ -1,7 +1,7 @@
 # SLightSFTP headless server: web admin GUI + SFTP / FTP listeners
 # docker run -d -p 3000:3000 -p 2222:2222 -v slightsftp:/data ghcr.io/slightlabs/slightsftp
 
-FROM node:22-bookworm-slim AS build
+FROM node:25-bookworm-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json .npmrc ./
 COPY vendor ./vendor
@@ -11,7 +11,7 @@ COPY src ./src
 COPY assets ./assets
 RUN npm run build
 
-FROM node:22-bookworm-slim
+FROM node:25-bookworm-slim
 ENV NODE_ENV=production \
     WEB_PORT=3000 \
     SLIGHTSFTP_CERT_DIR=/data \
