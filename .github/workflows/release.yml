@@ -222,7 +222,7 @@ jobs:
           node tools/production-sbom.js > sbom.cdx.json
 
       - name: Download installers
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: '*-installer*'
           # windows-installer, linux-installers, mac-installer
