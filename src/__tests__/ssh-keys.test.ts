@@ -12,9 +12,22 @@ import { getFreePort, makeTempDir, removeDir, FULL_VPATH_PERMS } from './helpers
 
 jest.setTimeout(30000);
 
-const ed = sshUtils.generateKeyPairSync('ed25519', { comment: 'alice@laptop' });
-const rsa = sshUtils.generateKeyPairSync('rsa', { bits: 2048, comment: 'backup' });
-const stranger = sshUtils.generateKeyPairSync('ed25519');
+/**
+ * ssh2 1.17's generator drops a leading zero byte from an ed25519 public key
+ * (about 1 key in 256) and writes a malformed .pub line, so keep only keys
+ * that parse back: otherwise this suite fails about once in 128 runs.
+ */
+function keyPair(type: 'ed25519' | 'rsa', opts: Record<string, any> = {}) {
+  for (;;) {
+    const pair = sshUtils.generateKeyPairSync(type as any, opts);
+    const parsed = sshUtils.parseKey(pair.public);
+    if (parsed && !(parsed instanceof Error)) return pair;
+  }
+}
+
+const ed = keyPair('ed25519', { comment: 'alice@laptop' });
+const rsa = keyPair('rsa', { bits: 2048, comment: 'backup' });
+const stranger = keyPair('ed25519');
 
 /** An SSH agent that offers someone else's PUBLIC key and signs with garbage. */
 class ForgingAgent extends BaseAgent {
