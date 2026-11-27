@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v1.8.0 — 2026-11-27
 
 ### Fixed
 - FTP sessions were never removed when a client disconnected: ftp-srv connections emit no
@@ -168,6 +168,19 @@
 - Linux and macOS packages keep configuration, keys and logs in the per-user application
   data folder (e.g. `~/.config/SLightSFTP`) instead of the read-only program folder.
   Windows installs are unchanged.
+
+### Upgrade notes
+- Running from source or with `npm` needs Node.js 22.16 or newer and npm 10 or newer
+  (installers and the Docker image include their own runtime).
+- SFTP clients that can only use SHA-1 (`ssh-rsa` signatures, `hmac-sha1`) are
+  disconnected. Set *SSH algorithms* to *Compatible* if you still have such clients.
+- **Copy `secret.key` together with `config.db`** when moving a server by hand (backups
+  include it). Stored secrets are encrypted with it on first start.
+- The first start upgrades `config.db` and saves a copy of the old file next to it
+  (`config.db.v<N>-<time>.bak`). An older version refuses to open the upgraded file:
+  restore that copy to roll back.
+- Stopping a listener or the server now disconnects connected users after a grace period
+  (`SHUTDOWN_GRACE_MS`, default 5 s). With Docker, give `docker stop` at least that long.
 
 ## v1.7.0 — 2026-10-19
 
